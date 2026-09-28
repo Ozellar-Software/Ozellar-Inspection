@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env*
+!.env.example
+apps/web/ios/
+apps/web/android/
+*.log
+local.settings.json

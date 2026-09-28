@@ -1,0 +1,59 @@
+name: Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write      # OIDC login to Azure (no stored Azure passwords)
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm test
+
+      - name: Build web
+        env:
+          VITE_ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+          VITE_ENTRA_WEB_CLIENT_ID: ${{ vars.ENTRA_WEB_CLIENT_ID }}
+          VITE_API_SCOPE: ${{ vars.API_SCOPE }}
+          VITE_API_BASE: /api
+        run: npm run build -w @ozellar/web
+
+      - name: Deploy web to Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+          action: upload
+          app_location: apps/web/dist
+          skip_app_build: true
+          skip_api_build: true
+
+      - name: Build API package
+        run: |
+          npm run build -w @ozellar/api
+          mkdir -p deploy-api/dist
+          cp apps/api/dist/index.js deploy-api/dist/ && cp apps/api/host.json deploy-api/
+          # clean package.json: runtime deps only (the shared package is already bundled into dist/index.js)
+          node -e "const p=require('./apps/api/package.json');const d={...p.dependencies};delete d['@ozellar/shared'];require('fs').writeFileSync('deploy-api/package.json',JSON.stringify({name:'ozellar-api',version:p.version,type:'module',main:'dist/index.js',dependencies:d},null,2))"
+          cd deploy-api && npm install --omit=dev --no-audit --no-fund
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy API to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ secrets.FUNCTION_APP_NAME }}
+          package: deploy-api
+          sku: flexconsumption

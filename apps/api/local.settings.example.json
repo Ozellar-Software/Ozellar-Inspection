@@ -1,0 +1,18 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "ENTRA_TENANT_ID": "<tenant-id>",
+    "API_AUDIENCE": "api://<api-client-id>",
+    "PG_HOST": "<server>.postgres.database.azure.com",
+    "PG_DB": "vir",
+    "PG_USER": "<function-app-name or your UPN for local dev>",
+    "PG_PASSWORD": "",
+    "PHOTOS_ACCOUNT": "<storage-account-name>",
+    "PHOTOS_CONTAINER": "photos",
+    "MAIL_SENDER": "inspections@ozellar.com",
+    "APP_URL": "https://inspection.ozellar.com",
+    "ALLOWED_ORIGINS": "http://localhost:5173,capacitor://localhost,https://localhost"
+  }
+}

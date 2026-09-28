@@ -1,0 +1,13 @@
+{
+  "navigationFallback": { "rewrite": "/index.html", "exclude": ["/api/*", "/assets/*", "*.{png,jpg,svg,ico,webmanifest,js,css}"] },
+  "routes": [
+    { "route": "/sw.js", "headers": { "Cache-Control": "no-cache" } },
+    { "route": "/index.html", "headers": { "Cache-Control": "no-cache" } }
+  ],
+  "globalHeaders": {
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Content-Security-Policy": "default-src 'self'; img-src 'self' blob: data: https://*.blob.core.windows.net; connect-src 'self' https://login.microsoftonline.com https://*.blob.core.windows.net; frame-src https://login.microsoftonline.com; style-src 'self' 'unsafe-inline'"
+  }
+}

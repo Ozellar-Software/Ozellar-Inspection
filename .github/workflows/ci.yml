@@ -1,0 +1,37 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: virtest }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Unit tests (shared rules)
+        run: npm test
+      - name: Apply schema
+        run: psql "postgresql://postgres:postgres@localhost:5432/virtest" -v ON_ERROR_STOP=1 -f db/schema.sql
+      - name: API integration tests (real Postgres)
+        working-directory: apps/api
+        env: { PG_TEST_HOST: localhost, PG_TEST_PORT: '5432', PG_TEST_DB: virtest, PG_TEST_USER: postgres, PG_TEST_PASSWORD: postgres }
+        run: npm run test:integration
+      - name: Build
+        env:
+          VITE_ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+          VITE_ENTRA_WEB_CLIENT_ID: ${{ vars.ENTRA_WEB_CLIENT_ID }}
+          VITE_API_SCOPE: ${{ vars.API_SCOPE }}
+          VITE_API_BASE: /api
+        run: npm run build

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "prefix": { "value": "ozvir" },
+    "env": { "value": "dev" },
+    "location": { "value": "centralindia" },
+    "swaLocation": { "value": "eastasia" },
+    "apiAudience": { "value": "api://<API-CLIENT-ID>" },
+    "pgAdminObjectId": { "value": "<ENTRA-OBJECT-ID-OF-DB-ADMIN-USER-OR-GROUP>" },
+    "pgAdminName": { "value": "<db-admin@ozellar.com or group name>" },
+    "pgAdminType": { "value": "User" },
+    "mailSender": { "value": "inspections@ozellar.com" },
+    "appUrl": { "value": "https://inspection-dev.ozellar.com" }
+  }
+}

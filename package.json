@@ -1,0 +1,20 @@
+{
+  "name": "ozellar-inspection",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @ozellar/shared && npm run build -w @ozellar/api && npm run build -w @ozellar/web",
+    "test": "npm test -w @ozellar/shared",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "rollup": "npm:@rollup/wasm-node@4.63.5"
+  }
+}
