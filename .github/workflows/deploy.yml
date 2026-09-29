@@ -21,9 +21,6 @@ jobs:
 
       - name: Build web
         env:
-          VITE_ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
-          VITE_ENTRA_WEB_CLIENT_ID: ${{ vars.ENTRA_WEB_CLIENT_ID }}
-          VITE_API_SCOPE: ${{ vars.API_SCOPE }}
           VITE_API_BASE: /api
         run: npm run build -w @ozellar/web
 

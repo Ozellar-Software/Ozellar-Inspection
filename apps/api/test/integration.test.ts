@@ -1,36 +1,29 @@
 /**
  * API integration test against a real PostgreSQL (schema from db/schema.sql).
- * Signs test tokens with a local key server (ENTRA_JWKS_URL / ENTRA_ISSUER overrides).
+ * Signs test tokens with the API's own JWT_SECRET (email/password auth, no Entra).
  * Run:  PG_TEST_HOST=... npx tsx test/integration.test.ts
  */
-import http from 'node:http';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-
-const { publicKey, privateKey } = await generateKeyPair('RS256');
-const jwk = { ...(await exportJWK(publicKey)), kid: 'test', alg: 'RS256', use: 'sig' };
-const srv = http.createServer((_, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ keys: [jwk] })); });
-await new Promise<void>((r) => srv.listen(0, r));
-const port = (srv.address() as { port: number }).port;
 
 Object.assign(process.env, {
-  ENTRA_JWKS_URL: `http://127.0.0.1:${port}/keys`, ENTRA_ISSUER: 'https://test-issuer', API_AUDIENCE: 'api://test',
+  JWT_SECRET: process.env.JWT_TEST_SECRET ?? 'integration-test-secret-not-for-real-use',
   PG_HOST: process.env.PG_TEST_HOST ?? '/tmp', PG_DB: process.env.PG_TEST_DB ?? 'virtest', PG_USER: process.env.PG_TEST_USER ?? 'postgres',
   PG_PASSWORD: process.env.PG_TEST_PASSWORD ?? 'unused', PG_SSL: 'false', PHOTOS_ACCOUNT: 'testacct', PG_PORT: process.env.PG_TEST_PORT ?? '5432',
 });
 
 const { HttpRequest, InvocationContext } = await import('@azure/functions');
 const { pool } = await import('../src/lib/db.js');
+const { signAccessToken } = await import('../src/lib/auth.js');
 const sync = await import('../src/functions/sync.js');
 const appr = await import('../src/functions/approvals.js');
 const me = await import('../src/functions/me.js');
 const users = await import('../src/functions/users.js');
 const vessels = await import('../src/functions/vessels.js');
 
-const token = (oid: string) => new SignJWT({ oid, preferred_username: `${oid}@x.com` })
-  .setProtectedHeader({ alg: 'RS256', kid: 'test' }).setIssuer('https://test-issuer').setAudience('api://test')
-  .setIssuedAt().setExpirationTime('10m').sign(privateKey);
+// `who` is a seeded user's short key (e.g. 'vm'); an unseeded key signs a token for a random,
+// unknown user id so "unknown user is refused" still exercises a validly-signed token.
+const token = (who: string) => signAccessToken(U[who] ?? randomUUID());
 
 async function call(h: (r: InstanceType<typeof HttpRequest>, c: InstanceType<typeof InvocationContext>) => Promise<{ status?: number; jsonBody?: any }>,
                     who: string, opts: { method?: string; body?: unknown; params?: Record<string, string>; query?: Record<string, string> } = {}) {
@@ -152,4 +145,4 @@ const fs = await call(vessels.fleetStatusHandler, 'vm');
 ok(fs.body.length === 1 && fs.body[0].last?.id === I && fs.body[0].due.color === 'green', 'fleet status uses last approved inspection, filtered to own vessels');
 
 console.log(`\n${pass} checks passed`);
-await pool.end(); srv.close();
+await pool.end();

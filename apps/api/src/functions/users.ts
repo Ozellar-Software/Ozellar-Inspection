@@ -3,6 +3,10 @@ import { can, DESIGNATION_PRESETS, type Role } from '@ozellar/shared';
 import { requireUser } from '../lib/auth.js';
 import { pool, tx } from '../lib/db.js';
 import { camel, fail, handler, jsonBody } from '../lib/http.js';
+import { newResetToken } from '../lib/passwords.js';
+import { sendMail } from '../lib/mail.js';
+
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // a week to set a first password, longer than a forgot-password link
 
 const ROLES: Role[] = ['admin', 'director', 'techManager', 'vesselManager'];
 
@@ -10,7 +14,9 @@ export const usersListHandler = handler(async (req) => {
     const me = await requireUser(req);
     if (!can(me, 'users.manage')) throw fail('FORBIDDEN', 'Admins only');
     const r = await pool.query(
-      `select u.*, coalesce(array_agg(uv.vessel_id) filter (where uv.vessel_id is not null), '{}') as vessel_ids
+      `select u.id, u.email, u.name, u.designation, u.role, u.is_active, u.created_at, u.updated_at,
+              (u.password_hash is not null) as has_password,
+              coalesce(array_agg(uv.vessel_id) filter (where uv.vessel_id is not null), '{}') as vessel_ids
          from users u left join user_vessels uv on uv.user_id = u.id
         group by u.id order by lower(u.name), lower(u.email)`);
     return r.rows.map((row) => camel(row));
@@ -30,21 +36,33 @@ export const usersUpsertHandler = handler(async (req) => {
     const needsVessels = b.role === 'techManager' || b.role === 'vesselManager';
     if (needsVessels && !(b.vesselIds?.length)) throw fail('VALIDATION', 'Pick at least one vessel');
 
-    return tx(async (c) => {
-      const u = (await c.query(
+    const { row: u, isNew } = await tx(async (c) => {
+      const r = (await c.query(
         `insert into users (email, name, designation, role, is_active) values ($1,$2,$3,$4,coalesce($5,true))
          on conflict ((lower(email))) do update set name = excluded.name, designation = excluded.designation,
            role = excluded.role, is_active = excluded.is_active
-         returning *`,
+         returning *, (xmax = 0) as is_new`,
         [email, b.name ?? '', b.designation ?? '', b.role, b.isActive ?? true])).rows[0];
-      await c.query(`delete from user_vessels where user_id = $1`, [u.id]);
+      await c.query(`delete from user_vessels where user_id = $1`, [r.id]);
       if (needsVessels) {
-        await c.query(`insert into user_vessels (user_id, vessel_id) select $1, unnest($2::uuid[])`, [u.id, b.vesselIds]);
+        await c.query(`insert into user_vessels (user_id, vessel_id) select $1, unnest($2::uuid[])`, [r.id, b.vesselIds]);
       }
       await c.query(`insert into audit_log (actor_user_id, entity, entity_id, action, details) values ($1,'user',$2,'upsert',$3)`,
-        [me.id, u.id, { role: b.role, vesselIds: b.vesselIds ?? [] }]);
-      return camel(u);
+        [me.id, r.id, { role: b.role, vesselIds: b.vesselIds ?? [] }]);
+      return { row: r, isNew: r.is_new as boolean };
     });
+    if (isNew) {
+      const { raw, hash } = newResetToken();
+      await pool.query(`insert into password_reset_tokens (user_id, token_hash, expires_at) values ($1,$2,$3)`,
+        [u.id, hash, new Date(Date.now() + INVITE_TTL_MS)]);
+      const link = `${process.env.APP_URL ?? ''}/reset-password?token=${raw}`;
+      await sendMail([email], 'You’ve been added to Ozellar Inspection',
+        `Hi ${u.name || ''},\n\nOpen this link to set your password and sign in (valid 7 days):\n${link}`);
+    }
+    delete u.is_new;
+    delete u.password_hash;
+    delete u.entra_oid;
+    return camel(u);
   });
 app.http('users-upsert', {
   route: 'users/{id?}', methods: ['POST', 'PATCH', 'OPTIONS'], authLevel: 'anonymous',

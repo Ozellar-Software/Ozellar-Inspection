@@ -21,8 +21,9 @@ end $$;
 -- ---------- Users & access ----------
 create table if not exists users (
   id            uuid primary key default gen_random_uuid(),
-  entra_oid     text unique,                 -- Entra object id (filled on first sign-in)
+  entra_oid     text unique,                 -- Entra object id (unused while auth is email/password; kept for a future SSO switch)
   email         text not null,
+  password_hash text,                        -- bcrypt hash; null until the user sets a password
   name          text not null default '',
   designation   text not null default '',
   role          text not null check (role in ('admin','director','techManager','vesselManager')),
@@ -31,7 +32,21 @@ create table if not exists users (
   updated_at    timestamptz not null default now(),
   row_version   bigint not null default nextval('sync_seq')
 );
+
+-- One-time tokens for "set your password" (new user) / "forgot password" emails.
+create table if not exists password_reset_tokens (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references users(id) on delete cascade,
+  token_hash  text not null,                 -- sha256 of the token in the emailed link (raw token never stored)
+  expires_at  timestamptz not null,
+  used_at     timestamptz,
+  created_at  timestamptz not null default now()
+);
+create index if not exists password_reset_tokens_user_idx on password_reset_tokens (user_id);
 create unique index if not exists users_email_lower_uq on users (lower(email));
+-- `create table if not exists` above is a no-op on a database that already has `users`,
+-- so this column has to be added separately for anyone upgrading from before password auth.
+alter table users add column if not exists password_hash text;
 
 create table if not exists vessels (
   id            uuid primary key,

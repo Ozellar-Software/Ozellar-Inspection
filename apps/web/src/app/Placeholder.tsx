@@ -1,12 +1,20 @@
-import { Body1, Title3 } from '@fluentui/react-components';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { BackIcon, ClipboardIcon } from '../icons';
 
 export function Placeholder({ name }: { name: string }) {
+  const nav = useNavigate();
   return (
-    <div style={{ padding: 16, display: 'grid', gap: 8 }}>
-      <Title3>{name}</Title3>
-      <Body1>To be ported from the current app. See docs/03-feature-inventory.md for the acceptance checklist.</Body1>
-      <Link to="/">Back to home</Link>
-    </div>
+    <>
+      <div className="appbar">
+        <button className="back" aria-label="Back" onClick={() => nav('/')}><BackIcon /></button>
+        <div className="title-wrap"><h1>{name}</h1></div>
+      </div>
+      <div className="page-wrap">
+        <div className="empty-state">
+          <ClipboardIcon />
+          <p>Not built yet.<br />See docs/03-feature-inventory.md for the acceptance checklist.</p>
+        </div>
+      </div>
+    </>
   );
 }
