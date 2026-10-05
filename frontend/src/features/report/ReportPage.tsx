@@ -7,7 +7,7 @@ import { api, ApiError } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { syncNow } from '../../offline/sync';
-import { BackIcon, WarningIcon } from '../../icons';
+import { BackIcon, WarningIcon, LockIcon } from '../../icons';
 import { loadReportData, type ReportData } from './reportData';
 import { generateInspectionPdf } from './pdf';
 import './ReportPage.css';
@@ -452,7 +452,7 @@ export function ReportPage() {
         {/* ── Locked State Banners ── */}
         {dispInspection.status === 'pending_tm' && (
           <div className="locked-banner info">
-            <div className="locked-banner-icon">🔒</div>
+            <div className="locked-banner-icon"><LockIcon width={20} height={20} /></div>
             <div className="locked-banner-content">
               <strong>Inspection Under Technical Review</strong>
               <span>Submitted to Technical Manager. Further edits are locked while review is in progress.</span>
@@ -461,7 +461,7 @@ export function ReportPage() {
         )}
         {dispInspection.status === 'pending_director' && (
           <div className="locked-banner info">
-            <div className="locked-banner-icon">🔒</div>
+            <div className="locked-banner-icon"><LockIcon width={20} height={20} /></div>
             <div className="locked-banner-content">
               <strong>Inspection Under Director Sign-off</strong>
               <span>Forwarded to Director for final executive sign-off. Editing is locked.</span>
@@ -470,7 +470,7 @@ export function ReportPage() {
         )}
         {dispInspection.status === 'approved' && (
           <div className="locked-banner success">
-            <div className="locked-banner-icon">✅</div>
+            <div className="locked-banner-icon"><CheckCircleIcon color="var(--ok)" /></div>
             <div className="locked-banner-content">
               <strong>Official Approved Inspection</strong>
               <span>This inspection has received final Director approval and is permanently locked.</span>
@@ -479,7 +479,7 @@ export function ReportPage() {
         )}
         {dispInspection.status === 'returned' && (
           <div className="locked-banner warning">
-            <div className="locked-banner-icon">↩️</div>
+            <div className="locked-banner-icon"><WarningIcon width={20} height={20} /></div>
             <div className="locked-banner-content">
               <strong>Returned for Correction</strong>
               <span>{approval?.returnComment ? `Reviewer comment: "${approval.returnComment}"` : 'Please address reviewer comments and resubmit.'}</span>

@@ -510,9 +510,11 @@ export function SectionListPage() {
               </div>
               <div style={{
                 padding: '10px 14px', borderRadius: 8, background: '#f0fdfa',
-                border: '1px solid #99f6e4', color: '#0f766e', fontSize: 12, marginBottom: 18
+                border: '1px solid #99f6e4', color: '#0f766e', fontSize: 12, marginBottom: 18,
+                display: 'flex', alignItems: 'center', gap: 6,
               }}>
-                📷 This section holds photo evidence only without standard checklist questions.
+                <CameraIcon width={16} height={16} />
+                <span>This section holds photo evidence only without standard checklist questions.</span>
               </div>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button

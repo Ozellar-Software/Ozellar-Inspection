@@ -12,6 +12,7 @@ import { syncNow } from '../../offline/sync';
 import {
   BackIcon, PlusIcon, TrashIcon, ClipboardIcon, AlertCircleIcon,
   CheckIcon, EditIcon, ChevronRightIcon, UsersIcon, ShipIcon,
+  CameraIcon, CompassIcon,
 } from '../../icons';
 import './ChecklistPage.css';
 
@@ -285,9 +286,12 @@ export function ChecklistPage() {
               <h1 className="cl-page-title">{openSection.name}</h1>
               <span className="cl-count-pill">{openSection.zone || 'Section'}</span>
               {(!openSection.vesselTypes || openSection.vesselTypes.length === 0) ? (
-                <span className="cl-vessel-tag-header universal">🌐 All Vessels</span>
+                <span className="cl-vessel-tag-header universal">All Vessels</span>
               ) : (
-                <span className="cl-vessel-tag-header specific">🚢 {openSection.vesselTypes.join(', ')}</span>
+                <span className="cl-vessel-tag-header specific">
+                  <ShipIcon width={13} height={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                  {openSection.vesselTypes.join(', ')}
+                </span>
               )}
             </div>
           </div>
@@ -348,7 +352,8 @@ export function ChecklistPage() {
         {/* Photo-only notice */}
         {openSection.photoOnly && !questionForm && (
           <div className="cl-info-banner">
-            <span>📷 Photo sections hold photos only — they have no checklist questions.</span>
+            <CameraIcon width={16} height={16} />
+            <span>Photo sections hold photos only — they have no checklist questions.</span>
           </div>
         )}
 
@@ -456,7 +461,8 @@ export function ChecklistPage() {
               className={`cl-cat-tab ${selectedCategory === 'universal' ? 'active' : ''}`}
               onClick={() => setSelectedCategory('universal')}
             >
-              <span>🌐 Universal (All Vessels)</span>
+              <CompassIcon width={14} height={14} />
+              <span>Universal (All Vessels)</span>
               <span className="cl-cat-count">{categoryCounts.universal}</span>
             </button>
 
@@ -554,7 +560,7 @@ export function ChecklistPage() {
                   className={`cl-vessel-mode-btn ${sectionForm.vesselTypes.length === 0 ? 'active' : ''}`}
                   onClick={() => setSectionForm({ ...sectionForm, vesselTypes: [] })}
                 >
-                  <span className="cl-mode-icon">🌐</span>
+                  <span className="cl-mode-icon"><CompassIcon width={20} height={20} /></span>
                   <div className="cl-mode-text">
                     <strong>All Vessel Categories (Universal)</strong>
                     <small>Included in inspections for every vessel</small>
@@ -681,7 +687,8 @@ export function ChecklistPage() {
 
                   {sectionForm.vesselTypes.length === 0 && (
                     <div className="cl-warning-hint">
-                      ⚠️ No vessel categories selected. Switch to Universal or select at least 1 vessel category above.
+                      <AlertCircleIcon width={14} height={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
+                      No vessel categories selected. Switch to Universal or select at least 1 vessel category above.
                     </div>
                   )}
                 </div>
@@ -730,14 +737,13 @@ export function ChecklistPage() {
             {filteredSections.map((s) => {
               const count = allQuestions.filter((q) => q.sectionId === s.id).length;
               const isUniversal = !s.vesselTypes || s.vesselTypes.length === 0;
-              const isMultiType = s.vesselTypes && s.vesselTypes.length > 1;
 
               return (
                 <div key={s.id} className="cl-row-card">
                   <div className="cl-row-header" onClick={() => setOpenSectionId(s.id)} style={{ cursor: 'pointer' }}>
                     <div className="cl-row-main">
                       <div className={`cl-section-avatar ${s.photoOnly ? 'photo' : 'check'}`}>
-                        {s.photoOnly ? '📷' : <ClipboardIcon width={22} height={22} />}
+                        {s.photoOnly ? <CameraIcon width={22} height={22} /> : <ClipboardIcon width={22} height={22} />}
                       </div>
                       <div className="cl-row-info">
                         <div className="cl-title-main">
@@ -748,7 +754,7 @@ export function ChecklistPage() {
                         {/* Vessel Category Badges */}
                         <div className="cl-vessel-tags-row">
                           {isUniversal ? (
-                            <span className="cl-vessel-badge universal">🌐 All Vessel Types</span>
+                            <span className="cl-vessel-badge universal">All Vessel Types</span>
                           ) : s.vesselTypes.length === 1 ? (
                             (() => {
                               const badge = getVesselTypeBadgeColor(s.vesselTypes[0]);
@@ -757,14 +763,15 @@ export function ChecklistPage() {
                                   className="cl-vessel-badge specific"
                                   style={{ backgroundColor: badge.bg, color: badge.color, borderColor: badge.border }}
                                 >
-                                  🚢 {s.vesselTypes[0]}
+                                  <ShipIcon width={12} height={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                                  {s.vesselTypes[0]}
                                 </span>
                               );
                             })()
                           ) : (
                             <div className="cl-vessel-badge-cluster">
                               <span className="cl-vessel-badge-counter">
-                                🚢 {s.vesselTypes.length} Types:
+                                {s.vesselTypes.length} Types:
                               </span>
                               {s.vesselTypes.map((t) => {
                                 const badge = getVesselTypeBadgeColor(t);
@@ -774,6 +781,7 @@ export function ChecklistPage() {
                                     className="cl-vessel-badge specific"
                                     style={{ backgroundColor: badge.bg, color: badge.color, borderColor: badge.border }}
                                   >
+                                    <ShipIcon width={12} height={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
                                     {t}
                                   </span>
                                 );
