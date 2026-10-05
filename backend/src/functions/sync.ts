@@ -65,6 +65,9 @@ export const syncPullHandler = handler(async (req): Promise<PullResponse> => {
       changes[entity] = rows.map((row) => {
         for (const h of d.hidden ?? []) delete row[h];
         const c = camel<Record<string, unknown>>(row);
+        if ('vesselTypes' in c && !Array.isArray(c.vesselTypes)) {
+          c.vesselTypes = [];
+        }
         return { ...c, id: String(row[d.idCol]), rowVersion: Number(row.row_version) } as never;
       });
     }
@@ -83,7 +86,7 @@ const WRITABLE: Partial<Record<SyncEntity, string[]>> = {
   inspections: ['vesselId', 'vesselName', 'imo', 'vesselType', 'inspectionType', 'port', 'startDate', 'completionDate',
     'sailFromDate', 'sailFromPort', 'sailToDate', 'sailToPort', 'remoteFromDate', 'remoteToDate',
     'inspector', 'company', 'summary', 'conclusion', 'coverPhotoId'],
-  inspectionSections: ['inspectionId', 'templateSr', 'zone', 'name', 'position', 'photoOnly', 'isCustom'],
+  inspectionSections: ['inspectionId', 'templateSr', 'zone', 'name', 'position', 'photoOnly', 'isCustom', 'vesselTypes'],
   inspectionQuestions: ['inspectionSectionId', 'qid', 'ref', 'text', 'position'],
   responses: ['inspectionId', 'inspectionQuestionId', 'applicable', 'answer', 'remarks', 'correctiveAction', 'preventiveAction'],
   findings: ['inspectionId', 'inspectionSectionId', 'text', 'answer', 'correctiveAction', 'preventiveAction', 'position'],
@@ -147,9 +150,11 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   const cols = (WRITABLE[m.entity] ?? []).filter((k) => k in d);
   const exists = (await c.query(`select 1 from ${def.table} where id = $1`, [m.entityId])).rows.length > 0;
 
+  const sanitizeVal = (k: string, v: unknown) => (k === 'vesselTypes' ? (Array.isArray(v) ? v : []) : v);
+
   if (exists) {
     const sets = cols.map((k, i) => `${snake(k)} = $${i + 2}`);
-    const vals: unknown[] = [m.entityId, ...cols.map((k) => d[k])];
+    const vals: unknown[] = [m.entityId, ...cols.map((k) => sanitizeVal(k, d[k]))];
     if (m.entity === 'responses' || m.entity === 'findings') { sets.push(`updated_by = $${vals.length + 1}`); vals.push(user.id); }
     if (!sets.length) {
       return Number((await c.query(`select row_version from ${def.table} where id = $1`, [m.entityId])).rows[0].row_version);
@@ -159,7 +164,7 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   }
 
   const insertCols = ['id', ...cols.map(snake)];
-  const values: unknown[] = [m.entityId, ...cols.map((k) => d[k])];
+  const values: unknown[] = [m.entityId, ...cols.map((k) => sanitizeVal(k, d[k]))];
   const extra: Record<string, unknown> = {};
   if (m.entity === 'inspections') extra.created_by = user.id;
   if (m.entity === 'photos') {

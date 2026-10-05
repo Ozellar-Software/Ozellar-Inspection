@@ -76,6 +76,7 @@ create table if not exists template_sections (
   name        text not null,
   position    int  not null,
   photo_only  boolean not null default false,  -- Photo section: internal photo store, never printed
+  vessel_types text[] not null default '{}'::text[], -- empty = applies to all vessel types
   deleted_at  timestamptz,
   updated_at  timestamptz not null default now(),
   row_version bigint not null default nextval('sync_seq')
@@ -134,6 +135,7 @@ create table if not exists inspection_sections (
   position        int  not null,
   photo_only      boolean not null default false,
   is_custom       boolean not null default false,
+  vessel_types    text[] not null default '{}'::text[],
   updated_at      timestamptz not null default now(),
   deleted_at      timestamptz,
   row_version     bigint not null default nextval('sync_seq')

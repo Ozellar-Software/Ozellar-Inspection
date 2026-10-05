@@ -43,6 +43,17 @@ export const VESSEL_PARTICULAR_KEYS = [
 ] as const;
 export type VesselParticularKey = (typeof VESSEL_PARTICULAR_KEYS)[number];
 
+export const COMMON_VESSEL_TYPES = [
+  'Bulk Carrier',
+  'Container Ship',
+  'Oil Tanker',
+  'Chemical Tanker',
+  'Gas Carrier',
+  'General Cargo',
+  'Tug / Offshore',
+] as const;
+export type CommonVesselType = (typeof COMMON_VESSEL_TYPES)[number];
+
 export interface Inspection {
   id: string;
   vesselId: string | null;
@@ -76,6 +87,7 @@ export interface InspectionSection {
   position: number;
   photoOnly: boolean;
   isCustom: boolean;
+  vesselTypes?: string[];
 }
 
 export interface InspectionQuestion {
@@ -85,6 +97,31 @@ export interface InspectionQuestion {
   ref: string;
   text: string;
   position: number;
+}
+
+export interface TemplateSection {
+  id: string;
+  sr: number;
+  zone: string;
+  name: string;
+  position: number;
+  photoOnly: boolean;
+  vesselTypes: string[];
+  deletedAt?: string | null;
+  updatedAt?: string;
+  rowVersion?: number;
+}
+
+export interface TemplateQuestion {
+  id: string;
+  sectionId: string;
+  qid: number;
+  ref: string;
+  text: string;
+  position: number;
+  deletedAt?: string | null;
+  updatedAt?: string;
+  rowVersion?: number;
 }
 
 export interface Response {

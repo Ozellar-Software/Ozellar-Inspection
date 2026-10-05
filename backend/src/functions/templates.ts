@@ -11,30 +11,40 @@ function requireAdmin(user: User): void {
 export const templateSectionsListHandler = handler(async (req) => {
   await requireUser(req);
   const r = await pool.query(`select * from template_sections where deleted_at is null order by position`);
-  return r.rows.map((row) => camel(row));
+  return r.rows.map((row) => ({
+    ...camel(row),
+    vesselTypes: Array.isArray(row.vessel_types) ? row.vessel_types : [],
+  }));
 });
 app.http('template-sections-list', { route: 'templates/sections/list', methods: ['GET', 'OPTIONS'], authLevel: 'anonymous', handler: templateSectionsListHandler });
 
 export const templateSectionUpsertHandler = handler(async (req) => {
   const user = await requireUser(req);
   requireAdmin(user);
-  const b = await jsonBody<{ id?: string; zone?: string; name: string; photoOnly?: boolean }>(req);
+  const b = await jsonBody<{ id?: string; zone?: string; name: string; photoOnly?: boolean; vesselTypes?: string[] }>(req);
   if (!b.name?.trim()) throw fail('VALIDATION', 'Section name is required');
 
   return tx(async (c) => {
+    const vesselTypes = Array.isArray(b.vesselTypes) ? b.vesselTypes.map((v) => String(v).trim()).filter(Boolean) : [];
     if (b.id) {
       const r = await c.query(
-        `update template_sections set zone = $2, name = $3, photo_only = $4 where id = $1 and deleted_at is null returning *`,
-        [b.id, b.zone ?? '', b.name.trim(), !!b.photoOnly]);
+        `update template_sections set zone = $2, name = $3, photo_only = $4, vessel_types = $5 where id = $1 and deleted_at is null returning *`,
+        [b.id, b.zone ?? '', b.name.trim(), !!b.photoOnly, vesselTypes]);
       if (!r.rows[0]) throw fail('NOT_FOUND', 'Section not found');
-      return camel(r.rows[0]);
+      return {
+        ...camel(r.rows[0]),
+        vesselTypes: Array.isArray(r.rows[0].vessel_types) ? r.rows[0].vessel_types : [],
+      };
     }
     const sr = (await c.query(`select coalesce(max(sr), 0) + 1 as next from template_sections`)).rows[0].next as number;
     const pos = (await c.query(`select coalesce(max(position), -1) + 1 as next from template_sections where deleted_at is null`)).rows[0].next as number;
     const created = (await c.query(
-      `insert into template_sections (id, sr, zone, name, position, photo_only) values (gen_random_uuid(), $1, $2, $3, $4, $5) returning *`,
-      [sr, b.zone ?? '', b.name.trim(), pos, !!b.photoOnly])).rows[0];
-    return camel(created);
+      `insert into template_sections (id, sr, zone, name, position, photo_only, vessel_types) values (gen_random_uuid(), $1, $2, $3, $4, $5, $6) returning *`,
+      [sr, b.zone ?? '', b.name.trim(), pos, !!b.photoOnly, vesselTypes])).rows[0];
+    return {
+      ...camel(created),
+      vesselTypes: Array.isArray(created.vessel_types) ? created.vessel_types : [],
+    };
   });
 });
 app.http('template-sections-upsert', { route: 'templates/sections', methods: ['POST', 'OPTIONS'], authLevel: 'anonymous', handler: templateSectionUpsertHandler });

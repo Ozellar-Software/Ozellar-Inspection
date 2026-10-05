@@ -1,11 +1,11 @@
-import type { Inspection, InspectionQuestion, InspectionSection, InspectionType, Mutation } from '@ozellar/shared';
+import type {
+  Inspection, InspectionQuestion, InspectionSection, InspectionType, Mutation,
+  TemplateSection, TemplateQuestion,
+} from '@ozellar/shared';
 import { api } from '../api/client';
 import { db } from './db';
 
 type Synced<T> = T & { rowVersion?: number; deletedAt?: string | null };
-
-interface TemplateSectionRow { id: string; sr: number; zone: string; name: string; position: number; photoOnly: boolean }
-interface TemplateQuestionRow { id: string; sectionId: string; qid: number; ref: string; text: string; position: number }
 
 export interface NewInspectionInput {
   vesselId: string; vesselName: string; imo: string; vesselType: string;
@@ -25,18 +25,18 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
   let seq = 0;
   const stamp = () => new Date(baseTime + seq++).toISOString(); // strictly increasing so outbox order == dependency order
 
-  let templateSections = ((await db.templateSections.toArray()) as unknown as TemplateSectionRow[])
-    .filter((s) => !(s as unknown as { deletedAt?: string | null }).deletedAt)
+  let templateSections = ((await db.templateSections.toArray()) as unknown as TemplateSection[])
+    .filter((s) => !s.deletedAt)
     .sort((a, b) => a.position - b.position);
-  let templateQuestions = ((await db.templateQuestions.toArray()) as unknown as (TemplateQuestionRow & { deletedAt?: string | null })[])
+  let templateQuestions = ((await db.templateQuestions.toArray()) as unknown as TemplateQuestion[])
     .filter((q) => !q.deletedAt);
 
   // Guarantee master checklist is loaded before creating inspection
   if (templateSections.length === 0 && navigator.onLine) {
     try {
       const [serverSecs, serverQs] = await Promise.all([
-        api<TemplateSectionRow[]>('/templates/sections/list'),
-        api<TemplateQuestionRow[]>('/templates/questions/list'),
+        api<TemplateSection[]>('/templates/sections/list'),
+        api<TemplateQuestion[]>('/templates/questions/list'),
       ]);
       if (serverSecs.length) {
         await db.templateSections.bulkPut(serverSecs as unknown as Record<string, unknown> & { id: string }[]);
@@ -63,9 +63,29 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
     completionDate: null, summary: '', conclusion: '', createdBy: null,
   };
 
-  for (const ts of templateSections) {
+  const applicableSections = templateSections.filter((ts) => {
+    const types = Array.isArray(ts.vesselTypes) ? ts.vesselTypes : [];
+    if (types.length === 0) return true;
+    if (input.vesselType) {
+      const target = input.vesselType.trim().toLowerCase();
+      return types.some((t) => t.trim().toLowerCase() === target);
+    }
+    return true;
+  });
+
+  for (let idx = 0; idx < applicableSections.length; idx++) {
+    const ts = applicableSections[idx];
     const sectionId = crypto.randomUUID();
-    const sectionData = { inspectionId, templateSr: ts.sr, zone: ts.zone, name: ts.name, position: ts.position, photoOnly: ts.photoOnly ?? false, isCustom: false };
+    const sectionData = {
+      inspectionId,
+      templateSr: ts.sr,
+      zone: ts.zone,
+      name: ts.name,
+      position: idx,
+      photoOnly: ts.photoOnly ?? false,
+      isCustom: false,
+      vesselTypes: ts.vesselTypes ?? [],
+    };
     sectionRows.push({ id: sectionId, ...sectionData });
     mutations.push({ id: crypto.randomUUID(), entity: 'inspectionSections', entityId: sectionId, op: 'upsert', data: sectionData, baseVersion: null, createdAt: stamp(), attempts: 0 });
 
