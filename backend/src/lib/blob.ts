@@ -1,15 +1,24 @@
 import { DefaultAzureCredential } from '@azure/identity';
 import {
-  BlobServiceClient, BlobSASPermissions, generateBlobSASQueryParameters, type UserDelegationKey,
+  BlobServiceClient, BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential, type UserDelegationKey,
 } from '@azure/storage-blob';
 
 /**
- * Photos live in a PRIVATE container. Phones get short-lived user-delegation SAS URLs
- * (signed with the Function App's managed identity — no account keys anywhere).
+ * Photos live in a PRIVATE container. Phones and browsers get short-lived SAS URLs.
+ * When AzureWebJobsStorage has AccountKey, signs directly via StorageSharedKeyCredential.
+ * In Azure with Managed Identity, signs via user-delegation key.
  */
 const account = process.env.PHOTOS_ACCOUNT ?? '';
-const container = process.env.PHOTOS_CONTAINER ?? 'photos';
-const service = new BlobServiceClient(`https://${account}.blob.core.windows.net`, new DefaultAzureCredential());
+const container = process.env.PHOTOS_CONTAINER ?? 'ozellar-attachments';
+const connStr = process.env.AzureWebJobsStorage ?? '';
+
+const keyMatch = connStr.match(/AccountKey=([^;]+)/);
+const accountKey = process.env.PHOTOS_ACCOUNT_KEY ?? (keyMatch ? keyMatch[1] : null);
+const sharedKeyCred = account && accountKey ? new StorageSharedKeyCredential(account, accountKey) : null;
+
+const service = connStr
+  ? BlobServiceClient.fromConnectionString(connStr)
+  : new BlobServiceClient(`https://${account}.blob.core.windows.net`, new DefaultAzureCredential());
 
 let cachedKey: { key: UserDelegationKey; expires: number } | null = null;
 async function delegationKey(): Promise<UserDelegationKey> {
@@ -23,14 +32,27 @@ async function delegationKey(): Promise<UserDelegationKey> {
 }
 
 async function sasUrl(blobPath: string, perms: string, minutes: number): Promise<string> {
+  const startsOn = new Date(Date.now() - 5 * 60_000);
+  const expiresOn = new Date(Date.now() + minutes * 60_000);
+
+  if (sharedKeyCred) {
+    const sas = generateBlobSASQueryParameters({
+      containerName: container,
+      blobName: blobPath,
+      permissions: BlobSASPermissions.parse(perms),
+      startsOn,
+      expiresOn,
+    }, sharedKeyCred).toString();
+    return `https://${account}.blob.core.windows.net/${container}/${blobPath}?${sas}`;
+  }
+
   const key = await delegationKey();
   const sas = generateBlobSASQueryParameters({
     containerName: container,
     blobName: blobPath,
     permissions: BlobSASPermissions.parse(perms),
-    startsOn: new Date(Date.now() - 5 * 60_000),
-    expiresOn: new Date(Date.now() + minutes * 60_000),
-    protocol: undefined,
+    startsOn,
+    expiresOn,
   }, key, account).toString();
   return `https://${account}.blob.core.windows.net/${container}/${blobPath}?${sas}`;
 }
@@ -41,7 +63,12 @@ export const uploadUrl = (blobPath: string) => sasUrl(blobPath, 'cw', 15);
 export const readUrl = (blobPath: string) => sasUrl(blobPath, 'r', 60);
 
 export async function blobExists(blobPath: string): Promise<boolean> {
-  return service.getContainerClient(container).getBlockBlobClient(blobPath).exists();
+  try {
+    return await service.getContainerClient(container).getBlockBlobClient(blobPath).exists();
+  } catch (err) {
+    console.error('blobExists check failed', err);
+    return false;
+  }
 }
 
 export function photoBlobPath(p: { id: string; inspectionId?: string | null; vesselId?: string | null }): string {

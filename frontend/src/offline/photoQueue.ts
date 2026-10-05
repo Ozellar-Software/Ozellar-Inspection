@@ -100,11 +100,25 @@ export async function processPhotoQueue(): Promise<void> {
   }
 }
 
+const photoUrlCache = new Map<string, { url: string; expires: number }>();
+
 /** Local blob if we still have it (offline), otherwise a short-lived read URL from the API. */
 export async function photoSrc(photoId: string): Promise<string | null> {
   const local = await db.photoQueue.get(photoId);
   if (local) return URL.createObjectURL(local.blob);
+
+  const cached = photoUrlCache.get(photoId);
+  if (cached && cached.expires > Date.now()) return cached.url;
+
   if (!navigator.onLine) return null;
-  const urls = await api<Record<string, string>>('/photos/read-urls', { body: { photoIds: [photoId] } });
-  return urls[photoId] ?? null;
+  try {
+    const urls = await api<Record<string, string>>('/photos/read-urls', { body: { photoIds: [photoId] } });
+    const url = urls[photoId] ?? null;
+    if (url) {
+      photoUrlCache.set(photoId, { url, expires: Date.now() + 50 * 60_000 });
+    }
+    return url;
+  } catch {
+    return null;
+  }
 }
