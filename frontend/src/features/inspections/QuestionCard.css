@@ -1,0 +1,125 @@
+/* ── Question card (qcard) premium ──────────────────────────────── */
+.qcard {
+  margin: 0 16px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(11,33,56,0.06);
+  transition: box-shadow 0.15s ease;
+}
+.qcard.state-ok     { border-left-color: var(--ok); }
+.qcard.state-bad    { border-left-color: var(--bad); }
+.qcard.state-na     { border-left-color: var(--na); }
+.qcard.state-pending { border-left-color: #CBD3D8; }
+.qcard.extras-card  { border-left-color: #CBD3D8; }
+
+.qcard .qhead {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.qcard .qhead .ref {
+  display: inline-block;
+  font-size: 11px; font-weight: 800;
+  color: var(--accent); letter-spacing: 0.3px;
+  text-transform: uppercase; margin-bottom: 5px;
+}
+.qcard .qhead .qtext {
+  font-size: 14px; font-weight: 600;
+  color: var(--ink); line-height: 1.45;
+}
+
+.qcard .seg-label {
+  font-size: 11.5px; font-weight: 700;
+  color: var(--faint); text-transform: uppercase;
+  letter-spacing: 0.3px; margin: 12px 16px 8px;
+  display: block;
+}
+
+/* ── Pill Buttons & Row ── */
+.qcard-pill-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 16px 4px;
+}
+.qcard-pill-row.disabled {
+  opacity: 0.45;
+}
+.qcard-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  min-height: 42px;
+}
+.qcard-pill-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.qcard .observation-block,
+.qcard .corrective-preventive-block {
+  padding: 0 16px 14px;
+}
+.qcard .observation-block textarea,
+.qcard .corrective-preventive-block textarea {
+  width: 100%; border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px;
+  font-size: 14px; color: var(--ink);
+  resize: vertical; min-height: 70px;
+  background: var(--bg); font-family: var(--font);
+  transition: border-color 0.15s ease;
+}
+.qcard .observation-block textarea:focus,
+.qcard .corrective-preventive-block textarea:focus {
+  outline: none; border-color: var(--accent);
+  background: #fff;
+}
+.qcard .extras-hint { font-size: 12.5px; color: var(--muted); margin: 0 16px 10px; }
+
+/* ── Mobile responsiveness (≤ 640px) ── */
+@media (max-width: 640px) {
+  .qcard {
+    margin: 0 12px 10px;
+    border-radius: 10px;
+  }
+  .qcard .qhead {
+    padding: 12px 14px 10px;
+  }
+  .qcard .seg-label {
+    margin: 10px 14px 6px;
+    font-size: 11px;
+  }
+  .qcard-pill-row {
+    padding: 0 12px 4px;
+    gap: 6px;
+  }
+  .qcard-pill-btn {
+    padding: 8px 10px;
+    font-size: 13px;
+    min-height: 42px;
+    flex: 1 1 calc(50% - 4px);
+    justify-content: center;
+  }
+  .qcard .observation-block,
+  .qcard .corrective-preventive-block {
+    padding: 0 12px 12px;
+  }
+  .qcard .observation-block textarea,
+  .qcard .corrective-preventive-block textarea {
+    font-size: 16px !important; /* Prevent iOS zoom */
+    padding: 10px;
+  }
+}
+
+

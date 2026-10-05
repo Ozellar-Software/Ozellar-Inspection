@@ -6,3 +6,6 @@ apps/web/ios/
 apps/web/android/
 *.log
 local.settings.json
+_backups/
+_archive/
+.playwright-mcp/

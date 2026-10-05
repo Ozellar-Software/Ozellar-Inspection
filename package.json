@@ -3,13 +3,16 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": [
-    "packages/*",
-    "apps/*"
+    "shared",
+    "backend",
+    "frontend"
   ],
   "scripts": {
     "build": "npm run build -w @ozellar/shared && npm run build -w @ozellar/api && npm run build -w @ozellar/web",
     "test": "npm test -w @ozellar/shared",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:frontend": "npm run dev -w @ozellar/web",
+    "dev:backend": "npm run start -w @ozellar/api"
   },
   "engines": {
     "node": ">=20"
