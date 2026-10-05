@@ -7,6 +7,12 @@ import { requireUser } from '../lib/auth.js';
 import { photoBlobPath } from '../lib/blob.js';
 import { pool, tx, type Tx } from '../lib/db.js';
 import { camel, fail, handler, HttpError, jsonBody, snake } from '../lib/http.js';
+import {
+  createNotifications,
+  getAdmins,
+  getDirectors,
+  getTechManagers,
+} from '../lib/notifications.js';
 
 /* ------------------------------------------------------------------ PULL */
 
@@ -176,6 +182,26 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   const r = await c.query(
     `insert into ${def.table} (${insertCols.join(',')}) values (${insertCols.map((_, i) => `$${i + 1}`).join(',')}) returning row_version`,
     values);
+
+  if (m.entity === 'inspections') {
+    const vesselId = (d.vesselId as string) || null;
+    const vesselName = (d.vesselName as string) || 'Vessel';
+    const [tms, dirs, admins] = await Promise.all([
+      getTechManagers(c, vesselId),
+      getDirectors(c),
+      getAdmins(c),
+    ]);
+    await createNotifications(c, {
+      userIds: [...tms, ...dirs, ...admins],
+      excludeUserId: user.id,
+      inspectionId: m.entityId,
+      type: 'inspection_created',
+      title: 'New Inspection Initiated',
+      message: `${vesselName}: ${(d.inspectionType as string) || ''} inspection started by ${user.name || user.email}`,
+      link: `/inspections/${m.entityId}`,
+    });
+  }
+
   return Number(r.rows[0].row_version);
 }
 

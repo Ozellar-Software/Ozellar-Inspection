@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { type User } from '@ozellar/shared';
 import { ShipIcon } from '../icons';
 import { UserMenu } from './UserMenu';
+import { NotificationsMenu } from './NotificationsMenu';
 import './TopNav.css';
 
 export function TopNav() {
@@ -25,8 +26,13 @@ export function TopNav() {
           </div>
         </div>
         
-        <div className="ptn-right">
-          {me.data && <UserMenu me={me.data} />}
+        <div className="ptn-right" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {me.data && (
+            <>
+              <NotificationsMenu />
+              <UserMenu me={me.data} />
+            </>
+          )}
         </div>
       </div>
     </header>

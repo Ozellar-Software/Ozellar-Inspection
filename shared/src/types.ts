@@ -197,3 +197,22 @@ export const LIMITS = {
   photosPerPhotoSection: 100,
   passwordMinLength: 6,
 } as const;
+
+export type NotificationType =
+  | 'inspection_created'
+  | 'section_completed'
+  | 'inspection_submitted'
+  | 'inspection_approved'
+  | 'inspection_returned';
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  inspectionId: string | null;
+  type: NotificationType;
+  title: string;
+  message: string;
+  link: string;
+  read: boolean;
+  createdAt: string;
+}

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -5,7 +6,7 @@ import { can, isEditable, type Photo, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
-import { BackIcon, PlusIcon, LockIcon, CameraIcon } from '../../icons';
+import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon } from '../../icons';
 import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
@@ -74,10 +75,54 @@ export function SectionDetailPage() {
     });
   }
 
+  const [completing, setCompleting] = useState(false);
+
+  const totalQuestions = dispQuestions.length;
+  const answeredCount = dispQuestions.filter((q) => {
+    const r = byQuestion.get(q.id);
+    return r && (r.answer != null || r.applicable === false);
+  }).length;
+  const isSectionComplete = totalQuestions > 0
+    ? (answeredCount === totalQuestions)
+    : (dispSection.photoOnly ? sectionPhotos.length > 0 : false);
+
+  async function notifySectionComplete() {
+    if (!inspectionId || !sectionId || !dispSection) return;
+    const key = `notified_section_${inspectionId}_${sectionId}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    try {
+      await api('/notifications/trigger', {
+        method: 'POST',
+        body: {
+          inspectionId,
+          type: 'section_completed',
+          sectionId,
+          sectionName: dispSection.name,
+        },
+      });
+    } catch (err) {
+      console.error('Failed to notify section completion', err);
+    }
+  }
+
+  async function handleBack() {
+    if (isSectionComplete) {
+      void notifySectionComplete();
+    }
+    nav(`/inspections/${inspectionId}`);
+  }
+
+  async function handleCompleteSection() {
+    setCompleting(true);
+    await notifySectionComplete();
+    nav(`/inspections/${inspectionId}`);
+  }
+
   return (
     <>
       <div className="appbar">
-        <button className="back" aria-label="Back" onClick={() => nav(`/inspections/${inspectionId}`)}>
+        <button className="back" aria-label="Back" onClick={handleBack}>
           <BackIcon />
         </button>
         <div className="title-wrap">
@@ -192,7 +237,7 @@ export function SectionDetailPage() {
         ))}
 
         {!locked && (
-          <div style={{ margin: '4px 16px 24px' }}>
+          <div style={{ margin: '4px 16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <button
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -205,6 +250,25 @@ export function SectionDetailPage() {
             >
               <div style={{width: 20, height: 20, flexShrink: 0, display: "flex"}}><PlusIcon /></div> Add observation
             </button>
+
+            {isSectionComplete && (
+              <button
+                type="button"
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  padding: '14px', borderRadius: 12, cursor: 'pointer',
+                  border: 'none', background: '#16a34a',
+                  color: '#ffffff', fontWeight: 700, fontSize: 14,
+                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
+                  transition: 'all 0.15s ease',
+                }}
+                disabled={completing}
+                onClick={handleCompleteSection}
+              >
+                <div style={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CheckIcon /></div>
+                {completing ? 'Completing Section...' : 'Complete Section & Return'}
+              </button>
+            )}
           </div>
         )}
 

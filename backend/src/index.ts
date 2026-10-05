@@ -14,3 +14,4 @@ import './functions/templates.js';
 import './functions/approvals.js';
 import './functions/photos.js';
 import './functions/sync.js';
+import './functions/notifications.js';

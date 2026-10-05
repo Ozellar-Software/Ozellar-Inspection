@@ -270,6 +270,20 @@ create table if not exists sync_mutations (
   applied_at  timestamptz not null default now()
 );
 
+-- ---------- Notifications ----------
+create table if not exists notifications (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references users(id) on delete cascade,
+  inspection_id uuid references inspections(id) on delete cascade,
+  type          text not null,
+  title         text not null,
+  message       text not null,
+  link          text not null default '',
+  read          boolean not null default false,
+  created_at    timestamptz not null default now()
+);
+create index if not exists notifications_user_idx on notifications (user_id, read, created_at desc);
+
 -- ---------- Triggers: bump updated_at + row_version on every change ----------
 do $$
 declare t text;

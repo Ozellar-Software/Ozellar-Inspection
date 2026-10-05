@@ -7,6 +7,12 @@ import { requireUser } from '../lib/auth.js';
 import { pool, tx, type Tx } from '../lib/db.js';
 import { camel, fail, handler, jsonBody } from '../lib/http.js';
 import { sendMail } from '../lib/mail.js';
+import {
+  createNotifications,
+  getDirectors,
+  getTechManagers,
+  getVesselManagers,
+} from '../lib/notifications.js';
 
 async function loadUser(c: Tx, id: string | null | undefined): Promise<User | null> {
   if (!id) return null;
@@ -70,6 +76,48 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
       `insert into approval_events (inspection_id, action, level, actor_user_id, actor_name, actor_designation, actor_role, target_user_id, comment)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [inspectionId, r.event.action, r.event.level, actor.id, actor.name, actor.designation, actor.role, r.event.targetUserId, r.event.comment]);
+    // Notify users based on the approval action
+    let targetNotifyUserIds = [...r.notify];
+    if (r.event.action === 'submitted') {
+      const dirs = await getDirectors(c);
+      const tms = await getTechManagers(c, insp.vessel_id);
+      targetNotifyUserIds = [...targetNotifyUserIds, ...dirs, ...tms];
+    } else if (r.event.action === 'approved') {
+      const vms = await getVesselManagers(c, insp.vessel_id);
+      const tms = await getTechManagers(c, insp.vessel_id);
+      if (a.submittedBy) targetNotifyUserIds.push(a.submittedBy);
+      targetNotifyUserIds = [...targetNotifyUserIds, ...tms, ...vms];
+    } else if (r.event.action === 'rejected') {
+      const vms = await getVesselManagers(c, insp.vessel_id);
+      if (a.submittedBy) targetNotifyUserIds.push(a.submittedBy);
+      targetNotifyUserIds = [...targetNotifyUserIds, ...vms];
+    }
+
+    const notifType =
+      r.event.action === 'submitted' ? 'inspection_submitted'
+      : r.event.action === 'approved' ? 'inspection_approved'
+      : 'inspection_returned';
+
+    const notifTitle =
+      r.event.action === 'submitted' ? 'Inspection Submitted for Review'
+      : r.event.action === 'approved' ? (r.status === 'approved' ? 'Inspection Approved' : 'Technical Review Completed')
+      : 'Inspection Returned for Correction';
+
+    const notifMsg =
+      r.event.action === 'submitted' ? `${insp.vessel_name}: Inspection submitted for review by ${actor.name || actor.email}`
+      : r.event.action === 'approved' ? (r.status === 'approved' ? `${insp.vessel_name}: Inspection officially approved by ${actor.name || actor.email}` : `${insp.vessel_name}: Reviewed and endorsed by ${actor.name || actor.email}`)
+      : `${insp.vessel_name}: Returned by ${actor.name || actor.email}${r.event.comment ? ` — "${r.event.comment}"` : ''}`;
+
+    await createNotifications(c, {
+      userIds: targetNotifyUserIds,
+      excludeUserId: actor.id,
+      inspectionId,
+      type: notifType,
+      title: notifTitle,
+      message: notifMsg,
+      link: `/inspections/${inspectionId}/report`,
+    });
+
     const recipients = (await c.query(`select email from users where id = any($1)`, [r.notify])).rows.map((x: { email: string }) => x.email);
     return { r, insp, recipients };
   });
