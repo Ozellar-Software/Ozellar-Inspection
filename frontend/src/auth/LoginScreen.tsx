@@ -71,7 +71,7 @@ export function LoginScreen() {
               </div>
               <div>
                 <div className="login-wordmark">Ozellar</div>
-                <div className="login-tagline">All Right Inspection</div>
+                <div className="login-tagline">Vessel inspection</div>
               </div>
             </div>
 

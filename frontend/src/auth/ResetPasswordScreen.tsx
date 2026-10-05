@@ -31,7 +31,7 @@ export function ResetPasswordScreen({ token }: { token: string }) {
         <ShipIcon className="mark" />
         <div>
           <div className="wordmark">Ozellar</div>
-          <div className="tagline">All Right Inspection</div>
+          <div className="tagline">Vessel inspection</div>
         </div>
       </div>
 
