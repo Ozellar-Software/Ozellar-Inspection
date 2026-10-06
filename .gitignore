@@ -9,3 +9,7 @@ local.settings.json
 _backups/
 _archive/
 .playwright-mcp/
+
+# Supabase migration: raw exports and generated photo files (real customer data)
+tools/migrate-from-supabase/data/
+tools/migrate-from-supabase/out/
