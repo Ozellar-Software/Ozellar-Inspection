@@ -54,6 +54,37 @@ async function pull(): Promise<void> {
       const table = db.table_(entity);
       await table.bulkPut(rows.filter((r) => !pendingIds.has(r.id)));
     }
+
+    // Reconcile and purge local inspections deleted from server
+    if (res.activeInspectionIds) {
+      const serverSet = new Set(res.activeInspectionIds);
+      const localInspections = await db.inspections.toArray();
+      const toDelete = localInspections.filter((i) => !serverSet.has(i.id)).map((i) => i.id);
+      if (toDelete.length) {
+        console.warn('[Sync] Purging', toDelete.length, 'inspection(s) deleted on server:', toDelete);
+        await db.inspections.bulkDelete(toDelete);
+        // Clear any stale outbox items referencing these deleted inspections
+        const outboxItems = await db.outbox.toArray();
+        const toDeleteOutbox = outboxItems
+          .filter((m) => toDelete.includes(m.entityId) || (typeof m.data?.inspectionId === 'string' && toDelete.includes(m.data.inspectionId)))
+          .map((m) => m.id);
+        if (toDeleteOutbox.length) {
+          await db.outbox.bulkDelete(toDeleteOutbox);
+        }
+        for (const inspId of toDelete) {
+          const secs = await db.inspectionSections.where('inspectionId').equals(inspId).toArray();
+          const secIds = secs.map((s) => s.id);
+          await db.inspectionSections.bulkDelete(secIds);
+          for (const sId of secIds) {
+            await db.inspectionQuestions.where('inspectionSectionId').equals(sId).delete();
+          }
+          await db.responses.where('inspectionId').equals(inspId).delete();
+          await db.findings.where('inspectionId').equals(inspId).delete();
+          await db.photos.where('inspectionId').equals(inspId).delete();
+        }
+      }
+    }
+
     cursor = res.nextCursor;
     await setMeta('cursor', cursor);
     if (!res.hasMore) return;

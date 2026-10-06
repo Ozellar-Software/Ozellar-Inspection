@@ -42,4 +42,5 @@ export interface PullResponse {
   changes: Partial<Record<SyncEntity, Array<Record<string, unknown> & { id: string; rowVersion: number; deletedAt?: string | null }>>>;
   nextCursor: number;
   hasMore: boolean;
+  activeInspectionIds?: string[];
 }

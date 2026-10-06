@@ -77,8 +77,20 @@ export const syncPullHandler = handler(async (req): Promise<PullResponse> => {
         return { ...c, id: String(row[d.idCol]), rowVersion: Number(row.row_version) } as never;
       });
     }
+
+    const activeInspRes = await pool.query(
+      `select id::text from inspections where deleted_at is null ${!seesAll ? 'and vessel_id = any($1::uuid[])' : ''}`,
+      seesAll ? [] : [user.vesselIds]
+    );
+    const activeInspectionIds = activeInspRes.rows.map((r: { id: string }) => r.id);
+
     const last = idx.rows.at(-1);
-    return { changes, nextCursor: last ? Number(last.row_version) : cursor, hasMore: idx.rows.length === limit };
+    return {
+      changes,
+      nextCursor: last ? Number(last.row_version) : cursor,
+      hasMore: idx.rows.length === limit,
+      activeInspectionIds,
+    };
   });
 app.http('sync-pull', {
   route: 'sync/pull', methods: ['GET', 'OPTIONS'], authLevel: 'anonymous',
