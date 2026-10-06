@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="ozellar-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e7c86" />
+      <stop offset="100%" stop-color="#08545b" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded tile -->
+  <rect width="64" height="64" rx="14" fill="url(#ozellar-grad)" />
+  
+  <!-- Modern maritime vessel icon -->
+  <g transform="translate(8, 8) scale(2)" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1" />
+    <path d="M4 17.5 5.5 12h13l1.5 5.5a9.5 9.5 0 0 1-16 0Z" />
+    <path d="M7 12V8a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v4" />
+    <path d="M10 7V4h4v3" />
+    <line x1="12" y1="2" x2="12" y2="4" />
+  </g>
+</svg>

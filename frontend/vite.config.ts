@@ -7,9 +7,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',               // shows "New version available — tap to update"
-      includeAssets: ['icon-192.png', 'icon-512.png'],
+      includeAssets: ['favicon.svg', 'favicon.ico', 'icon-128.png', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Ozellar All Right Inspection',
+        name: 'Ozellar Maritime Inspection',
         short_name: 'Ozellar',
         description: 'Offline vessel inspection checklist and report builder.',
         start_url: '/',
