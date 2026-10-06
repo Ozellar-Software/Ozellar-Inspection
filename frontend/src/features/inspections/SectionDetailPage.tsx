@@ -10,11 +10,13 @@ import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon } from '../../icons
 import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
+import './SectionDetailPage.css';
 
 export function SectionDetailPage() {
   const nav = useNavigate();
   const { id: inspectionId, sectionId } = useParams<{ id: string; sectionId: string }>();
   const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
+  const [completing, setCompleting] = useState(false);
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);
   const section = useLiveQuery(() => (sectionId ? db.inspectionSections.get(sectionId) : undefined), [sectionId]);
@@ -75,7 +77,6 @@ export function SectionDetailPage() {
     });
   }
 
-  const [completing, setCompleting] = useState(false);
 
   const totalQuestions = dispQuestions.length;
   const answeredCount = dispQuestions.filter((q) => {
@@ -131,15 +132,11 @@ export function SectionDetailPage() {
         </div>
       </div>
 
-      <div className="page-wrap" style={{ paddingTop: 16 }}>
+      <div className="page-wrap section-detail-wrap" style={{ paddingTop: 16 }}>
 
         {/* Locked warning banner */}
         {locked && (
-          <div style={{
-            margin: '0 16px 16px', padding: '12px 16px',
-            background: 'var(--warn-tint)', border: '1px solid var(--warn)',
-            borderRadius: 10, display: 'flex', gap: 10, alignItems: 'center',
-          }}>
+          <div className="locked-banner">
             <span style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><LockIcon /></span>
             <p style={{ fontSize: 13, color: '#7A5800', margin: 0, lineHeight: 1.5 }}>
               This inspection is <strong>locked</strong> while pending approval or already approved — answers cannot be changed.
@@ -149,17 +146,7 @@ export function SectionDetailPage() {
 
         {/* Photo Section banner */}
         {dispSection.photoOnly && (
-          <div style={{
-            margin: '0 16px 14px',
-            padding: '12px 16px',
-            background: '#f0fdfa',
-            border: '1.5px solid #2dd4bf',
-            borderRadius: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            boxShadow: '0 2px 8px rgba(13,148,136,0.06)',
-          }}>
+          <div className="photo-sec-banner">
             <span style={{
               width: 32, height: 32, borderRadius: 8,
               background: '#ccfbf1', color: '#0d9488',
@@ -189,15 +176,8 @@ export function SectionDetailPage() {
         ))}
 
         {/* Section photos card */}
-        <div style={{
-          margin: '0 16px 12px', background: 'var(--surface)',
-          border: '1px solid var(--border)', borderRadius: 12,
-          overflow: 'hidden', boxShadow: '0 1px 4px rgba(11,33,56,0.06)',
-        }}>
-          <div style={{
-            padding: '14px 16px 12px', borderBottom: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', gap: 10,
-          }}>
+        <div className="section-photos-card">
+          <div className="section-photos-header">
             <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CameraIcon width={18} height={18} /></span>
             <div>
               <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>Section photos</div>
@@ -216,7 +196,7 @@ export function SectionDetailPage() {
         </div>
 
         {/* Additional findings heading */}
-        <div style={{ margin: '8px 16px 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="findings-header">
           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.5px', flex: 1 }}>
             Additional Findings
           </div>
@@ -226,7 +206,7 @@ export function SectionDetailPage() {
             </span>
           )}
         </div>
-        <p style={{ margin: '0 16px 10px', fontSize: 12.5, color: 'var(--muted)' }}>
+        <p className="findings-desc">
           {dispSection.photoOnly
             ? 'Record any specific observations, deficiencies, or findings for this photo section.'
             : 'Anything not covered by the checklist above — describe it and mark Yes/No.'}
@@ -237,31 +217,18 @@ export function SectionDetailPage() {
         ))}
 
         {!locked && (
-          <div style={{ margin: '4px 16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="detail-action-buttons">
             <button
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                padding: '14px', borderRadius: 12, cursor: 'pointer',
-                border: '1.5px dashed var(--accent)', background: 'var(--accent-tint)',
-                color: 'var(--accent-dark)', fontWeight: 700, fontSize: 14,
-                transition: 'all 0.15s ease',
-              }}
+              className="btn-add-observation"
               onClick={() => void addFinding()}
             >
-              <div style={{width: 20, height: 20, flexShrink: 0, display: "flex"}}><PlusIcon /></div> Add observation
+              <div style={{ width: 20, height: 20, flexShrink: 0, display: 'flex' }}><PlusIcon /></div> Add observation
             </button>
 
             {isSectionComplete && (
               <button
                 type="button"
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  padding: '14px', borderRadius: 12, cursor: 'pointer',
-                  border: 'none', background: '#16a34a',
-                  color: '#ffffff', fontWeight: 700, fontSize: 14,
-                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
-                  transition: 'all 0.15s ease',
-                }}
+                className="btn-complete-section"
                 disabled={completing}
                 onClick={handleCompleteSection}
               >

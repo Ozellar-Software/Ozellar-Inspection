@@ -558,38 +558,109 @@
 
 /* ── MOBILE (≤ 639px) ── */
 @media (max-width: 639px) {
-  .home-dashboard { padding: 14px 12px 40px; gap: 14px; background: #f0f2f5; }
+  .home-dashboard {
+    padding: 12px 12px 40px;
+    gap: 12px;
+    background: #f4f6f9;
+  }
 
   /* Page header */
-  .premium-page-header { flex-direction: column; align-items: stretch; gap: 10px; }
-  .page-title { font-size: 22px; letter-spacing: -0.4px; }
-  .page-subtitle { font-size: 12.5px; }
-  .header-actions { width: 100%; }
+  .premium-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 0 2px;
+  }
+  .page-title {
+    font-size: 20px;
+    letter-spacing: -0.4px;
+    font-weight: 800;
+  }
+  .page-subtitle {
+    font-size: 12px;
+    color: #64748b;
+  }
+  .header-actions {
+    width: 100%;
+  }
 
-  /* Sync widget full-width */
-  .sync-widget { width: 100%; gap: 10px; padding: 10px 12px; border-radius: 12px; }
-  .sync-widget-title { font-size: 13px; }
-  .sync-widget-sub { font-size: 11px; }
-  .sync-widget-btn { padding: 8px 14px; font-size: 12.5px; border-radius: 8px; }
+  /* Sync widget full-width, clean & compact */
+  .sync-widget {
+    width: 100%;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    box-sizing: border-box;
+  }
+  .sync-widget-title {
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .sync-widget-sub {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+  .sync-widget-btn {
+    padding: 7px 14px;
+    font-size: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
 
-  /* Controls bar — stacked pill */
+  /* Controls bar — sleek & compact */
   .controls-bar {
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 8px 10px;
     border-radius: 12px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    box-sizing: border-box;
   }
-  .ctrl-divider { display: none; }
+  .ctrl-divider {
+    display: none;
+  }
 
   /* Mode toggle — full width, equal segments */
-  .premium-mode-seg { width: 100%; }
-  .premium-mode-seg .mode-seg { width: 100%; }
-  .premium-mode-seg button { flex: 1; justify-content: center; font-size: 13px; padding: 9px 12px; }
+  .premium-mode-seg {
+    width: 100%;
+  }
+  .premium-mode-seg .mode-seg {
+    width: 100%;
+    background: #f1f5f9;
+    padding: 3px;
+    border-radius: 8px;
+    gap: 2px;
+    box-sizing: border-box;
+  }
+  .premium-mode-seg button {
+    flex: 1;
+    justify-content: center;
+    font-size: 12.5px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-weight: 600;
+  }
 
   /* Search — full width */
-  .search-wrap.premium-search { width: 100%; max-width: 100%; }
-  .premium-search input { width: 100%; border-radius: 8px; padding: 10px 36px 10px 38px; }
+  .search-wrap.premium-search {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+  }
+  .premium-search input {
+    width: 100%;
+    border-radius: 8px;
+    padding: 8px 34px 8px 34px;
+    font-size: 13px;
+    border: 1px solid #e2e8f0;
+    box-sizing: border-box;
+  }
 
   /* Filters — side by side */
   .filters-row {
@@ -597,99 +668,228 @@
     gap: 8px;
     width: 100%;
   }
-  .premium-filter-wrap { flex: 1; }
+  .premium-filter-wrap {
+    flex: 1;
+    min-width: 0;
+  }
   .premium-dropdown-trigger {
     width: 100%;
     justify-content: space-between;
     border-radius: 8px;
-    padding: 9px 12px;
-    font-size: 13px;
-    background: #f1f5f9;
+    padding: 7px 10px;
+    font-size: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    font-weight: 600;
+    box-sizing: border-box;
   }
-  .premium-dropdown-menu { width: 100%; right: auto; left: 0; }
+  .premium-dropdown-menu {
+    width: 100%;
+    right: auto;
+    left: 0;
+  }
 
   /* New Inspection — full width */
   .premium-new-btn {
     width: 100%;
     margin-left: 0;
     justify-content: center;
-    padding: 10px 16px;
+    padding: 10px 14px;
     border-radius: 10px;
     font-size: 13.5px;
+    font-weight: 700;
+    background: #0f172a;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(15,23,42,0.12);
+    min-height: 42px;
+    box-sizing: border-box;
   }
 
   /* Notices */
-  .notices-container { gap: 8px; }
-  .premium-notice { padding: 12px 14px; border-radius: 10px; }
-  .notice-card .title { font-size: 13px; }
-  .notice-row { font-size: 12.5px; }
+  .notices-container {
+    gap: 8px;
+  }
+  .premium-notice {
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+  }
+  .notice-card .title {
+    font-size: 13px;
+  }
+  .notice-row {
+    font-size: 12.5px;
+  }
 
-  /* Vessel rows — card layout stacked */
-  .inspection-list-body { gap: 10px; }
+  /* ── Vessel rows — unified executive card layout ── */
+  .inspection-list-body {
+    gap: 10px;
+  }
   .vessel-row {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    border-radius: 12px;
+    border-radius: 14px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 4px rgba(11, 33, 56, 0.04);
     min-height: auto;
     overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    box-sizing: border-box;
+  }
+  .vessel-row:active {
+    transform: scale(0.99);
   }
 
-  /* Accent becomes top bar */
+  /* Accent top line */
   .vessel-row-accent {
     height: 4px;
     width: 100%;
     order: 0;
+    flex-shrink: 0;
   }
 
+  /* Vessel info block */
   .vessel-row-info {
     order: 1;
-    padding: 14px 16px 10px;
+    padding: 12px 14px 6px;
+    gap: 4px;
   }
-  .vessel-row .vname { font-size: 15.5px; }
-  .imo-pill { font-size: 10px; padding: 2px 7px; }
-  .vessel-row-meta { font-size: 12px; gap: 8px; }
+  .vessel-row-name-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .vessel-row .vname {
+    font-size: 15.5px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.25;
+  }
+  .imo-pill {
+    font-size: 9.5px;
+    padding: 2px 6px;
+    background: #f1f5f9;
+    color: #475569;
+    font-weight: 600;
+    border-radius: 4px;
+  }
+  .vessel-row-meta {
+    font-size: 11.5px;
+    color: #64748b;
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .vmeta-item svg {
+    width: 13px;
+    height: 13px;
+    color: #94a3b8;
+  }
 
-  /* Progress — full width */
+  /* Progress — cohesive, no dividing borders */
   .vessel-row-progress {
     order: 2;
-    padding: 10px 16px 12px;
+    padding: 6px 14px 8px;
     border-left: none;
-    border-top: 1px solid #f1f5f9;
-    gap: 6px;
+    border-top: none;
+    gap: 5px;
   }
-  .vessel-progress-pct { font-size: 20px; }
-  .vessel-progress-label { font-size: 11.5px; }
-  .vessel-progress-track { height: 7px; }
+  .vessel-progress-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .vessel-progress-pct {
+    font-size: 17px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .vessel-progress-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #64748b;
+  }
+  .vessel-progress-track {
+    height: 6px;
+    background: #edf2f7;
+    border-radius: 99px;
+  }
 
-  /* Status */
+  /* Status — bottom bar */
   .vessel-row-status {
     order: 3;
-    padding: 10px 16px 14px;
+    padding: 4px 14px 12px;
     border-left: none;
-    border-top: 1px solid #f1f5f9;
+    border-top: none;
+    display: flex;
+    align-items: center;
     justify-content: flex-start;
+  }
+  .status-chip {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 20px;
   }
 
   /* Arrow — hidden on mobile */
-  .vessel-row-arrow { display: none; }
+  .vessel-row-arrow {
+    display: none;
+  }
 
   /* Empty state */
-  .empty-state { padding: 48px 16px; border-radius: 14px; }
-  .empty-ship-svg { width: 56px; height: 56px; }
-  .empty-title { font-size: 16px; }
-  .empty-sub { font-size: 13px; }
+  .empty-state {
+    padding: 40px 16px;
+    border-radius: 14px;
+  }
+  .empty-ship-svg {
+    width: 48px;
+    height: 48px;
+  }
+  .empty-title {
+    font-size: 15.5px;
+  }
+  .empty-sub {
+    font-size: 12.5px;
+  }
 }
 
 /* ── VERY SMALL PHONES (≤ 390px) ── */
 @media (max-width: 390px) {
-  .home-dashboard { padding: 12px 10px 32px; gap: 12px; }
-  .page-title { font-size: 20px; }
-  .controls-bar { padding: 8px 10px; gap: 7px; }
-  .premium-mode-seg button { padding: 8px 10px; font-size: 12px; }
-  .vessel-row-info { padding: 12px 14px 8px; }
-  .vessel-row .vname { font-size: 14.5px; }
-  .vessel-row-progress { padding: 9px 14px 11px; }
-  .vessel-row-status { padding: 9px 14px 12px; }
+  .home-dashboard {
+    padding: 10px 8px 32px;
+    gap: 10px;
+  }
+  .page-title {
+    font-size: 18.5px;
+  }
+  .page-subtitle {
+    font-size: 11.5px;
+  }
+  .controls-bar {
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .premium-mode-seg button {
+    padding: 6px 8px;
+    font-size: 11.5px;
+  }
+  .premium-dropdown-trigger {
+    padding: 6px 8px;
+    font-size: 11.5px;
+  }
+  .vessel-row-info {
+    padding: 10px 12px 4px;
+  }
+  .vessel-row .vname {
+    font-size: 14.5px;
+  }
+  .vessel-row-progress {
+    padding: 4px 12px 6px;
+  }
+  .vessel-row-status {
+    padding: 4px 12px 10px;
+  }
 }
 

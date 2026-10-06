@@ -7,6 +7,7 @@ import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { createInspection } from '../../offline/createInspection';
 import { BackIcon, WifiIcon, ShipIcon, AnchorIcon, CheckCircleIcon, WarningIcon } from '../../icons';
+import './NewInspectionPage.css';
 
 const TYPE_LABELS: Record<InspectionType, { label: string; sub: string; icon: React.ReactNode }> = {
   port:    { label: 'In Port',       sub: 'Vessel is docked at port',    icon: <AnchorIcon style={{width:24,height:24}} /> },
@@ -85,8 +86,8 @@ export function NewInspectionPage() {
           )}
 
           {/* Vessel selection */}
-          <div style={{ margin: '0 16px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 18px', boxShadow: '0 1px 4px rgba(11,33,56,0.06)' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 14 }}>
+          <div className="ni-card">
+            <div className="ni-card-header">
               Select Vessel
             </div>
             {displayVessels.length === 0 ? (
@@ -98,36 +99,27 @@ export function NewInspectionPage() {
                 </p>
               </div>
             ) : (
-              <div style={{ display: 'grid', gap: 8 }}>
+              <div className="ni-vessel-list">
                 {displayVessels.map((v) => {
                   const isSelected = vesselId === v.id;
                   return (
                     <button
                       key={v.id}
                       type="button"
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                        borderRadius: 10, textAlign: 'left', width: '100%',
-                        border: isSelected ? '2px solid var(--accent)' : '1.5px solid var(--border)',
-                        background: isSelected ? 'var(--accent-tint)' : '#fff',
-                        cursor: 'pointer', transition: 'all 0.12s ease',
-                      }}
+                      className={`ni-vessel-btn ${isSelected ? 'selected' : ''}`}
                       onClick={() => setVesselId(v.id)}
                     >
-                      <div style={{
-                        width: 38, height: 38, borderRadius: 8, flexShrink: 0,
-                        background: isSelected ? 'var(--accent)' : '#E7EBEC',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 18, transition: 'background 0.12s ease',
-                      }}><ShipIcon style={{width:24,height:24}} /></div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14.5, color: isSelected ? 'var(--accent-dark)' : 'var(--ink)' }}>{v.name}</div>
-                        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+                      <div className="ni-vessel-icon-wrap">
+                        <ShipIcon style={{ width: 22, height: 22 }} />
+                      </div>
+                      <div className="ni-vessel-details">
+                        <div className="ni-vessel-name">{v.name}</div>
+                        <div className="ni-vessel-meta">
                           {[v.imo && `IMO ${v.imo}`, v.vesselType].filter(Boolean).join(' · ')}
                         </div>
                       </div>
                       {isSelected && (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0 }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="ni-vessel-check">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       )}
@@ -139,29 +131,24 @@ export function NewInspectionPage() {
           </div>
 
           {/* Inspection type */}
-          <div style={{ margin: '0 16px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 18px', boxShadow: '0 1px 4px rgba(11,33,56,0.06)' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 14 }}>
+          <div className="ni-card">
+            <div className="ni-card-header">
               Inspection Type
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <div className="ni-type-grid">
               {(Object.keys(TYPE_LABELS) as InspectionType[]).map((t) => {
                 const { label, sub, icon } = TYPE_LABELS[t];
                 const isSelected = inspectionType === t;
                 return (
                   <button
-                    key={t} type="button"
-                    style={{
-                      padding: '14px 10px', borderRadius: 10, textAlign: 'center',
-                      border: isSelected ? '2px solid var(--accent)' : '1.5px solid var(--border)',
-                      background: isSelected ? 'var(--accent-tint)' : '#fff',
-                      cursor: 'pointer', transition: 'all 0.12s ease', display: 'flex',
-                      flexDirection: 'column', alignItems: 'center', gap: 6,
-                    }}
+                    key={t}
+                    type="button"
+                    className={`ni-type-btn ${isSelected ? 'selected' : ''}`}
                     onClick={() => setInspectionType(t)}
                   >
-                    <span style={{ fontSize: 24 }}>{icon}</span>
-                    <span style={{ fontWeight: 700, fontSize: 13, color: isSelected ? 'var(--accent-dark)' : 'var(--ink)', lineHeight: 1.2 }}>{label}</span>
-                    <span style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.3 }}>{sub}</span>
+                    <div className="ni-type-icon">{icon}</div>
+                    <span className="ni-type-label">{label}</span>
+                    <span className="ni-type-sub">{sub}</span>
                   </button>
                 );
               })}
@@ -169,10 +156,10 @@ export function NewInspectionPage() {
           </div>
 
           {/* Details */}
-          <div style={{ margin: '0 16px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 18px', boxShadow: '0 1px 4px rgba(11,33,56,0.06)', display: 'grid', gap: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Inspection Details</div>
+          <div className="ni-card">
+            <div className="ni-card-header">Inspection Details</div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="ni-form-row" style={{ marginBottom: 14 }}>
               <FieldGroup label="Port / Location">
                 <input className="auth-input" value={port} onChange={(e) => setPort(e.target.value)} placeholder="e.g. Singapore" />
               </FieldGroup>
@@ -181,7 +168,7 @@ export function NewInspectionPage() {
               </FieldGroup>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="ni-form-row">
               <FieldGroup label="Inspector name">
                 <input className="auth-input" value={inspector} onChange={(e) => setInspector(e.target.value)} placeholder="Your name" />
               </FieldGroup>
@@ -193,23 +180,22 @@ export function NewInspectionPage() {
 
           {/* Selected vessel summary */}
           {vessel && (
-            <div style={{ margin: '0 16px 14px', padding: '12px 16px', borderRadius: 10, background: 'var(--accent-tint)', border: '1px solid var(--accent)', display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div className="ni-summary-banner">
               <CheckCircleIcon width={22} height={22} style={{ color: 'var(--accent)', flexShrink: 0 }} />
               <div>
-                <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--accent-dark)' }}>{vessel.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--accent)' }}>{TYPE_LABELS[inspectionType].label} · {port || 'No port set'} · {startDate}</div>
+                <div className="ni-summary-title">{vessel.name}</div>
+                <div className="ni-summary-sub">{TYPE_LABELS[inspectionType].label} · {port || 'No port set'} · {startDate}</div>
               </div>
             </div>
           )}
 
-          <div style={{ margin: '0 16px 32px' }}>
+          <div className="ni-submit-wrap">
             <button
-              className="btn btn-primary btn-block"
+              className="ni-submit-btn"
               type="submit"
               disabled={busy || displayVessels.length === 0}
-              style={{ borderRadius: 12, minHeight: 52, fontSize: 15, letterSpacing: '0.2px' }}
             >
-              {busy ? 'Creating inspection…' : "Start Inspection"}
+              {busy ? 'Creating inspection…' : 'Start Inspection'}
             </button>
           </div>
         </form>

@@ -330,19 +330,8 @@
     padding: 0 16px;
   }
 
-  .nav-user-pill {
-    padding: 4px; /* Makes the avatar just a circle on mobile */
-    gap: 0;
-    border-radius: 50%;
-  }
-  
-  .nav-user-avatar {
-    width: 36px;
-    height: 36px;
-  }
-
-  .ptn-brand-title {
-    font-size: 17px;
+  .ptn-brand {
+    gap: 10px;
   }
 
   .ptn-logo-bg {
@@ -356,8 +345,127 @@
     height: 18px;
   }
 
+  .ptn-brand-title {
+    font-size: 16px;
+    letter-spacing: -0.3px;
+  }
+
+  .ptn-brand-sub {
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    margin-top: 1px;
+  }
+
+  .ptn-right {
+    gap: 8px !important;
+  }
+
+  .nav-user-pill {
+    padding: 4px; /* Makes the avatar just a circle on mobile */
+    gap: 0;
+    border-radius: 50%;
+  }
+  
+  .nav-user-avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
+
   .premium-dropdown {
-    width: calc(100vw - 32px);
-    right: -8px; /* Slight adjust to center relative to screen padding */
+    position: fixed;
+    top: 72px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 88px);
+    border-radius: 16px;
+    box-shadow: 0 16px 40px rgba(11, 33, 56, 0.2), 0 2px 6px rgba(11, 33, 56, 0.08);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dropdown-header {
+    padding: 16px 16px;
+    gap: 12px;
+  }
+
+  .dropdown-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+
+  .dropdown-name {
+    font-size: 15.5px;
+  }
+
+  .dropdown-email {
+    font-size: 12px;
+  }
+
+  .dropdown-role-chip {
+    font-size: 10px;
+    padding: 3px 8px;
+    margin-top: 6px;
+  }
+
+  .dropdown-body {
+    padding: 8px 10px;
+  }
+
+  .dropdown-section-title {
+    padding: 8px 12px 4px;
+    font-size: 10.5px;
+  }
+
+  .premium-dropdown-item {
+    padding: 10px 12px;
+    font-size: 13.5px;
+    gap: 10px;
+    border-radius: 8px;
+  }
+
+  .dropdown-divider {
+    margin: 8px 0;
   }
 }
+
+@media (max-width: 380px) {
+  .ptn-container {
+    padding: 0 12px;
+  }
+
+  .ptn-brand {
+    gap: 8px;
+  }
+
+  .ptn-logo-bg {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  .ptn-logo-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .ptn-brand-title {
+    font-size: 15px;
+  }
+
+  .ptn-brand-sub {
+    font-size: 8.5px;
+    letter-spacing: 0.2px;
+  }
+
+  .premium-dropdown {
+    left: 8px;
+    right: 8px;
+  }
+}
+

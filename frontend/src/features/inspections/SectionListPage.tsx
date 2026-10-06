@@ -154,7 +154,7 @@ export function SectionListPage() {
         </div>
       </div>
 
-      <div className="page-wrap" style={{ paddingTop: 20 }}>
+      <div className="page-wrap section-list-wrap" style={{ paddingTop: 20 }}>
 
         {/* ── Light Mode Top Alert Banner ── */}
         {light && (
@@ -275,22 +275,8 @@ export function SectionListPage() {
         })()}
 
         {/* ── Section header with label and add button ── */}
-        <div style={{
-          margin: '8px 16px 10px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}>
-          <div style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: light ? '#0d9488' : '#94a3b8',
-            textTransform: 'uppercase',
-            letterSpacing: '0.6px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6
-          }}>
+        <div className="section-list-header">
+          <div className="section-list-header-title" style={{ color: light ? '#0d9488' : '#94a3b8' }}>
             {light && <CameraIcon width={14} height={14} />}
             <span>{light ? `Photo Sections (${displaySections.length})` : 'Inspection Sections'}</span>
           </div>
@@ -298,22 +284,10 @@ export function SectionListPage() {
           {canAddSection && (
             <button
               type="button"
+              className="section-list-add-btn"
               onClick={() => setShowAddSection(true)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#0d9488',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '2px 6px',
-                borderRadius: 6
-              }}
             >
-              <PlusIcon width={14} height={14} /> Add Photo Section
+              <PlusIcon width={14} height={14} /> <span>Add Photo Section</span>
             </button>
           )}
         </div>
@@ -371,32 +345,27 @@ export function SectionListPage() {
                 onClick={() => nav(`/inspections/${inspectionId}/sections/${s.id}`)}
               >
                 {/* Section number or camera badge */}
-                <div style={{
-                  width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-                  background: isPhoto ? '#f0fdfa' : fillColor + '15',
-                  border: `1.5px solid ${isPhoto ? '#2dd4bf' : fillColor + '40'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontWeight: 800, fontSize: 15, color: isPhoto ? '#0d9488' : fillColor,
-                }}>
+                <div
+                  className="sec-card-badge"
+                  style={{
+                    background: isPhoto ? '#f0fdfa' : fillColor + '15',
+                    border: `1.5px solid ${isPhoto ? '#2dd4bf' : fillColor + '40'}`,
+                    color: isPhoto ? '#0d9488' : fillColor,
+                  }}
+                >
                   {isPhoto ? <CameraIcon width={18} height={18} /> : (s.position ?? idx + 1)}
                 </div>
 
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, fontSize: 14.5, color: '#0f172a' }}>{s.name}</span>
+                <div className="sec-card-content">
+                  <div className="sec-card-header-row">
+                    <span className="sec-card-name">{s.name}</span>
                     {s.zone && (
-                      <span style={{
-                        fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
-                        background: zone.bg, color: zone.text,
-                      }}>
+                      <span className="sec-card-zone" style={{ background: zone.bg, color: zone.text }}>
                         {s.zone}
                       </span>
                     )}
                     {isPhoto && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 99,
-                        background: '#ccfbf1', color: '#0f766e', letterSpacing: '0.4px',
-                      }}>
+                      <span className="sec-card-photo-pill">
                         PHOTO SECTION
                       </span>
                     )}
@@ -404,8 +373,8 @@ export function SectionListPage() {
 
                   {/* Progress bar */}
                   {isPhoto ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ flex: 1, height: 6, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden' }}>
+                    <div className="sec-card-progress-row">
+                      <div className="sec-card-progress-track">
                         <div style={{
                           height: '100%',
                           width: hasPhotos ? '100%' : '0%',
@@ -414,28 +383,17 @@ export function SectionListPage() {
                           transition: 'width 0.3s ease',
                         }} />
                       </div>
-                      <span style={{
-                        fontSize: 12,
-                        color: hasPhotos ? '#0d9488' : '#94a3b8',
-                        whiteSpace: 'nowrap',
-                        minWidth: 64,
-                        textAlign: 'right',
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        justifyContent: 'flex-end',
-                      }}>
+                      <span className="sec-card-photo-stat" style={{ color: hasPhotos ? '#0d9488' : '#94a3b8' }}>
                         <CameraIcon width={13} height={13} />
                         {pCount} photo{pCount !== 1 ? 's' : ''}
                       </span>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ flex: 1, height: 5, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden' }}>
+                    <div className="sec-card-progress-row">
+                      <div className="sec-card-progress-track">
                         <div style={{ height: '100%', width: `${pct}%`, background: fillColor, borderRadius: 99, transition: 'width 0.3s ease' }} />
                       </div>
-                      <span style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', minWidth: 54, textAlign: 'right', fontWeight: 600 }}>
+                      <span className="sec-card-progress-stat">
                         {s.done}/{s.total} · {pct}%
                       </span>
                     </div>
@@ -443,7 +401,7 @@ export function SectionListPage() {
                 </div>
 
                 {/* Chevron */}
-                <svg viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16, flexShrink: 0, transition: 'stroke 0.18s' }}>
+                <svg viewBox="0 0 24 24" className="sec-card-arrow" fill="none" stroke="#cbd5e1" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 18l6-6-6-6" />
                 </svg>
               </div>

@@ -327,6 +327,36 @@ svg:not([width]):not([class*="-svg"]) { width: 18px; height: 18px; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+@media (max-width: 640px) {
+  .appbar {
+    top: 64px !important;
+    gap: 12px;
+    padding: 0 16px;
+  }
+  .appbar .back {
+    height: 34px;
+    padding: 0 12px 0 8px;
+    font-size: 13px;
+  }
+  .appbar .title-wrap h1 {
+    font-size: 16.5px;
+  }
+}
+@media (max-width: 480px) {
+  .appbar {
+    padding: 0 12px;
+    gap: 10px;
+  }
+  .appbar .back {
+    height: 32px;
+    padding: 0 10px 0 6px;
+    font-size: 12px;
+  }
+  .appbar .title-wrap h1 {
+    font-size: 16px;
+  }
+}
+
 /* ── Question card (qcard) premium ──────────────────────────────── */
 .qcard {
   margin: 0 16px 12px;
