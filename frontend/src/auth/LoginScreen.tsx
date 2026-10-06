@@ -79,7 +79,7 @@ export function LoginScreen() {
             <div className="login-hero-mobile">
               <div className="login-hero-badge">
                 <span className="login-hero-badge-dot" />
-                Maritime Inspection Platform
+                Vessel Inspection Platform
               </div>
               <h2 className="login-hero-heading">
                 Professional vessel inspection,<br />any time, any place.

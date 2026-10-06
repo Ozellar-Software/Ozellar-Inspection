@@ -21,7 +21,7 @@ export function TopNav() {
             </div>
             <div className="ptn-brand-text">
               <span className="ptn-brand-title">Ozellar</span>
-              <span className="ptn-brand-sub">Maritime Inspection</span>
+              <span className="ptn-brand-sub">Vessel Inspection</span>
             </div>
           </div>
         </div>
