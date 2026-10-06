@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -12,7 +12,7 @@ import { syncNow } from '../../offline/sync';
 import {
   BackIcon, PlusIcon, TrashIcon, ClipboardIcon, AlertCircleIcon,
   CheckIcon, EditIcon, ChevronRightIcon, UsersIcon, ShipIcon,
-  CameraIcon, CompassIcon,
+  CameraIcon, CompassIcon, ChevronDownIcon, SearchIcon, XIcon,
 } from '../../icons';
 import './ChecklistPage.css';
 
@@ -66,6 +66,33 @@ export function ChecklistPage() {
   // Filter state
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [filterScope, setFilterScope] = useState<'applicable' | 'assignedOnly'>('applicable');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const catDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (catDropdownRef.current && !catDropdownRef.current.contains(e.target as Node)) {
+        setCategoryDropdownOpen(false);
+      }
+    }
+    if (categoryDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [categoryDropdownOpen]);
+
+  const availableVesselTypes = useMemo(() => {
+    const list: string[] = [...COMMON_VESSEL_TYPES];
+    for (const s of sections) {
+      for (const t of s.vesselTypes ?? []) {
+        if (t.trim() && !list.includes(t.trim())) {
+          list.push(t.trim());
+        }
+      }
+    }
+    return list;
+  }, [sections]);
 
   useEffect(() => {
     // Keep local IndexedDB template sections updated with the master checklist
@@ -97,7 +124,7 @@ export function ChecklistPage() {
       all: sections.length,
       universal: sections.filter((s) => !s.vesselTypes || s.vesselTypes.length === 0).length,
     };
-    for (const type of COMMON_VESSEL_TYPES) {
+    for (const type of availableVesselTypes) {
       const catLower = type.trim().toLowerCase();
       counts[type] = sections.filter((s) => {
         const isUniversal = !s.vesselTypes || s.vesselTypes.length === 0;
@@ -106,24 +133,36 @@ export function ChecklistPage() {
       }).length;
     }
     return counts;
-  }, [sections]);
+  }, [sections, availableVesselTypes]);
 
   // Filtered sections list
   const filteredSections = useMemo(() => {
-    if (selectedCategory === 'all') return sections;
+    let list = sections;
     if (selectedCategory === 'universal') {
-      return sections.filter((s) => !s.vesselTypes || s.vesselTypes.length === 0);
+      list = list.filter((s) => !s.vesselTypes || s.vesselTypes.length === 0);
+    } else if (selectedCategory !== 'all') {
+      const catLower = selectedCategory.trim().toLowerCase();
+      list = list.filter((s) => {
+        const isUniversal = !s.vesselTypes || s.vesselTypes.length === 0;
+        const isAssigned = (s.vesselTypes ?? []).some((t) => t.trim().toLowerCase() === catLower);
+        if (filterScope === 'assignedOnly') {
+          return isAssigned;
+        }
+        return isAssigned || isUniversal;
+      });
     }
-    const catLower = selectedCategory.trim().toLowerCase();
-    return sections.filter((s) => {
-      const isUniversal = !s.vesselTypes || s.vesselTypes.length === 0;
-      const isAssigned = (s.vesselTypes ?? []).some((t) => t.trim().toLowerCase() === catLower);
-      if (filterScope === 'assignedOnly') {
-        return isAssigned;
-      }
-      return isAssigned || isUniversal;
-    });
-  }, [sections, selectedCategory, filterScope]);
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.zone && s.zone.toLowerCase().includes(q)) ||
+        (s.vesselTypes && s.vesselTypes.some((t) => t.toLowerCase().includes(q)))
+      );
+    }
+
+    return list;
+  }, [sections, selectedCategory, filterScope, searchQuery]);
 
   function handleOpenAddSection() {
     const initialVesselTypes: string[] =
@@ -414,6 +453,8 @@ export function ChecklistPage() {
   }
 
   // ─── Main Sections View ───
+  const isVesselTypeActive = selectedCategory !== 'all' && selectedCategory !== 'universal';
+
   return (
     <div className="cl-page-wrap">
       <header className="cl-page-header">
@@ -443,51 +484,135 @@ export function ChecklistPage() {
         </div>
       )}
 
-      {/* Category Filter Tabs */}
+      {/* Category Filter Toolbar */}
       {!sectionForm && (
         <div className="cl-filter-container">
-          <div className="cl-category-filter-scroll">
-            <button
-              type="button"
-              className={`cl-cat-tab ${selectedCategory === 'all' ? 'active' : ''}`}
-              onClick={() => setSelectedCategory('all')}
-            >
-              <span>All Sections</span>
-              <span className="cl-cat-count">{categoryCounts.all}</span>
-            </button>
+          <div className="cl-filter-toolbar">
+            <div className="cl-filter-left">
+              {/* Quick Tab: All */}
+              <button
+                type="button"
+                className={`cl-quick-tab ${selectedCategory === 'all' ? 'active' : ''}`}
+                onClick={() => {
+                  setSelectedCategory('all');
+                  setCategoryDropdownOpen(false);
+                }}
+              >
+                <span>All Sections</span>
+                <span className="cl-tab-badge">{categoryCounts.all}</span>
+              </button>
 
-            <button
-              type="button"
-              className={`cl-cat-tab ${selectedCategory === 'universal' ? 'active' : ''}`}
-              onClick={() => setSelectedCategory('universal')}
-            >
-              <CompassIcon width={14} height={14} />
-              <span>Universal (All Vessels)</span>
-              <span className="cl-cat-count">{categoryCounts.universal}</span>
-            </button>
+              {/* Quick Tab: Universal */}
+              <button
+                type="button"
+                className={`cl-quick-tab ${selectedCategory === 'universal' ? 'active' : ''}`}
+                onClick={() => {
+                  setSelectedCategory('universal');
+                  setCategoryDropdownOpen(false);
+                }}
+                title="Sections that apply to every vessel type"
+              >
+                <CompassIcon width={14} height={14} />
+                <span>Universal</span>
+                <span className="cl-tab-badge">{categoryCounts.universal}</span>
+              </button>
 
-            {COMMON_VESSEL_TYPES.map((type) => {
-              const isAct = selectedCategory === type;
-              return (
+              {/* Vessel Category Dropdown */}
+              <div className="cl-vessel-dropdown-wrap" ref={catDropdownRef}>
                 <button
-                  key={type}
                   type="button"
-                  className={`cl-cat-tab ${isAct ? 'active' : ''}`}
-                  onClick={() => setSelectedCategory(type)}
+                  className={`cl-vessel-dropdown-btn ${isVesselTypeActive ? 'active' : ''}`}
+                  onClick={() => setCategoryDropdownOpen((prev) => !prev)}
                 >
                   <ShipIcon width={14} height={14} />
-                  <span>{type}</span>
-                  <span className="cl-cat-count">{categoryCounts[type] ?? 0}</span>
+                  <span>
+                    {isVesselTypeActive ? selectedCategory : 'Filter by Vessel Type'}
+                  </span>
+                  {isVesselTypeActive && (
+                    <span className="cl-tab-badge">{categoryCounts[selectedCategory] ?? 0}</span>
+                  )}
+                  <ChevronDownIcon width={14} height={14} className={`cl-chevron ${categoryDropdownOpen ? 'open' : ''}`} />
                 </button>
-              );
-            })}
+
+                {categoryDropdownOpen && (
+                  <div className="cl-vessel-dropdown-menu">
+                    <div className="cl-dropdown-header">Vessel Category</div>
+                    <div className="cl-dropdown-list">
+                      {availableVesselTypes.map((type) => {
+                        const isSelected = selectedCategory === type;
+                        const count = categoryCounts[type] ?? 0;
+                        return (
+                          <button
+                            key={type}
+                            type="button"
+                            className={`cl-dropdown-item ${isSelected ? 'selected' : ''}`}
+                            onClick={() => {
+                              setSelectedCategory(type);
+                              setCategoryDropdownOpen(false);
+                            }}
+                          >
+                            <div className="cl-dropdown-item-left">
+                              <ShipIcon width={14} height={14} className="cl-dropdown-ship-icon" />
+                              <span className="cl-dropdown-item-name">{type}</span>
+                            </div>
+                            <span className="cl-dropdown-item-count">{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Clear Filter if any non-'all' filter is active */}
+              {selectedCategory !== 'all' && (
+                <button
+                  type="button"
+                  className="cl-filter-clear-btn"
+                  onClick={() => {
+                    setSelectedCategory('all');
+                    setCategoryDropdownOpen(false);
+                  }}
+                  title="Clear category filter"
+                >
+                  <XIcon width={12} height={12} />
+                  <span>Reset</span>
+                </button>
+              )}
+            </div>
+
+            {/* Right: Search Box */}
+            <div className="cl-filter-right">
+              <div className="cl-search-box">
+                <SearchIcon width={14} height={14} className="cl-search-icon" />
+                <input
+                  type="text"
+                  placeholder="Search sections or zones..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="cl-search-input"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    className="cl-search-clear-btn"
+                    onClick={() => setSearchQuery('')}
+                    title="Clear search"
+                  >
+                    <XIcon width={12} height={12} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
-          {selectedCategory !== 'all' && selectedCategory !== 'universal' && (
+          {/* Subbar when a specific vessel category is active */}
+          {isVesselTypeActive && (
             <div className="cl-filter-subbar">
-              <span className="cl-filter-hint">
-                Viewing sections for <strong>{selectedCategory}</strong>:
-              </span>
+              <div className="cl-filter-hint">
+                <span className="cl-filter-hint-dot" />
+                <span>Viewing sections applicable to <strong>{selectedCategory}</strong>:</span>
+              </div>
               <div className="cl-scope-toggles">
                 <button
                   type="button"
@@ -712,6 +837,7 @@ export function ChecklistPage() {
           <div className="cl-results-count">
             {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''}
             {selectedCategory !== 'all' && ` (filtered by ${selectedCategory})`}
+            {searchQuery && ` (matching "${searchQuery}")`}
             {' · '}
             {allQuestions.length} total questions
           </div>
@@ -721,7 +847,9 @@ export function ChecklistPage() {
               <div className="cl-empty-icon"><ClipboardIcon width={48} height={48} /></div>
               <h3 className="cl-empty-title">No Sections Found</h3>
               <p className="cl-empty-desc">
-                {selectedCategory !== 'all'
+                {searchQuery
+                  ? `No sections match your search "${searchQuery}".`
+                  : selectedCategory !== 'all'
                   ? `There are no sections assigned to "${selectedCategory}". Click "Add Section" to create one.`
                   : 'Start building your inspection checklist by adding the first section above.'}
               </p>
