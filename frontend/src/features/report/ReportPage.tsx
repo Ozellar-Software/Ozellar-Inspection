@@ -125,26 +125,16 @@ interface StatTileProps {
 }
 function StatTile({ value, label, icon, accentBg, accentText }: StatTileProps) {
   return (
-    <div className="stat-tile-container" style={{
-      background: '#ffffff', border: '1px solid #e8edf2',
-      borderRadius: 16, padding: '16px 14px',
-      display: 'flex', flexDirection: 'column',
-      boxShadow: '0 2px 10px rgba(15,23,42,0.03)',
-      position: 'relative', overflow: 'hidden'
-    }}>
-      <div className="stat-tile-header" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 10,
-          background: accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: accentText
-        }}>
+    <div className="stat-tile-container">
+      <div className="stat-tile-header">
+        <div className="stat-tile-icon-box" style={{ background: accentBg, color: accentText }}>
           {icon}
         </div>
-        <div className="stat-tile-label" style={{ fontSize: 10.5, color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px', lineHeight: 1.1 }}>
+        <div className="stat-tile-label">
           {label}
         </div>
       </div>
-      <div className="stat-tile-value" style={{ fontSize: 26, fontWeight: 800, color: accentText, lineHeight: 1, paddingLeft: 2 }}>
+      <div className="stat-tile-value" style={{ color: accentText }}>
         {value}
       </div>
     </div>
@@ -349,22 +339,7 @@ export function ReportPage() {
             type="button"
             disabled={exporting}
             onClick={() => void onExportPdf()}
-            style={{
-              marginLeft: 'auto',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'linear-gradient(135deg, #0B2545 0%, #0A828A 100%)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '7px 12px',
-              fontSize: 12.5,
-              fontWeight: 700,
-              cursor: exporting ? 'not-allowed' : 'pointer',
-              boxShadow: '0 2px 6px rgba(11,37,69,0.2)',
-              whiteSpace: 'nowrap',
-            }}
+            className="report-subnav-export-btn"
             title="Download PDF Inspection Report"
           >
             {exporting ? (
@@ -374,7 +349,8 @@ export function ReportPage() {
             ) : (
               <PdfIcon />
             )}
-            <span>{exporting ? 'Generating…' : 'Download PDF'}</span>
+            <span className="report-pdf-label-full">{exporting ? 'Generating…' : 'Download PDF'}</span>
+            <span className="report-pdf-label-short">{exporting ? 'Generating…' : 'PDF'}</span>
           </button>
         )}
       </div>
@@ -488,7 +464,7 @@ export function ReportPage() {
         )}
 
         {/* ── Premium stat tiles grid ── */}
-        <div style={{ margin: '0 16px 16px' }}>
+        <div className="report-stats-section">
           <div className="stats-grid-top">
             <StatTile value={stats.totalQuestions} label="Total"
               icon={<ListIcon color="var(--accent)" />}
@@ -520,15 +496,7 @@ export function ReportPage() {
             type="button"
             disabled={exporting || !canExport}
             onClick={() => void onExportPdf()}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              background: exporting ? '#64748b' : 'linear-gradient(135deg, #0B2545 0%, #0A828A 100%)',
-              color: '#ffffff', border: 'none',
-              borderRadius: 12, padding: '14px 20px',
-              fontWeight: 700, fontSize: 14.5, cursor: (exporting || !canExport) ? 'not-allowed' : 'pointer',
-              minHeight: 50, boxShadow: exporting ? 'none' : '0 4px 14px rgba(11,37,69,0.25)',
-              letterSpacing: '0.2px', transition: 'all 0.2s ease',
-            }}
+            className="report-download-official-btn"
           >
             {exporting ? (
               <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
@@ -803,15 +771,11 @@ export function ReportPage() {
         )}
 
         {/* ── Observations list ── */}
-        <div style={{
-          fontSize: 11, fontWeight: 800, color: 'var(--faint)',
-          textTransform: 'uppercase', letterSpacing: '0.5px',
-          margin: '8px 16px 10px',
-        }}>
+        <div className="report-section-header" style={{ margin: '8px 16px 10px' }}>
           Observations ({report?.observations.length ?? 0})
         </div>
         {!report?.observations.length ? (
-          <p className="extras-hint" style={{ margin: '0 16px 16px' }}>No observations recorded.</p>
+          <p className="extras-hint report-empty-hint" style={{ margin: '0 16px 16px' }}>No observations recorded.</p>
         ) : report.observations.map((o, i) => (
           <div
             key={i}
@@ -843,9 +807,7 @@ export function ReportPage() {
         ))}
 
         {/* ── Approval history ── */}
-        <div style={{
-          fontSize: 11, fontWeight: 800, color: 'var(--faint)',
-          textTransform: 'uppercase', letterSpacing: '0.5px',
+        <div className="report-section-header" style={{
           margin: '16px 16px 10px',
           display: 'flex', alignItems: 'center', gap: 6,
         }}>
@@ -853,14 +815,14 @@ export function ReportPage() {
           Approval History & Audit Trail
         </div>
         {!history.data?.history.length ? (
-          <p className="extras-hint" style={{ margin: '0 16px 24px' }}>Not submitted yet.</p>
+          <p className="extras-hint report-empty-hint" style={{ margin: '0 16px 24px' }}>Not submitted yet.</p>
         ) : history.data.history.map((ev) => {
           const c = actionColor(ev.action);
           return (
             <div
               key={ev.id}
+              className="report-history-card"
               style={{
-                margin: '0 16px 10px',
                 background: 'var(--surface)', border: '1px solid var(--border)',
                 borderRadius: 'var(--radius)', padding: '12px 14px',
                 boxShadow: '0 1px 4px rgba(11,33,56,0.05)',
@@ -911,3 +873,5 @@ export function ReportPage() {
     </>
   );
 }
+
+

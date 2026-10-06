@@ -203,6 +203,7 @@ export function QuestionCard({ inspectionId, question, response, photos, locked 
               inspectionId={inspectionId}
               responseId={response.id}
               locked={locked}
+              title={question.ref ? `Question ${question.ref}` : 'Question Photos'}
             />
             {!locked && photos.length === 0 && (
               <div style={{

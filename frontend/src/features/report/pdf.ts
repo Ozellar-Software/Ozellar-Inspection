@@ -1,6 +1,7 @@
-import { jsPDF } from 'jspdf';
+﻿import { jsPDF } from 'jspdf';
 import { STATUS_LABELS, type ApprovalEvent, type VesselParticularKey } from '@ozellar/shared';
 import { photoSrc } from '../../offline/photoQueue';
+import brandLogoSrc from '../../assets/ozellar-marine-global-logo.gif';
 import { PARTICULAR_LABELS, PARTICULAR_GROUPS } from '../vessels/particulars';
 import type { ReportData, SectionReport, Observation } from './reportData';
 
@@ -16,10 +17,10 @@ const BOTTOM_MARGIN = 18;
 const CONTENT_W = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT; // 182 mm
 
 // Palette (RGB tuples for jsPDF)
-const NAVY: [number, number, number] = [11, 37, 69];         // #0B2545 Primary Deep Navy
-const NAVY_LIGHT: [number, number, number] = [19, 64, 116];   // #134074 Secondary Navy
-const TEAL: [number, number, number] = [10, 130, 138];        // #0A828A Maritime Teal Accent
-const TEAL_TINT: [number, number, number] = [230, 244, 245];  // #E6F4F5 Light Teal
+const NAVY: [number, number, number] = [16, 89, 53];         // #105935 Primary Dark Green
+const NAVY_LIGHT: [number, number, number] = [30, 122, 75];   // #1E7A4B Secondary Green
+const TEAL: [number, number, number] = [242, 107, 36];        // #F26B24 Accent Orange
+const TEAL_TINT: [number, number, number] = [254, 239, 230];  // #FEEFE6 Light Orange
 const SLATE_BG: [number, number, number] = [248, 250, 252];   // #F8FAFC Card Surface
 const BORDER: [number, number, number] = [226, 232, 240];     // #E2E8F0 Card Border
 const BORDER_DARK: [number, number, number] = [203, 213, 225];// #CBD5E1 Divider Rule
@@ -49,13 +50,34 @@ const INSPECTION_TYPE_LABELS: Record<string, string> = {
 };
 
 function fmtDate(ms?: number | string | null): string {
-  if (!ms) return '—';
+  if (!ms) return '-';
   const d = typeof ms === 'string' ? new Date(ms) : new Date(ms);
   if (isNaN(d.getTime())) return String(ms);
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 // ---------------------------------------------------------------------------
+async function loadAssetImage(src: string): Promise<LoadedImage | null> {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('image load failed'));
+      el.src = src;
+    });
+    if (!img.naturalWidth || !img.naturalHeight) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    return { dataUrl: canvas.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight };
+  } catch {
+    return null;
+  }
+}
+
 // High-Performance Image Loader & Optimizer
 // ---------------------------------------------------------------------------
 interface LoadedImage {
@@ -64,7 +86,8 @@ interface LoadedImage {
   h: number;
 }
 
-async function loadImage(photoId: string): Promise<LoadedImage | null> {
+async function loadImage(photoId?: string | null): Promise<LoadedImage | null> {
+  if (!photoId) return null;
   try {
     const src = await photoSrc(photoId);
     if (!src) return null;
@@ -158,13 +181,20 @@ class Doc {
     this.setTextColor(WHITE);
     this.pdf.text(title.toUpperCase(), MARGIN_LEFT + 7, this.y + 8.5);
 
+    // Calculate stat width for correct zone spacing
+    let statW = 0;
+    if (stat) {
+      this.pdf.setFont('helvetica', 'normal').setFontSize(8);
+      statW = this.pdf.getTextWidth(stat);
+    }
+
     // Right tags
     if (zone) {
+      this.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
       const zoneW = this.pdf.getTextWidth(zone.toUpperCase()) + 8;
-      const zoneX = PAGE_W - MARGIN_RIGHT - zoneW - (stat ? 38 : 0);
+      const zoneX = PAGE_W - MARGIN_RIGHT - zoneW - (stat ? statW + 6 : 0);
       this.setFill(NAVY_LIGHT);
       this.pdf.roundedRect(zoneX, this.y + 3, zoneW, 7, 1.5, 1.5, 'F');
-      this.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
       this.setTextColor([210, 235, 255]);
       this.pdf.text(zone.toUpperCase(), zoneX + 4, this.y + 7.5);
     }
@@ -193,10 +223,10 @@ class Doc {
   }
 
   statusBadge(state: 'ok' | 'bad' | 'na' | 'pending', x: number, y: number): { w: number; h: number } {
-    const config = state === 'ok' ? { ...STATUS_OK, label: 'SATISFACTORY', icon: '✓' }
+    const config = state === 'ok' ? { ...STATUS_OK, label: 'SATISFACTORY', icon: '[+]' }
       : state === 'bad' ? { ...STATUS_BAD, label: 'OBSERVATION', icon: '!' }
-      : state === 'na' ? { ...STATUS_NA, label: 'N / A', icon: '—' }
-      : { ...STATUS_PENDING, label: 'PENDING', icon: '○' };
+      : state === 'na' ? { ...STATUS_NA, label: 'N / A', icon: '-' }
+      : { ...STATUS_PENDING, label: 'PENDING', icon: '[?]' };
 
     const text = `${config.icon}  ${config.label}`;
     this.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
@@ -218,7 +248,7 @@ class Doc {
 
     this.pdf.setFont('helvetica', 'normal').setFontSize(9);
     this.setTextColor(TEXT_DARK);
-    this.pdf.text(value || '—', x + labelW, y);
+    this.pdf.text(value || '-', x + labelW, y);
   }
 }
 
@@ -228,6 +258,12 @@ class Doc {
 export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   const { inspection, vessel, sections = [], observations = [], stats, approvalHistory = [] } = data;
   const doc = new Doc();
+
+  const svgRingData = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg width="400" height="400" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ozellar-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f1592a" /><stop offset="100%" stopColor="#e04e22" /></linearGradient></defs><circle cx="50" cy="50" r="36" fill="none" stroke="url(#ozellar-grad)" strokeWidth="20" /></svg>');
+
+  const [brandLogo] = await Promise.all([
+    loadAssetImage(brandLogoSrc)
+  ]);
 
   // Compute overall stats
   const totalQuestions = stats?.totalQuestions || 0;
@@ -240,84 +276,42 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   // PAGE 1: EXECUTIVE COVER PAGE
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Top Navy Header Banner
-  doc.setFill(NAVY);
-  doc.pdf.rect(0, 0, PAGE_W, 36, 'F');
+    // Top Header Banner (Single Row)
+  doc.setFill(WHITE);
+  doc.pdf.rect(0, 0, PAGE_W, 24, 'F');
   doc.setFill(TEAL);
-  doc.pdf.rect(0, 34, PAGE_W, 2, 'F');
+  doc.pdf.rect(0, 22, PAGE_W, 2, 'F');
 
-  // Brand Titles
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
-  doc.setTextColor([180, 215, 235]);
-  doc.pdf.text('OZELLAR MARITIME FLEET SYSTEMS', MARGIN_LEFT, 14);
+  let titleX = MARGIN_LEFT;
+  if (brandLogo) {
+    const scale = 11 / brandLogo.h;
+    const lw = brandLogo.w * scale;
+    doc.pdf.addImage(brandLogo.dataUrl, 'PNG', MARGIN_LEFT, 6, lw, 11);
+    titleX += lw + 6;
+  }
 
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(16.5);
-  doc.setTextColor(WHITE);
-  doc.pdf.text('VESSEL INSPECTION & CONDITION REPORT', MARGIN_LEFT, 23);
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(13);
+  doc.setTextColor(NAVY);
+  doc.pdf.text('VESSEL INSPECTION REPORT', titleX, 11.5);
 
   doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
-  doc.setTextColor([180, 205, 225]);
-  doc.pdf.text('OFFICIAL STATUTORY & TECHNICAL AUDIT RECORD', MARGIN_LEFT, 29);
+  doc.setTextColor(TEXT_MUTED);
+  doc.pdf.text('OFFICIAL STATUTORY & TECHNICAL AUDIT RECORD', titleX, 16);
 
   // Top Right Audit Grade Pill
-  const auditPillW = 44;
-  doc.setFill(NAVY_LIGHT);
-  doc.setDraw([30, 80, 130]);
-  doc.pdf.roundedRect(PAGE_W - MARGIN_RIGHT - auditPillW, 12, auditPillW, 14, 2, 2, 'FD');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-  doc.setTextColor([220, 240, 255]);
-  doc.pdf.text('AUDIT CERTIFIED', PAGE_W - MARGIN_RIGHT - auditPillW + 6, 17.5);
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(7);
-  doc.setTextColor([170, 200, 225]);
-  doc.pdf.text(`ISSUED: ${fmtDate(inspection.startDate || new Date().toISOString())}`, PAGE_W - MARGIN_RIGHT - auditPillW + 6, 22.5);
-
-  // Hero Cover Image or Maritime Silhouette Banner
-  const heroY = 42;
-  const heroH = 74;
-  let coverImgLoaded: LoadedImage | null = null;
-  if (inspection.coverPhotoId) {
-    coverImgLoaded = await loadImage(inspection.coverPhotoId);
-  }
-
-  if (coverImgLoaded) {
-    // Render framed photo with subtle border
-    doc.roundedBox(MARGIN_LEFT, heroY, CONTENT_W, heroH, SLATE_BG, BORDER, 3);
-    const scale = Math.min(CONTENT_W / coverImgLoaded.w, heroH / coverImgLoaded.h);
-    const imgW = coverImgLoaded.w * scale;
-    const imgH = coverImgLoaded.h * scale;
-    const imgX = MARGIN_LEFT + (CONTENT_W - imgW) / 2;
-    const imgY = heroY + (heroH - imgH) / 2;
-    doc.pdf.addImage(coverImgLoaded.dataUrl, 'JPEG', imgX, imgY, imgW, imgH);
-  } else {
-    // Executive Maritime Vector Card
-    doc.roundedBox(MARGIN_LEFT, heroY, CONTENT_W, heroH, [13, 33, 56], [30, 65, 100], 3);
-
-    // Decorative inner grid / accent line
-    doc.setFill([10, 130, 138]);
-    doc.pdf.rect(MARGIN_LEFT + 10, heroY + 12, 20, 1.5, 'F');
-
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(22);
-    doc.setTextColor(WHITE);
-    doc.pdf.text((inspection.vesselName || 'VESSEL INSPECTION').toUpperCase(), MARGIN_LEFT + 10, heroY + 26);
-
-    doc.pdf.setFont('helvetica', 'normal').setFontSize(10.5);
-    doc.setTextColor([180, 225, 235]);
-    doc.pdf.text(`IMO: ${inspection.imo || 'NOT SPECIFIED'}   ·   TYPE: ${(inspection.vesselType || 'COMMERCIAL VESSEL').toUpperCase()}`, MARGIN_LEFT + 10, heroY + 36);
-
-    doc.pdf.setFont('helvetica', 'normal').setFontSize(9);
-    doc.setTextColor([150, 180, 205]);
-    doc.pdf.text(`PORT: ${inspection.port || 'NOT SET'}   ·   SURVEY DATE: ${fmtDate(inspection.startDate)}`, MARGIN_LEFT + 10, heroY + 45);
-
-    // Subtle nautical banner badge
-    doc.setFill([20, 50, 80]);
-    doc.pdf.roundedRect(MARGIN_LEFT + 10, heroY + 53, 58, 8, 2, 2, 'F');
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-    doc.setTextColor([120, 215, 225]);
-    doc.pdf.text('OFFICIAL CONDITION SURVEY', MARGIN_LEFT + 13, heroY + 58.5);
-  }
+  const auditPillW = 40;
+  doc.setFill(SLATE_BG);
+  doc.setDraw(BORDER);
+  doc.pdf.roundedRect(PAGE_W - MARGIN_RIGHT - auditPillW, 6, auditPillW, 12, 1.5, 1.5, 'FD');
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
+  doc.setTextColor(NAVY);
+  doc.pdf.text('AUDIT CERTIFIED', PAGE_W - MARGIN_RIGHT - auditPillW + 5, 10.5);
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(6.5);
+  doc.setTextColor(TEXT_FAINT);
+  doc.pdf.text(`ISSUED: ${fmtDate(inspection.startDate || new Date().toISOString())}`, PAGE_W - MARGIN_RIGHT - auditPillW + 5, 14.5);
 
   // Vessel Identity & Status Banner
-  const vcardY = heroY + heroH + 6;
+  const vcardY = 30;
   const vcardH = 22;
   doc.roundedBox(MARGIN_LEFT, vcardY, CONTENT_W, vcardH, WHITE, BORDER, 2.5);
 
@@ -332,7 +326,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
 
   doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
   doc.setTextColor(TEXT_MUTED);
-  const vMeta = [inspection.imo && `IMO ${inspection.imo}`, inspection.vesselType, vessel?.particulars?.flag && `Flag: ${vessel.particulars.flag}`].filter(Boolean).join('  ·  ');
+  const vMeta = [inspection.imo && `IMO ${inspection.imo}`, inspection.vesselType, vessel?.particulars?.flag && `Flag: ${vessel.particulars.flag}`].filter(Boolean).join('  |  ');
   doc.pdf.text(vMeta, MARGIN_LEFT + 8, vcardY + 18.5);
 
   // Right status pill
@@ -343,7 +337,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   const stColor = stState === 'ok' ? STATUS_OK : stState === 'bad' ? STATUS_BAD : STATUS_PENDING;
 
   doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
-  const stText = `●  ${statusLabel}`;
+  const stText = `*  ${statusLabel}`;
   const stW = doc.pdf.getTextWidth(stText) + 12;
   const stX = PAGE_W - MARGIN_RIGHT - stW - 8;
   doc.roundedBox(stX, vcardY + 6, stW, 8.5, stColor.bg, stColor.border, 2);
@@ -367,7 +361,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   let rowY = detailsY + 18;
   doc.kvLine('Survey Type', INSPECTION_TYPE_LABELS[inspection.inspectionType] || inspection.inspectionType, col1X, rowY, 36);
   rowY += 7.5;
-  doc.kvLine('Port / Location', inspection.port || '—', col1X, rowY, 36);
+  doc.kvLine('Port / Location', inspection.port || '-', col1X, rowY, 36);
   rowY += 7.5;
   doc.kvLine('Commenced', fmtDate(inspection.startDate), col1X, rowY, 36);
   rowY += 7.5;
@@ -376,7 +370,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   // Right Column
   const col2X = MARGIN_LEFT + 96;
   rowY = detailsY + 18;
-  doc.kvLine('Lead Surveyor', inspection.inspector || '—', col2X, rowY, 36);
+  doc.kvLine('Lead Surveyor', inspection.inspector || '-', col2X, rowY, 36);
   rowY += 7.5;
   doc.kvLine('Company', inspection.company || 'Ozellar Marine', col2X, rowY, 36);
   rowY += 7.5;
@@ -589,8 +583,16 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
     for (const qRow of s.questions) {
       const { question, response, state, photoIds } = qRow;
 
-      // Estimate card height
-      const qLines = doc.pdf.splitTextToSize(question.text, CONTENT_W - 48) as string[];
+      // Set fonts temporarily to measure widths for layout
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+      const statusStr = state === 'ok' ? '[+]  SATISFACTORY' : state === 'bad' ? '!  OBSERVATION' : state === 'na' ? '-  N / A' : '[?]  PENDING';
+      const badgeW = doc.pdf.getTextWidth(statusStr) + 8;
+      const refW = doc.pdf.getTextWidth(question.ref) + 8;
+
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(9);
+      // Ensure the question text never overlaps the tags
+      const maxTextW = CONTENT_W - refW - badgeW - 20;
+      const qLines = doc.pdf.splitTextToSize(question.text, maxTextW) as string[];
       let cardH = 12 + qLines.length * 4.2;
 
       if (response?.remarks?.trim()) {
@@ -615,7 +617,6 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
 
       // Top Question Header
       // Ref Pill: e.g. [ HULL-01 ]
-      const refW = doc.pdf.getTextWidth(question.ref) + 8;
       doc.setFill(NAVY);
       doc.pdf.roundedRect(MARGIN_LEFT + 6, cardY + 5, refW, 5.8, 1.2, 1.2, 'F');
       doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
@@ -623,7 +624,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
       doc.pdf.text(question.ref, MARGIN_LEFT + 10, cardY + 9.1);
 
       // Status Badge on Right
-      const badgeX = PAGE_W - MARGIN_RIGHT - 36;
+      const badgeX = PAGE_W - MARGIN_RIGHT - badgeW - 6;
       doc.statusBadge(state, badgeX, cardY + 5);
 
       // Question Text
@@ -631,10 +632,9 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
       doc.setTextColor(TEXT_DARK);
       let textY = cardY + 9.1;
       const textX = MARGIN_LEFT + refW + 10;
-      doc.pdf.text(qLines[0] || '', textX, textY);
-      for (let l = 1; l < qLines.length; l++) {
-        textY += 4.2;
-        doc.pdf.text(qLines[l], MARGIN_LEFT + 6, textY);
+      for (let l = 0; l < qLines.length; l++) {
+        doc.pdf.text(qLines[l], textX, textY);
+        if (l < qLines.length - 1) textY += 4.2;
       }
 
       let innerY = textY + 6;
@@ -660,7 +660,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
 
         doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
         doc.setTextColor([185, 28, 28]);
-        doc.pdf.text('⚠  DEFICIENCY / ACTION REQUIRED', MARGIN_LEFT + 12, innerY + 5);
+        doc.pdf.text('!  DEFICIENCY / ACTION REQUIRED', MARGIN_LEFT + 12, innerY + 5);
 
         doc.pdf.setFont('helvetica', 'normal').setFontSize(7.8);
         doc.setTextColor(TEXT_DARK);
@@ -692,7 +692,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
             // Caption
             doc.pdf.setFont('helvetica', 'normal').setFontSize(6.5);
             doc.setTextColor(TEXT_MUTED);
-            doc.pdf.text(`Photo ${pIdx + 1} · ${question.ref}`, px1 + 4, innerY + pH - 2);
+            doc.pdf.text(`Photo ${pIdx + 1} | ${question.ref}`, px1 + 4, innerY + pH - 2);
           }
 
           if (img2) {
@@ -705,7 +705,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
             // Caption
             doc.pdf.setFont('helvetica', 'normal').setFontSize(6.5);
             doc.setTextColor(TEXT_MUTED);
-            doc.pdf.text(`Photo ${pIdx + 2} · ${question.ref}`, px2 + 4, innerY + pH - 2);
+            doc.pdf.text(`Photo ${pIdx + 2} | ${question.ref}`, px2 + 4, innerY + pH - 2);
           }
 
           innerY += pH + 4;
@@ -724,11 +724,15 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
       doc.setTextColor(NAVY);
       doc.pdf.text('ADDITIONAL OBSERVATION / FINDING', MARGIN_LEFT + 6, doc.y + 6);
 
-      doc.statusBadge(fRow.state, PAGE_W - MARGIN_RIGHT - 36, doc.y + 4);
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+      const fStatusStr = fRow.state === 'ok' ? '[+]  SATISFACTORY' : fRow.state === 'bad' ? '!  OBSERVATION' : fRow.state === 'na' ? '-  N / A' : '[?]  PENDING';
+      const fBadgeW = doc.pdf.getTextWidth(fStatusStr) + 8;
+      const fBadgeX = PAGE_W - MARGIN_RIGHT - fBadgeW - 6;
+      doc.statusBadge(fRow.state, fBadgeX, doc.y + 4);
 
       doc.pdf.setFont('helvetica', 'normal').setFontSize(8.5);
       doc.setTextColor(TEXT_BODY);
-      doc.pdf.text(doc.pdf.splitTextToSize(fRow.finding.text || '—', CONTENT_W - 16) as string[], MARGIN_LEFT + 6, doc.y + 13);
+      doc.pdf.text(doc.pdf.splitTextToSize(fRow.finding.text || '-', CONTENT_W - 16) as string[], MARGIN_LEFT + 6, doc.y + 13);
 
       if (fRow.finding.correctiveAction) {
         doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
@@ -761,7 +765,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
     doc.y += thH;
 
     observations.forEach((obs, idx) => {
-      const descLines = doc.pdf.splitTextToSize(obs.text || obs.remarks || '—', 56) as string[];
+      const descLines = doc.pdf.splitTextToSize(obs.text || obs.remarks || '-', 56) as string[];
       const caLines = doc.pdf.splitTextToSize(obs.correctiveAction || 'Immediate remediation required', 52) as string[];
       const rH = Math.max(descLines.length, caLines.length) * 4.2 + 6;
 
@@ -836,7 +840,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   doc.roundedBox(MARGIN_LEFT + 5, sBoxY + 26, signW - 10, 7, STATUS_OK.bg, STATUS_OK.border, 1.5);
   doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
   doc.setTextColor(STATUS_OK.text);
-  doc.pdf.text('✓  SUBMITTED & VERIFIED', MARGIN_LEFT + 8, sBoxY + 30.5);
+  doc.pdf.text('[+]  SUBMITTED & VERIFIED', MARGIN_LEFT + 8, sBoxY + 30.5);
 
   // Box 2: Technical Manager
   const bx2 = MARGIN_LEFT + signW + 6;
@@ -860,7 +864,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   doc.roundedBox(bx2 + 5, sBoxY + 26, signW - 10, 7, tmSt.bg, tmSt.border, 1.5);
   doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
   doc.setTextColor(tmSt.text);
-  doc.pdf.text(tmEvent ? '✓  ENDORSED & APPROVED' : inspection.status === 'pending_tm' ? '○  AWAITING REVIEW' : '—  PENDING', bx2 + 8, sBoxY + 30.5);
+  doc.pdf.text(tmEvent ? '[+]  ENDORSED & APPROVED' : inspection.status === 'pending_tm' ? '[?]  AWAITING REVIEW' : '-  PENDING', bx2 + 8, sBoxY + 30.5);
 
   // Box 3: Managing Director
   const bx3 = MARGIN_LEFT + 2 * (signW + 6);
@@ -884,7 +888,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   doc.roundedBox(bx3 + 5, sBoxY + 26, signW - 10, 7, dirSt.bg, dirSt.border, 1.5);
   doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
   doc.setTextColor(dirSt.text);
-  doc.pdf.text(dirEvent ? '✓  FINAL SIGN-OFF' : inspection.status === 'pending_director' ? '○  AWAITING SIGN-OFF' : '—  PENDING', bx3 + 8, sBoxY + 30.5);
+  doc.pdf.text(dirEvent ? '[+]  FINAL SIGN-OFF' : inspection.status === 'pending_director' ? '[?]  AWAITING SIGN-OFF' : '-  PENDING', bx3 + 8, sBoxY + 30.5);
 
   doc.y += signH + 10;
 
@@ -897,20 +901,34 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
     doc.pdf.setPage(pNum);
 
     if (pNum >= 2) {
-      // Running Header (Pages 2+)
-      doc.setFill(TEAL);
-      doc.pdf.circle(MARGIN_LEFT + 1.2, 10.8, 1.2, 'F');
+            // Running Header (Pages 2+)
+      let rhLogoX = MARGIN_LEFT;
+
+      if (brandLogo) {
+        const scale = 6.5 / brandLogo.h;
+        const lw = brandLogo.w * scale;
+        doc.pdf.addImage(brandLogo.dataUrl, 'PNG', rhLogoX, 6, lw, 6.5);
+        rhLogoX += lw + 4;
+      }
+
+      if (!brandLogo) {
+        doc.setFill(TEAL);
+        doc.pdf.circle(MARGIN_LEFT + 1.2, 10.8, 1.2, 'F');
+        rhLogoX = MARGIN_LEFT + 4.5;
+      }
 
       doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
       doc.setTextColor(NAVY);
-      doc.pdf.text('OZELLAR FLEET SYSTEMS', MARGIN_LEFT + 4.5, 11.5);
+      doc.pdf.text('OZELLAR FLEET SYSTEMS', rhLogoX, 11.5);
+
+      const rtitleW = doc.pdf.getTextWidth('OZELLAR FLEET SYSTEMS');
 
       doc.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
       doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text(' |  VESSEL INSPECTION REPORT', MARGIN_LEFT + 44, 11.5);
+      doc.pdf.text(' |  VESSEL INSPECTION REPORT', rhLogoX + rtitleW, 11.5);
 
       // Right Header
-      const rightHead = `${inspection.vesselName || 'VESSEL'}${inspection.imo ? '  ·  IMO ' + inspection.imo : ''}`;
+      const rightHead = `${inspection.vesselName || 'VESSEL'}${inspection.imo ? '  |  IMO ' + inspection.imo : ''}`;
       doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
       doc.setTextColor(NAVY_LIGHT);
       doc.pdf.text(rightHead, PAGE_W - MARGIN_RIGHT, 11.5, { align: 'right' });
@@ -927,10 +945,10 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
 
     doc.pdf.setFont('helvetica', 'normal').setFontSize(7);
     doc.setTextColor(TEXT_MUTED);
-    doc.pdf.text('CONFIDENTIAL & PROPRIETARY  ·  OZELLAR MARINE INSPECTION PLATFORM', MARGIN_LEFT, footY + 1);
+    doc.pdf.text('CONFIDENTIAL & PROPRIETARY  |  OZELLAR MARINE INSPECTION PLATFORM', MARGIN_LEFT, footY + 1);
 
     doc.setTextColor(TEXT_FAINT);
-    doc.pdf.text(`GENERATED: ${new Date().toLocaleDateString('en-GB')}`, PAGE_W / 2, footY + 1, { align: 'center' });
+    doc.pdf.text(`GENERATED: ${new Date().toLocaleDateString('en-GB')}`, PAGE_W - MARGIN_RIGHT - 25, footY + 1, { align: 'right' });
 
     doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
     doc.setTextColor(NAVY);
@@ -939,3 +957,37 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
 
   return doc.pdf.output('blob');
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

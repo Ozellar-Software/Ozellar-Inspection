@@ -6,8 +6,9 @@ import { can, isEditable, STATUS_LABELS, type InspectionStatus, type User } from
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
-import { BackIcon, CameraIcon, PlusIcon, XIcon } from '../../icons';
+import { BackIcon, CameraIcon, PlusIcon, XIcon, DownloadIcon, WarningIcon } from '../../icons';
 import { useLightMode } from '../home/useLightMode';
+import { downloadPhotosAsZip } from './photoDownload';
 import './SectionListPage.css';
 
 // ─── Zone colour pills ────────────────────────────────────────────────────
@@ -40,6 +41,8 @@ export function SectionListPage() {
   const [addName, setAddName] = useState('');
   const [addZone, setAddZone] = useState('Exterior');
   const [isSaving, setIsSaving] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);
   const sections = useLiveQuery(
@@ -55,6 +58,9 @@ export function SectionListPage() {
     () => (inspectionId ? db.responses.where('inspectionId').equals(inspectionId).toArray() : []), [inspectionId]) ?? [];
   const photos = useLiveQuery(
     () => (inspectionId ? db.photos.where('inspectionId').equals(inspectionId).toArray() : []), [inspectionId]) ?? [];
+
+  const activePhotos = useMemo(() => photos.filter((p) => !p.deletedAt), [photos]);
+  const defectPhotos = useMemo(() => activePhotos.filter((p) => !!p.isDefect), [activePhotos]);
 
   const photosBySection = useMemo(() => {
     const map = new Map<string, number>();
@@ -116,6 +122,23 @@ export function SectionListPage() {
   const photoPct = displaySections.length ? Math.round((donePhotoSecs / displaySections.length) * 100) : 0;
 
   const canAddSection = Boolean(me.data && can(me.data, 'inspection.addSection', { inspection: displayInspection }) && isEditable(displayInspection.status));
+
+  async function handleDownloadInspectionPhotos(filter: 'all' | 'defect') {
+    try {
+      setIsDownloadingZip(true);
+      const zipName = `${displayInspection?.vesselName || 'inspection'}_${filter === 'defect' ? 'defect_photos' : 'all_photos'}`;
+      await downloadPhotosAsZip(activePhotos, {
+        zipFilename: zipName,
+        filter,
+        onProgress: (_curr, _tot, msg) => setDownloadProgress(msg),
+      });
+    } catch (err: any) {
+      alert(err.message || 'Failed to download inspection photos');
+    } finally {
+      setIsDownloadingZip(false);
+      setDownloadProgress(null);
+    }
+  }
 
   async function handleCreatePhotoSection(e: React.FormEvent) {
     e.preventDefault();
@@ -238,6 +261,60 @@ export function SectionListPage() {
             </div>
           </div>
         </div>
+
+        {/* ── Inspection Photo Download Bar ── */}
+        {activePhotos.length > 0 && (
+          <div className="inspection-photos-download-bar">
+            <div className="ipdb-info">
+              <span className="ipdb-icon-wrap">
+                <CameraIcon width={18} height={18} />
+              </span>
+              <div className="ipdb-text">
+                <span className="ipdb-title">{activePhotos.length} Inspection Photos</span>
+                <span className="ipdb-sub">
+                  {defectPhotos.length > 0 ? (
+                    <span className="ipdb-defect-highlight">
+                      {defectPhotos.length} Defect photo{defectPhotos.length > 1 ? 's' : ''} recorded
+                    </span>
+                  ) : (
+                    'All photos in good/normal condition'
+                  )}
+                </span>
+              </div>
+            </div>
+            <div className="ipdb-actions">
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => handleDownloadInspectionPhotos('all')}
+                disabled={isDownloadingZip}
+                title="Download all photos across all sections as ZIP"
+              >
+                <DownloadIcon style={{ width: 14, height: 14 }} />
+                Download All ({activePhotos.length})
+              </button>
+              {defectPhotos.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm btn-defect-download"
+                  onClick={() => handleDownloadInspectionPhotos('defect')}
+                  disabled={isDownloadingZip}
+                  title="Download only defect photos as ZIP"
+                >
+                  <WarningIcon style={{ width: 14, height: 14 }} />
+                  Download Defects ({defectPhotos.length})
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {downloadProgress && (
+          <div className="ipdb-progress-banner">
+            <div className="ivm-spinner-sm" />
+            <span>{downloadProgress}</span>
+          </div>
+        )}
 
         {/* ── Report button ── */}
         {(() => {

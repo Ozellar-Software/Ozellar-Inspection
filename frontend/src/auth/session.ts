@@ -1,9 +1,29 @@
+import type { User } from '@ozellar/shared';
+
 const TOKEN_KEY = 'oz_token';
+const USER_KEY = 'oz_user';
 const BASE = (import.meta.env.VITE_API_BASE as string) ?? '/api';
 
 type Listener = () => void;
 let listeners: Listener[] = [];
 const notify = () => listeners.forEach((l) => l());
+
+/** Cached user profile so navbar and offline mode always have the user details available. */
+export function getCachedUser(): User | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedUser(user: User | null): void {
+  try {
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    else localStorage.removeItem(USER_KEY);
+  } catch { /* storage blocked */ }
+}
 
 /** Keeps people signed in offline between app launches (same intent as the old MSAL cache). */
 export function getToken(): string | null {
@@ -54,6 +74,7 @@ export async function resetPassword(resetToken: string, password: string): Promi
  *  and clears the local Dexie sync store (vessel/inspection data is user-scoped). */
 export function logout(): void {
   setToken(null);
+  setCachedUser(null);
   // Lazy-import to avoid circular deps (main.tsx imports session.ts indirectly)
   import('../main').then(({ queryClient }) => {
     queryClient.clear();

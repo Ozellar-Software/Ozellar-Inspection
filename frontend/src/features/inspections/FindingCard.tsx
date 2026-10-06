@@ -53,7 +53,7 @@ export function FindingCard({ finding, photos, locked }: { finding: Finding; pho
 
       <div className="observation-block">
         <div className="seg-label">Photos</div>
-        <PhotoStrip photos={photos} target="finding" inspectionId={finding.inspectionId} findingId={finding.id} locked={locked} />
+        <PhotoStrip photos={photos} target="finding" inspectionId={finding.inspectionId} findingId={finding.id} locked={locked} title="Finding Photo" />
       </div>
     </div>
   );

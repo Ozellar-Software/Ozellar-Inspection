@@ -191,6 +191,7 @@ export function SectionDetailPage() {
               inspectionId={inspectionId!}
               inspectionSectionId={sectionId}
               locked={locked}
+              title={dispSection?.name || 'Section Photos'}
             />
           </div>
         </div>

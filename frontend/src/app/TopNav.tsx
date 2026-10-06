@@ -5,11 +5,22 @@ import { type User } from '@ozellar/shared';
 import { ShipIcon } from '../icons';
 import { UserMenu } from './UserMenu';
 import { NotificationsMenu } from './NotificationsMenu';
+import { getCachedUser, setCachedUser } from '../auth/session';
 import './TopNav.css';
 
 export function TopNav() {
   const nav = useNavigate();
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
+  const me = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => {
+      const user = await api<User>('/me');
+      setCachedUser(user);
+      return user;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const currentUser = me.data ?? getCachedUser();
 
   return (
     <header className="premium-top-nav">
@@ -27,10 +38,10 @@ export function TopNav() {
         </div>
         
         <div className="ptn-right" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {me.data && (
+          {currentUser && (
             <>
               <NotificationsMenu />
-              <UserMenu me={me.data} />
+              <UserMenu me={currentUser} />
             </>
           )}
         </div>

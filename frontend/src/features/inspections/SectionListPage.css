@@ -491,4 +491,159 @@
   }
 }
 
+/* ── Inspection Photos Download Bar ── */
+.inspection-photos-download-bar {
+  margin: 0 16px 16px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ipdb-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ipdb-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #16a34a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ipdb-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.ipdb-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ipdb-sub {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.ipdb-defect-highlight {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.ipdb-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-defect-download {
+  color: #dc2626 !important;
+  border-color: #fca5a5 !important;
+  background: #fef2f2 !important;
+}
+
+.btn-defect-download:hover {
+  background: #fee2e2 !important;
+}
+
+.ipdb-progress-banner {
+  margin: 0 16px 14px;
+  background: #0284c7;
+  color: #fff;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Mobile Responsive Rules for Download Bar ── */
+@media (max-width: 640px) {
+  .inspection-photos-download-bar {
+    margin: 0 12px 14px;
+    padding: 12px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    border-radius: 12px;
+  }
+
+  .ipdb-info {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .ipdb-icon-wrap {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 8px;
+  }
+
+  .ipdb-title {
+    font-size: 14px;
+  }
+
+  .ipdb-sub {
+    font-size: 12px;
+  }
+
+  .ipdb-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  .ipdb-actions .btn {
+    flex: 1;
+    min-height: 42px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 10px;
+    justify-content: center;
+    border-radius: 8px;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ipdb-actions .btn:active {
+    transform: scale(0.97);
+  }
+
+  .ipdb-progress-banner {
+    margin: 0 12px 12px;
+    padding: 10px 14px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+}
+
+@media (max-width: 380px) {
+  .ipdb-actions {
+    flex-direction: column;
+  }
+
+  .ipdb-actions .btn {
+    width: 100%;
+  }
+}
+
 

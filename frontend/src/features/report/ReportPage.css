@@ -1,6 +1,10 @@
 /* ════════════════════════════════════════════════════
-   REPORT PAGE RESPONSIVE
+   REPORT PAGE STYLES & RESPONSIVE
    ════════════════════════════════════════════════════ */
+
+.report-stats-section {
+  margin: 0 16px 16px;
+}
 
 .stats-grid-top {
   display: grid;
@@ -13,7 +17,129 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+}
+
+/* Stat Tile */
+.stat-tile-container {
+  background: #ffffff;
+  border: 1px solid #e8edf2;
+  border-radius: 16px;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stat-tile-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+
+.stat-tile-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-tile-icon-box svg {
+  width: 20px;
+  height: 20px;
+}
+
+.stat-tile-label {
+  font-size: 10.5px;
+  color: #64748b;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  line-height: 1.1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-tile-value {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+  padding-left: 2px;
+}
+
+/* Subnav Export Button */
+.report-subnav-export-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #0B2545 0%, #0A828A 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(11, 37, 69, 0.2);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.report-subnav-export-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.report-subnav-export-btn:hover:not(:disabled) {
+  opacity: 0.95;
+  transform: translateY(-1px);
+}
+
+.report-pdf-label-full {
+  display: inline;
+}
+
+.report-pdf-label-short {
+  display: none;
+}
+
+/* Official Download PDF button in stats card */
+.report-download-official-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(135deg, #0B2545 0%, #0A828A 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 20px;
+  font-weight: 700;
+  font-size: 14.5px;
+  cursor: pointer;
+  min-height: 50px;
+  box-shadow: 0 4px 14px rgba(11, 37, 69, 0.25);
+  letter-spacing: 0.2px;
+  transition: all 0.2s ease;
+}
+
+.report-download-official-btn:disabled {
+  background: #64748b !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
 }
 
 /* Premium Card Styles used in ReportPage */
@@ -23,7 +149,7 @@
   border: 1px solid #e8edf2;
   border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 2px 10px rgba(15,23,42,0.03);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
 }
 
 .premium-report-title {
@@ -44,7 +170,7 @@
   border: 1px solid #e8edf2;
   border-radius: 16px;
   padding: 18px 20px;
-  box-shadow: 0 2px 10px rgba(15,23,42,0.03);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
 }
 
 .stepper-title {
@@ -111,14 +237,14 @@
   background: #0d9488;
   border-color: #0d9488;
   color: #ffffff;
-  box-shadow: 0 0 0 4px rgba(13,148,136,0.15);
+  box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.15);
 }
 
 .stepper-node.returned .stepper-circle {
   background: #ef4444;
   border-color: #ef4444;
   color: #ffffff;
-  box-shadow: 0 0 0 4px rgba(239,68,68,0.15);
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
 }
 
 .stepper-label {
@@ -159,7 +285,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 1px 4px rgba(15,23,42,0.04);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
 }
 
 .locked-banner.info {
@@ -201,115 +327,241 @@
   opacity: 0.9;
 }
 
-@media (max-width: 900px) {
-  .stats-grid-top, .stats-grid-bottom {
-    gap: 8px;
-  }
-}
-
-@media (max-width: 640px) {
-  /* Cards & Spacing */
-  .premium-report-card,
-  .stepper-card,
-  .locked-banner {
-    margin: 0 12px 12px !important;
-    padding: 16px 14px !important;
-    border-radius: 14px !important;
-  }
-
-  /* Stepper */
-  .stepper-card {
-    padding: 14px 6px 16px !important;
-  }
-  .stepper-track::before {
-    top: 12px;
-  }
-  .stepper-circle {
-    width: 24px;
-    height: 24px;
-    font-size: 11px;
-    margin-bottom: 6px;
-  }
-  .stepper-label {
-    font-size: 9.5px;
-    line-height: 1.25;
-  }
-  .stepper-sub {
-    display: none;
-  }
-
-  /* Grid Layouts */
-  .stats-grid-top {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-  .stats-grid-bottom {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-  }
-
-  .stat-tile-container {
-    padding: 12px 10px !important;
-  }
-  .stat-tile-header {
-    flex-direction: column !important;
-    gap: 6px !important;
-    margin-bottom: 8px !important;
-  }
-  .stat-tile-label {
-    font-size: 10px !important;
-    text-align: center;
-  }
-  .stat-tile-value {
-    text-align: center;
-    padding-left: 0 !important;
-  }
-
-  /* Inputs — prevent iOS auto-zoom */
-  .premium-report-card textarea,
-  .premium-report-card select,
-  .premium-report-card input,
-  .qcard textarea {
-    font-size: 16px !important;
-    padding: 11px 12px !important;
-    border-radius: 10px !important;
-  }
-
-  /* Buttons — finger touch targets */
-  .premium-report-card button {
-    min-height: 48px !important;
-    font-size: 14px !important;
-  }
-
-  /* Locked Banners */
-  .locked-banner {
-    padding: 12px 14px !important;
-    gap: 10px;
-  }
-  .locked-banner-icon {
-    font-size: 18px;
-  }
-  .locked-banner-content {
-    font-size: 12.5px;
-  }
+/* Section headers, Observations, History */
+.report-section-header {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .observation-row-card {
   margin: 0 16px 10px;
 }
 
-@media (max-width: 400px) {
-  .stats-grid-bottom {
-    grid-template-columns: repeat(1, 1fr);
-  }
-  .stepper-label {
-    font-size: 9px;
+.report-history-card {
+  margin: 0 16px 10px;
+}
+
+.report-empty-hint {
+  margin: 0 16px 16px;
+}
+
+/* ════════════════════════════════════════════════════
+   RESPONSIVE (TABLET & DESKTOP ADJUSTMENTS)
+   ════════════════════════════════════════════════════ */
+
+@media (max-width: 900px) {
+  .stats-grid-top, .stats-grid-bottom {
+    gap: 8px;
   }
 }
+
+/* ════════════════════════════════════════════════════
+   MOBILE MEDIA QUERY (<= 640px)
+   ════════════════════════════════════════════════════ */
 
 @media (max-width: 640px) {
-  .observation-row-card {
-    margin: 0 12px 10px !important;
+  /* Subnav Export Button on Mobile */
+  .report-subnav-export-btn {
+    padding: 6px 9px !important;
+    font-size: 11.5px !important;
+    gap: 4px !important;
+  }
+  .report-subnav-export-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  .report-pdf-label-full {
+    display: none !important;
+  }
+  .report-pdf-label-short {
+    display: inline !important;
+  }
+
+  /* Cards & Section Spacing */
+  .report-stats-section {
+    margin: 0 12px 12px !important;
+  }
+  .premium-report-card,
+  .stepper-card,
+  .locked-banner {
+    margin: 0 12px 12px !important;
+    padding: 14px 12px !important;
+    border-radius: 14px !important;
+  }
+  .report-section-header {
+    margin: 12px 12px 8px !important;
+    font-size: 10px !important;
+  }
+  .observation-row-card,
+  .report-history-card {
+    margin: 0 12px 8px !important;
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+  }
+  .report-empty-hint {
+    margin: 0 12px 12px !important;
+  }
+
+  /* Stepper Card on Mobile */
+  .stepper-card {
+    padding: 12px 6px 14px !important;
+  }
+  .stepper-title {
+    font-size: 10px !important;
+    margin-bottom: 12px !important;
+    letter-spacing: 0.5px !important;
+  }
+  .stepper-track::before {
+    top: 11px !important;
+  }
+  .stepper-circle {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 10px !important;
+    margin-bottom: 5px !important;
+  }
+  .stepper-circle svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+  .stepper-label {
+    font-size: 9px !important;
+    line-height: 1.15 !important;
+  }
+  .stepper-sub {
+    display: none !important;
+  }
+
+  /* Stat Grids on Mobile */
+  .stats-grid-top {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+    margin-bottom: 8px !important;
+  }
+  .stats-grid-bottom {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+    margin-bottom: 12px !important;
+  }
+
+  /* Compact Horizontal-Header Stat Tiles */
+  .stat-tile-container {
+    padding: 9px 8px !important;
+    border-radius: 12px !important;
+    min-height: 58px !important;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04) !important;
+    justify-content: space-between;
+  }
+  .stat-tile-header {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    margin-bottom: 3px !important;
+  }
+  .stat-tile-icon-box {
+    width: 20px !important;
+    height: 20px !important;
+    border-radius: 6px !important;
+  }
+  .stat-tile-icon-box svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+  .stat-tile-label {
+    font-size: 9px !important;
+    letter-spacing: 0.2px !important;
+    text-align: left !important;
+    line-height: 1.05 !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+  }
+  .stat-tile-value {
+    font-size: 20px !important;
+    font-weight: 800 !important;
+    text-align: left !important;
+    line-height: 1 !important;
+    padding-left: 2px !important;
+  }
+
+  /* Official Download Button inside stats */
+  .report-download-official-btn {
+    padding: 11px 14px !important;
+    min-height: 44px !important;
+    font-size: 13.5px !important;
+    border-radius: 10px !important;
+    gap: 8px !important;
+  }
+  .report-download-official-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  /* Form Inputs (prevent iOS auto-zoom) */
+  .premium-report-card textarea,
+  .premium-report-card select,
+  .premium-report-card input,
+  .qcard textarea {
+    font-size: 16px !important;
+    padding: 10px 12px !important;
+    border-radius: 8px !important;
+  }
+
+  /* Buttons on mobile */
+  .premium-report-card button {
+    min-height: 44px !important;
+    font-size: 14px !important;
+  }
+
+  /* Locked Banners */
+  .locked-banner {
+    padding: 11px 12px !important;
+    gap: 10px;
+  }
+  .locked-banner-icon {
+    font-size: 16px;
+  }
+  .locked-banner-content {
+    font-size: 12px;
   }
 }
 
+/* ════════════════════════════════════════════════════
+   EXTRA-SMALL MOBILE SCREENS (<= 360px)
+   ════════════════════════════════════════════════════ */
+
+@media (max-width: 360px) {
+  .stats-grid-top, .stats-grid-bottom {
+    gap: 6px !important;
+  }
+  .stat-tile-container {
+    padding: 7px 6px !important;
+    min-height: 52px !important;
+  }
+  .stat-tile-icon-box {
+    width: 18px !important;
+    height: 18px !important;
+    border-radius: 5px !important;
+  }
+  .stat-tile-icon-box svg {
+    width: 10px !important;
+    height: 10px !important;
+  }
+  .stat-tile-label {
+    font-size: 8px !important;
+  }
+  .stat-tile-value {
+    font-size: 17px !important;
+  }
+  .stepper-circle {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 9px !important;
+  }
+  .stepper-label {
+    font-size: 8.5px !important;
+  }
+}

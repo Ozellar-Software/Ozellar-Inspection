@@ -1,0 +1,189 @@
+/* ── PhotoStrip Container & Header ── */
+.photostrip-wrap {
+  margin-top: 6px;
+}
+
+.photostrip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.photostrip-count {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.photostrip-defect-pill {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.photostrip-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.photostrip-btn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.photostrip-btn-link:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.photostrip-btn-link.defect-btn {
+  color: #dc2626;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.photostrip-btn-link.defect-btn:hover {
+  background: #fee2e2;
+}
+
+/* ══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE RULES (Photo Section & PhotoStrip)
+   ══════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* Header: Stack count row and button actions row */
+  .photostrip-header {
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 10px;
+    gap: 8px;
+  }
+
+  .photostrip-count {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .photostrip-defect-pill {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+  }
+
+  /* Actions Toolbar: Equal width 3-button or 2-button grid */
+  .photostrip-actions {
+    display: flex;
+    width: 100%;
+    gap: 6px;
+  }
+
+  .photostrip-btn-link {
+    flex: 1;
+    min-height: 36px;
+    padding: 6px 4px;
+    font-size: 12px;
+    font-weight: 700;
+    justify-content: center;
+    border-radius: 8px;
+    text-align: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .photostrip-btn-link:active {
+    transform: scale(0.97);
+  }
+
+  /* Thumbnails Grid: 4 symmetrical columns filling full card width */
+  .photostrip-wrap .thumb-row {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 8px !important;
+    margin-top: 8px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .photostrip-wrap .thumb {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 1 !important;
+    border-radius: 8px !important;
+    position: relative !important;
+  }
+
+  .photostrip-wrap .thumb .del {
+    width: 22px !important;
+    height: 22px !important;
+    top: 3px !important;
+    right: 3px !important;
+  }
+
+  .photostrip-wrap .thumb .del svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+
+  .photostrip-wrap .thumb.defect::before {
+    font-size: 8.5px !important;
+    line-height: 14px !important;
+    letter-spacing: 0.05em !important;
+  }
+
+  /* Action buttons: "Take photo" and "Upload photos" */
+  .photostrip-wrap .photo-btns {
+    margin-top: 10px;
+    gap: 8px;
+    display: flex;
+    width: 100%;
+  }
+
+  .photostrip-wrap .photo-btns .btn {
+    flex: 1;
+    min-height: 42px;
+    font-size: 13px;
+    font-weight: 700;
+    justify-content: center;
+    border-radius: 8px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .photostrip-wrap .photo-btns .btn:active {
+    transform: scale(0.98);
+  }
+}
+
+/* Extra small mobile (<360px) */
+@media (max-width: 360px) {
+  .photostrip-wrap .thumb-row {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+
+  .photostrip-btn-link {
+    font-size: 11px;
+    padding: 5px 2px;
+  }
+}

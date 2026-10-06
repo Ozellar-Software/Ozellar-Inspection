@@ -122,3 +122,43 @@ export async function photoSrc(photoId: string): Promise<string | null> {
     return null;
   }
 }
+
+/** Batch resolve photo URLs for high performance (uses 100-item chunks and cache). */
+export async function getPhotoUrls(photoIds: string[]): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  const missing: string[] = [];
+
+  for (const id of photoIds) {
+    const local = await db.photoQueue.get(id);
+    if (local) {
+      result[id] = URL.createObjectURL(local.blob);
+      continue;
+    }
+    const cached = photoUrlCache.get(id);
+    if (cached && cached.expires > Date.now()) {
+      result[id] = cached.url;
+      continue;
+    }
+    missing.push(id);
+  }
+
+  if (missing.length > 0 && navigator.onLine) {
+    for (let i = 0; i < missing.length; i += 100) {
+      const chunk = missing.slice(i, i + 100);
+      try {
+        const fetched = await api<Record<string, string>>('/photos/read-urls', { body: { photoIds: chunk } });
+        for (const [id, url] of Object.entries(fetched)) {
+          if (url) {
+            photoUrlCache.set(id, { url, expires: Date.now() + 50 * 60_000 });
+            result[id] = url;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to batch fetch photo urls', err);
+      }
+    }
+  }
+
+  return result;
+}
+

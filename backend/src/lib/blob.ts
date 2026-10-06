@@ -11,7 +11,7 @@ import {
  *  3. else PHOTOS_ACCOUNT + the Function App's managed identity -> user-delegation SAS (no keys anywhere; the Azure setup).
  * A value that is empty or still a "<placeholder>" counts as not set.
  */
-const container = process.env.PHOTOS_CONTAINER ?? 'ozellar-attachments';
+const container = process.env.PHOTOS_CONTAINER ?? 'photos';
 const isSet = (v?: string) => !!v && v.trim() !== '' && !v.trim().startsWith('<');
 
 const parseConn = (conn: string): Record<string, string> =>

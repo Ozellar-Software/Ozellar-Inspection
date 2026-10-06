@@ -1,0 +1,625 @@
+/* ── Fullscreen Overlay ── */
+.ivm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(10, 15, 26, 0.94);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  animation: ivmFadeIn 0.2s ease-out;
+}
+
+@keyframes ivmFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ivm-modal {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Top Bar ── */
+.ivm-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.75) 0%, transparent 100%);
+  z-index: 10;
+  gap: 12px;
+}
+
+.ivm-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ivm-counter {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 4px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+}
+
+.ivm-title-label {
+  font-size: 13px;
+  color: #cbd5e1;
+  font-weight: 600;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ivm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.ivm-badge.normal {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.ivm-badge.defect {
+  background: rgba(239, 68, 68, 0.25);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  animation: ivmPulse 2s infinite;
+}
+
+@keyframes ivmPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.ivm-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ivm-btn-toggle {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.ivm-btn-toggle:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.ivm-btn-toggle.is-defect {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+
+.ivm-btn-toggle.is-defect:hover {
+  background: rgba(239, 68, 68, 0.35);
+}
+
+.ivm-icon-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.ivm-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ── Center Stage & Arrow Navigation ── */
+.ivm-stage {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.ivm-img-wrapper {
+  max-width: 90vw;
+  max-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ivm-image {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  transition: transform 0.2s ease;
+}
+
+.ivm-image.has-defect-glow {
+  box-shadow: 0 0 0 3px #ef4444, 0 10px 40px rgba(239, 68, 68, 0.3);
+}
+
+.ivm-loading-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.ivm-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: ivmSpin 0.8s linear infinite;
+}
+
+.ivm-spinner-sm {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: ivmSpin 0.8s linear infinite;
+}
+
+@keyframes ivmSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Navigation Arrow Marks (Left & Right) */
+.ivm-arrow-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 20;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.ivm-arrow-btn:hover {
+  background: rgba(30, 41, 59, 0.95);
+  transform: translateY(-50%) scale(1.08);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.ivm-arrow-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.ivm-arrow-btn.prev {
+  left: 20px;
+}
+
+.ivm-arrow-btn.next {
+  right: 20px;
+}
+
+/* ── Progress Notification ── */
+.ivm-progress-banner {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0284c7;
+  color: #fff;
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+  animation: ivmFadeIn 0.2s ease-out;
+}
+
+/* ── Bottom Action Toolbar ── */
+.ivm-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.85) 0%, transparent 100%);
+  z-index: 10;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ivm-download-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ivm-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.18s ease;
+}
+
+.ivm-action-btn.primary {
+  background: #0284c7;
+  color: #fff;
+}
+
+.ivm-action-btn.primary:hover:not(:disabled) {
+  background: #0369a1;
+}
+
+.ivm-action-btn.secondary {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f1f5f9;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.ivm-action-btn.secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.ivm-action-btn.defect-btn {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.ivm-action-btn.defect-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.35);
+  color: #fff;
+}
+
+.ivm-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ivm-delete-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.ivm-delete-btn:hover {
+  background: #ef4444;
+  color: #fff;
+}
+
+/* ── Filmstrip Carousel ── */
+.ivm-filmstrip {
+  display: flex;
+  gap: 8px;
+  padding: 8px 20px 14px;
+  overflow-x: auto;
+  justify-content: flex-start;
+  align-items: center;
+  z-index: 10;
+  max-width: 100vw;
+  box-sizing: border-box;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.ivm-filmstrip::-webkit-scrollbar {
+  height: 5px;
+}
+
+.ivm-filmstrip::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.ivm-filmstrip::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 3px;
+}
+
+.ivm-filmstrip::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.ivm-thumb {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  flex: none;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: all 0.18s ease;
+  background: #1e293b;
+}
+
+.ivm-thumb:hover {
+  opacity: 0.85;
+}
+
+.ivm-thumb.active {
+  opacity: 1;
+  border-color: #38bdf8;
+  transform: scale(1.06);
+}
+
+.ivm-thumb.defect {
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+.ivm-thumb.active.defect {
+  border-color: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.ivm-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ivm-thumb-empty {
+  width: 100%;
+  height: 100%;
+  background: #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ivm-thumb-empty::after {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: ivmThumbSpin 0.8s linear infinite;
+}
+
+@keyframes ivmThumbSpin {
+  to { transform: rotate(360deg); }
+}
+
+.ivm-thumb-def-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
+}
+
+/* ══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE RULES (ImageViewerModal)
+   ══════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* Safe-area insets on topbar */
+  .ivm-topbar {
+    padding: max(10px, env(safe-area-inset-top)) 12px 10px 12px;
+    gap: 8px;
+  }
+
+  .ivm-meta {
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ivm-counter {
+    font-size: 11.5px;
+    padding: 3px 8px;
+  }
+
+  .ivm-title-label {
+    display: none; /* Hide long title to give room to badge and actions on small screens */
+  }
+
+  .ivm-badge {
+    font-size: 10.5px;
+    padding: 3px 7px;
+  }
+
+  .ivm-actions {
+    gap: 6px;
+  }
+
+  .ivm-btn-toggle {
+    font-size: 11px;
+    padding: 5px 8px;
+    min-height: 34px;
+    border-radius: 6px;
+  }
+
+  .ivm-icon-btn.close-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+  }
+
+  /* Center Stage */
+  .ivm-stage {
+    padding: 6px;
+  }
+
+  .ivm-img-wrapper {
+    max-width: 96vw;
+    max-height: 58vh;
+  }
+
+  .ivm-image {
+    max-height: 58vh;
+    border-radius: 6px;
+  }
+
+  /* Navigation Arrows: Positioned for easy thumb taps */
+  .ivm-arrow-btn {
+    width: 44px;
+    height: 44px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  .ivm-arrow-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .ivm-arrow-btn.prev {
+    left: 8px;
+  }
+
+  .ivm-arrow-btn.next {
+    right: 8px;
+  }
+
+  /* Progress Banner */
+  .ivm-progress-banner {
+    top: 60px;
+    padding: 6px 14px;
+    font-size: 11.5px;
+    max-width: 90vw;
+    text-align: center;
+  }
+
+  /* Bottom Toolbar & Downloads with Safe-Area */
+  .ivm-bottom-bar {
+    padding: 10px 12px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .ivm-download-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .ivm-action-btn {
+    min-height: 40px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 10px;
+    justify-content: center;
+    border-radius: 8px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ivm-action-btn:active {
+    transform: scale(0.97);
+  }
+
+  /* "Download Image" primary button spans top row alongside trash button */
+  .ivm-action-btn.primary {
+    flex: 1 1 calc(100% - 48px);
+  }
+
+  /* ZIP download buttons share bottom row evenly */
+  .ivm-action-btn.secondary,
+  .ivm-action-btn.defect-btn {
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .ivm-delete-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    border-radius: 8px;
+    align-self: flex-start;
+  }
+
+  /* Filmstrip at the bottom */
+  .ivm-filmstrip {
+    padding: 6px 12px 10px;
+    gap: 6px;
+    justify-content: flex-start !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ivm-thumb {
+    width: 42px;
+    height: 42px;
+    border-radius: 5px;
+  }
+}
+
+/* Extra small mobile screens (<380px) */
+@media (max-width: 380px) {
+  .ivm-action-btn.secondary,
+  .ivm-action-btn.defect-btn {
+    flex: 1 1 100%;
+  }
+}
