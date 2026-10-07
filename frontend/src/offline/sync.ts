@@ -47,47 +47,61 @@ async function pull(): Promise<void> {
     cursor = 0;
     await setMeta('cursor', 0);
   }
+
+  // Auto-heal: If local DB has 0 inspections but cursor is ahead, reset cursor to 0 to pull full list
+  const localCount = await db.inspections.count();
+  if (localCount === 0 && cursor > 0) {
+    console.log('[Sync] Local inspections empty with cursor > 0; resetting cursor to 0 for full initial sync');
+    cursor = 0;
+    await setMeta('cursor', 0);
+  }
+
   for (;;) {
     const res = await api<PullResponse>(`/sync/pull?cursor=${cursor}&limit=500`);
-    const pendingIds = new Set((await db.outbox.toArray()).map((m) => m.entityId));
+    const pendingOutbox = await db.outbox.toArray();
+    const pendingIds = new Set(pendingOutbox.map((m) => m.entityId));
     for (const [entity, rows] of Object.entries(res.changes) as [SyncEntity, Array<Record<string, unknown> & { id: string }>][]) {
       const table = db.table_(entity);
       await table.bulkPut(rows.filter((r) => !pendingIds.has(r.id)));
     }
 
-    // Reconcile and purge local inspections deleted from server
-    if (res.activeInspectionIds) {
-      const serverSet = new Set(res.activeInspectionIds);
-      const localInspections = await db.inspections.toArray();
-      const toDelete = localInspections.filter((i) => !serverSet.has(i.id)).map((i) => i.id);
-      if (toDelete.length) {
-        console.warn('[Sync] Purging', toDelete.length, 'inspection(s) deleted on server:', toDelete);
-        await db.inspections.bulkDelete(toDelete);
-        // Clear any stale outbox items referencing these deleted inspections
-        const outboxItems = await db.outbox.toArray();
-        const toDeleteOutbox = outboxItems
-          .filter((m) => toDelete.includes(m.entityId) || (typeof m.data?.inspectionId === 'string' && toDelete.includes(m.data.inspectionId)))
-          .map((m) => m.id);
-        if (toDeleteOutbox.length) {
-          await db.outbox.bulkDelete(toDeleteOutbox);
-        }
-        for (const inspId of toDelete) {
-          const secs = await db.inspectionSections.where('inspectionId').equals(inspId).toArray();
-          const secIds = secs.map((s) => s.id);
-          await db.inspectionSections.bulkDelete(secIds);
-          for (const sId of secIds) {
-            await db.inspectionQuestions.where('inspectionSectionId').equals(sId).delete();
-          }
-          await db.responses.where('inspectionId').equals(inspId).delete();
-          await db.findings.where('inspectionId').equals(inspId).delete();
-          await db.photos.where('inspectionId').equals(inspId).delete();
-        }
-      }
-    }
-
     cursor = res.nextCursor;
     await setMeta('cursor', cursor);
-    if (!res.hasMore) return;
+
+    // Reconcile and purge local inspections deleted from server only on the final batch
+    if (!res.hasMore) {
+      if (res.activeInspectionIds && res.activeInspectionIds.length > 0) {
+        // Protect any inspections that have pending local mutations in outbox
+        const protectedInspectionIds = new Set<string>();
+        for (const m of pendingOutbox) {
+          if (m.entity === 'inspections') protectedInspectionIds.add(m.entityId);
+          if (typeof m.data?.inspectionId === 'string') protectedInspectionIds.add(m.data.inspectionId);
+        }
+
+        const serverSet = new Set(res.activeInspectionIds);
+        const localInspections = await db.inspections.toArray();
+        const toDelete = localInspections
+          .filter((i) => !serverSet.has(i.id) && !protectedInspectionIds.has(i.id))
+          .map((i) => i.id);
+
+        if (toDelete.length) {
+          console.warn('[Sync] Purging', toDelete.length, 'inspection(s) deleted on server:', toDelete);
+          await db.inspections.bulkDelete(toDelete);
+          for (const inspId of toDelete) {
+            const secs = await db.inspectionSections.where('inspectionId').equals(inspId).toArray();
+            const secIds = secs.map((s) => s.id);
+            await db.inspectionSections.bulkDelete(secIds);
+            for (const sId of secIds) {
+              await db.inspectionQuestions.where('inspectionSectionId').equals(sId).delete();
+            }
+            await db.responses.where('inspectionId').equals(inspId).delete();
+            await db.findings.where('inspectionId').equals(inspId).delete();
+            await db.photos.where('inspectionId').equals(inspId).delete();
+          }
+        }
+      }
+      return;
+    }
   }
 }
 
@@ -99,9 +113,10 @@ export function syncNow(): Promise<void> {
     emit({ state: 'syncing' });
     try {
       await push();
-      await processPhotoQueue();
       await pull();
       emit({ state: 'idle', lastSyncAt: new Date().toISOString(), pending: await db.outbox.count() });
+      // Process photo uploads in background without delaying inspection list sync
+      void processPhotoQueue();
     } catch (e) {
       emit({ state: 'error', message: (e as Error).message, pending: await db.outbox.count() });
     }

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { STATUS_LABELS, type InspectionStatus, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
+import { getCachedUser, setCachedUser } from '../../auth/session';
 import { db } from '../../offline/db';
 import { onSyncStatus, syncNow, type SyncStatus } from '../../offline/sync';
 import { useLightMode } from './useLightMode';
@@ -22,24 +23,51 @@ export function HomePage() {
   const [sync, setSync] = useState<SyncStatus | null>(null);
   useEffect(() => { const off = onSyncStatus(setSync); return () => { off(); }; }, []);
 
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
+  const me = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => {
+      const user = await api<User>('/me');
+      setCachedUser(user);
+      return user;
+    },
+    initialData: getCachedUser() ?? undefined,
+  });
   const inbox = useQuery({
     queryKey: ['inbox'], enabled: navigator.onLine,
     queryFn: () => api<{ waiting: Array<{ id: string; vesselName: string }>; returned: Array<{ id: string; vesselName: string; returnComment: string }> }>('/approvals/inbox'),
   });
 
-  const inspections = useLiveQuery(() => db.inspections.orderBy('updatedAt').reverse().toArray(), []) ?? [];
-  const allSections = useLiveQuery(() => db.inspectionSections.toArray(), []) ?? [];
-  const allQuestions = useLiveQuery(() => db.inspectionQuestions.toArray(), []) ?? [];
-  const allResponses = useLiveQuery(() => db.responses.toArray(), []) ?? [];
-  const allPhotos = useLiveQuery(() => db.photos.toArray(), []) ?? [];
+  const homeData = useLiveQuery(async () => {
+    const [inspections, allSections, allQuestions, allResponses, allPhotos] = await Promise.all([
+      db.inspections.orderBy('updatedAt').reverse().toArray(),
+      db.inspectionSections.toArray(),
+      db.inspectionQuestions.toArray(),
+      db.responses.toArray(),
+      db.photos.toArray(),
+    ]);
+    return { inspections, allSections, allQuestions, allResponses, allPhotos };
+  }, []);
+
+  const isLoading = homeData === undefined;
+  const inspections = homeData?.inspections ?? [];
+  const allSections = homeData?.allSections ?? [];
+  const allQuestions = homeData?.allQuestions ?? [];
+  const allResponses = homeData?.allResponses ?? [];
+  const allPhotos = homeData?.allPhotos ?? [];
+
+  // Auto-sync if local database is empty on load and device is online
+  useEffect(() => {
+    if (homeData && homeData.inspections.length === 0 && navigator.onLine) {
+      void syncNow();
+    }
+  }, [homeData]);
 
   // TM and VM should only see inspections for their assigned vessels
   const visibleInspections = useMemo(() => {
     const role = me.data?.role;
     if (role === 'admin' || role === 'director' || !me.data) return inspections;
-    const vesselIds = me.data.vesselIds ?? [];
-    return inspections.filter((i) => i.vesselId && vesselIds.includes(i.vesselId));
+    const vesselIds = (me.data.vesselIds ?? []).map((id) => id.toLowerCase().trim());
+    return inspections.filter((i) => i.vesselId && vesselIds.includes(i.vesselId.toLowerCase().trim()));
   }, [inspections, me.data]);
 
   const uniqueVessels = useMemo(() => {
@@ -413,7 +441,21 @@ export function HomePage() {
       </div>
 
       {/* ── INSPECTION CARDS ── */}
-      {list.length === 0 ? (
+      {isLoading ? (
+        <div className="inspection-skeleton-list">
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="inspection-skeleton-card">
+              <div className="skeleton-bar-left" />
+              <div className="skeleton-content">
+                <div className="skeleton-line skeleton-title" />
+                <div className="skeleton-line skeleton-sub" />
+              </div>
+              <div className="skeleton-progress" />
+              <div className="skeleton-badge" />
+            </div>
+          ))}
+        </div>
+      ) : list.length === 0 ? (
         <div className="empty-state">
           <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="empty-ship-svg">
             <rect x="12" y="36" width="40" height="12" rx="3" fill="currentColor" opacity=".15"/>

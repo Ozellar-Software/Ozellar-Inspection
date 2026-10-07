@@ -77,27 +77,33 @@ export async function addPhoto(input: {
   return photoId;
 }
 
+let photoProcessing: Promise<void> | null = null;
+
 /** Upload pending images: get SAS URL → PUT to Blob → commit. Survives restarts; retried on next sync. */
-export async function processPhotoQueue(): Promise<void> {
-  const items = await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').toArray();
-  for (const it of items) {
-    try {
-      if (it.status !== 'uploaded') {
-        await db.photoQueue.update(it.photoId, { status: 'uploading' });
-        const { uploadUrl, headers } = await api<{ uploadUrl: string; headers: Record<string, string> }>(
-          '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } });
-        const put = await fetch(uploadUrl, { method: 'PUT', headers, body: it.blob });
-        if (!put.ok) throw new Error(`Upload failed (${put.status})`);
-        await db.photoQueue.update(it.photoId, { status: 'uploaded' });
+export function processPhotoQueue(): Promise<void> {
+  if (photoProcessing) return photoProcessing;
+  photoProcessing = (async () => {
+    const items = await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').toArray();
+    for (const it of items) {
+      try {
+        if (it.status !== 'uploaded') {
+          await db.photoQueue.update(it.photoId, { status: 'uploading' });
+          const { uploadUrl, headers } = await api<{ uploadUrl: string; headers: Record<string, string> }>(
+            '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } });
+          const put = await fetch(uploadUrl, { method: 'PUT', headers, body: it.blob });
+          if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+          await db.photoQueue.update(it.photoId, { status: 'uploaded' });
+        }
+        await api(`/photos/${it.photoId}/commit`, { method: 'POST', body: {} });
+        await db.photoQueue.update(it.photoId, { status: 'committed' });
+      } catch (e) {
+        await db.photoQueue.update(it.photoId, {
+          status: it.status === 'uploaded' ? 'uploaded' : 'pending', attempts: it.attempts + 1, lastError: (e as Error).message,
+        });
       }
-      await api(`/photos/${it.photoId}/commit`, { method: 'POST', body: {} });
-      await db.photoQueue.update(it.photoId, { status: 'committed' });
-    } catch (e) {
-      await db.photoQueue.update(it.photoId, {
-        status: it.status === 'uploaded' ? 'uploaded' : 'pending', attempts: it.attempts + 1, lastError: (e as Error).message,
-      });
     }
-  }
+  })().finally(() => { photoProcessing = null; });
+  return photoProcessing;
 }
 
 const photoUrlCache = new Map<string, { url: string; expires: number }>();
