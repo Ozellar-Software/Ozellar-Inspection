@@ -6,7 +6,7 @@ import { localWrite } from '../../offline/outbox';
 import { addPhoto } from '../../offline/photoQueue';
 import { PhotoStrip, type QuestionSummary } from './PhotoStrip';
 import { CameraIcon, PlusIcon, WarningIcon } from '../../icons';
-import { getDraggedPhoto, endPhotoDrag, onPhotoDragEnd } from './photoDragService';
+import { getDraggedPhoto, endPhotoDrag, onPhotoDragEnd, showDragNotification } from './photoDragService';
 
 function stateClass(r?: Response): string {
   if (!r) return 'state-pending';
@@ -186,6 +186,7 @@ export function QuestionCard({
     const activePhoto = getDraggedPhoto();
     const sourceRespId = fromResponseId || activePhoto?.fromResponseId;
     if (sourceRespId && response?.id && sourceRespId === response.id) {
+      showDragNotification(`Photo is already attached to ${question.ref || 'this question'}`, 'warning');
       setDragFeedback(`Photo is already attached to ${question.ref || 'this question'}`);
       setDragFeedbackType('warning');
       setTimeout(() => setDragFeedback(null), 2500);
@@ -197,6 +198,7 @@ export function QuestionCard({
       try {
         const existingPhoto = await db.photos.get(photoId);
         if (existingPhoto?.target === 'question' && existingPhoto?.responseId === response?.id) {
+          showDragNotification(`Photo is already attached to ${question.ref || 'this question'}`, 'warning');
           setDragFeedback(`Photo is already attached to ${question.ref || 'this question'}`);
           setDragFeedbackType('warning');
           setTimeout(() => setDragFeedback(null), 2500);
@@ -219,6 +221,7 @@ export function QuestionCard({
             inspectionSectionId: null,
             position: photos.length,
           });
+          showDragNotification(`Photo assigned to ${question.ref || 'question'}`, 'success');
           setDragFeedback(`Photo assigned to ${question.ref || 'question'}!`);
           setDragFeedbackType('success');
           setTimeout(() => setDragFeedback(null), 2500);

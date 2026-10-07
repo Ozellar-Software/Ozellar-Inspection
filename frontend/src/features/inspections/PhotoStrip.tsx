@@ -21,7 +21,7 @@ import { AssignPhotoModal } from './AssignPhotoModal';
 import { PhotoTooltipMenu } from './PhotoTooltipMenu';
 import { MovePhotoModal } from './MovePhotoModal';
 import { downloadPhotosAsZip } from './photoDownload';
-import { startPhotoDrag, endPhotoDrag, startTouchPhotoDrag } from './photoDragService';
+import { startPhotoDrag, endPhotoDrag, startTouchPhotoDrag, showDragNotification } from './photoDragService';
 import './PhotoStrip.css';
 
 /**
@@ -294,10 +294,10 @@ export function PhotoStrip({
             await handleMoveToSection(photoId, targetSecId || inspectionSectionId || '');
           },
           onSameQuestionAttempt: () => {
-            // Same question drop prevented
+            showDragNotification('Photo is already attached to this question', 'warning');
           },
           onSameSectionAttempt: () => {
-            // Same section drop prevented
+            showDragNotification('Photo is already in section photos', 'warning');
           },
         },
         el
@@ -376,10 +376,10 @@ export function PhotoStrip({
           await handleMoveToSection(photoId, targetSecId || inspectionSectionId || '');
         },
         onSameQuestionAttempt: () => {
-          // Prevent dropping into same question
+          showDragNotification('Photo is already attached to this question', 'warning');
         },
         onSameSectionAttempt: () => {
-          // Prevent dropping into same section
+          showDragNotification('Photo is already in section photos', 'warning');
         },
       }
     );
