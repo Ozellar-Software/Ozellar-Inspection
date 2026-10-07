@@ -26,9 +26,11 @@ function FieldGroup({ label, hint, children }: { label: string; hint?: string; c
   );
 }
 
+import { useCurrentUser } from '../../auth/useCurrentUser';
+
 export function NewInspectionPage() {
   const nav = useNavigate();
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
+  const me = useCurrentUser();
 
   useEffect(() => {
     if (me.data?.role === 'director') {
@@ -38,9 +40,12 @@ export function NewInspectionPage() {
 
   const vessels = useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [];
   // TM and VM can only create inspections for their assigned vessels
-  const displayVessels = me.data?.role === 'admin' || me.data?.role === 'director'
+  const displayVessels = (me.data?.role === 'admin' || me.data?.role === 'director' || !me.data)
     ? vessels
-    : vessels.filter((v) => me.data?.vesselIds?.includes(v.id) ?? false);
+    : vessels.filter((v) => {
+        const ids = (me.data?.vesselIds ?? []).map(id => id.toLowerCase().trim());
+        return ids.includes(v.id.toLowerCase().trim());
+      });
 
   const [vesselId, setVesselId] = useState('');
   const [inspectionType, setInspectionType] = useState<InspectionType>('port');

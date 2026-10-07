@@ -149,13 +149,15 @@ function actionColor(action: string) {
   return { bg: 'var(--na-tint)', text: 'var(--na)', border: 'var(--na)' };
 }
 
+import { useCurrentUser } from '../../auth/useCurrentUser';
+
 export function ReportPage() {
   const nav = useNavigate();
   const { id: inspectionId } = useParams<{ id: string }>();
   const qc = useQueryClient();
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
+  const me = useCurrentUser();
   const history = useQuery({
     queryKey: ['approvalHistory', inspectionId], enabled: !!inspectionId,
     queryFn: () => api<HistoryResponse>(`/inspections/${inspectionId}/approval`),

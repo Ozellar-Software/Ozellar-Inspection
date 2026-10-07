@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { STATUS_LABELS, type InspectionStatus, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { getCachedUser, setCachedUser } from '../../auth/session';
+import { useCurrentUser } from '../../auth/useCurrentUser';
 import { db } from '../../offline/db';
 import { onSyncStatus, syncNow, type SyncStatus } from '../../offline/sync';
 import { useLightMode } from './useLightMode';
@@ -23,15 +24,7 @@ export function HomePage() {
   const [sync, setSync] = useState<SyncStatus | null>(null);
   useEffect(() => { const off = onSyncStatus(setSync); return () => { off(); }; }, []);
 
-  const me = useQuery({
-    queryKey: ['me'],
-    queryFn: async () => {
-      const user = await api<User>('/me');
-      setCachedUser(user);
-      return user;
-    },
-    initialData: getCachedUser() ?? undefined,
-  });
+  const me = useCurrentUser();
   const inbox = useQuery({
     queryKey: ['inbox'], enabled: navigator.onLine,
     queryFn: () => api<{ waiting: Array<{ id: string; vesselName: string }>; returned: Array<{ id: string; vesselName: string; returnComment: string }> }>('/approvals/inbox'),

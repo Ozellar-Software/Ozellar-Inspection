@@ -106,8 +106,10 @@ function getVesselTypeTheme(type?: string): { key: string; avatarClass: string; 
   return { key: 'general', avatarClass: 'avatar-teal', tagClass: 'tag-teal' };
 }
 
+import { useCurrentUser } from '../../auth/useCurrentUser';
+
 export function VesselsPage() {
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
+  const me = useCurrentUser();
   const rawVessels = useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [];
   const canManageVessels = me.data?.role === 'admin';
 
@@ -115,17 +117,16 @@ export function VesselsPage() {
   const vessels = useMemo(() => {
     const active = rawVessels.filter(v => !(v as any).deletedAt);
     if (me.data?.role === 'techManager' || me.data?.role === 'vesselManager') {
-      const ids = me.data.vesselIds ?? [];
-      return active.filter(v => ids.includes(v.id));
+      const ids = (me.data.vesselIds ?? []).map(id => id.toLowerCase().trim());
+      return active.filter(v => ids.includes(v.id.toLowerCase().trim()));
     }
     return active;
   }, [rawVessels, me.data]);
 
-
-
   // Sync with remote backend vessels if connected
   useQuery({
     queryKey: ['remote-vessels'],
+    enabled: navigator.onLine,
     queryFn: async () => {
       try {
         const remote = await api<Vessel[]>('/vessels');

@@ -13,10 +13,12 @@ import { PhotoStrip } from './PhotoStrip';
 import { endPhotoDrag } from './photoDragService';
 import './SectionDetailPage.css';
 
+import { useCurrentUser } from '../../auth/useCurrentUser';
+
 export function SectionDetailPage() {
   const nav = useNavigate();
   const { id: inspectionId, sectionId } = useParams<{ id: string; sectionId: string }>();
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
+  const me = useCurrentUser();
   const [completing, setCompleting] = useState(false);
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);

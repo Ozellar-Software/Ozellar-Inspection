@@ -32,10 +32,12 @@ function progressColor(pct: number): string {
   return '#CBD3D8';
 }
 
+import { useCurrentUser } from '../../auth/useCurrentUser';
+
 export function SectionListPage() {
   const nav = useNavigate();
   const { id: inspectionId } = useParams<{ id: string }>();
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
+  const me = useCurrentUser();
   const [light, setLight] = useLightMode();
   const [showAddSection, setShowAddSection] = useState(false);
   const [addName, setAddName] = useState('');

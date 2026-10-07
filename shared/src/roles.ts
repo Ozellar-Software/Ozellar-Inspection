@@ -12,7 +12,8 @@ export const ROLE_LABELS: Record<Role, string> = {
 export function canSeeVessel(user: User, vesselId: string | null | undefined): boolean {
   if (user.role === 'admin' || user.role === 'director') return true;
   if (!vesselId) return false;
-  return user.vesselIds.includes(vesselId);
+  const target = vesselId.toLowerCase().trim();
+  return (user.vesselIds ?? []).some((id) => id.toLowerCase().trim() === target);
 }
 
 export type Action =

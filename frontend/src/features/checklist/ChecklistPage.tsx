@@ -40,9 +40,11 @@ interface SectionFormData {
   vesselTypes: string[];
 }
 
+import { useCurrentUser } from '../../auth/useCurrentUser';
+
 export function ChecklistPage() {
   const nav = useNavigate();
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
+  const me = useCurrentUser();
   const rawSections = ((useLiveQuery(() => db.templateSections.toArray(), []) as unknown as TemplateSection[] | undefined) ?? [])
     .filter((s) => !s.deletedAt).sort((a, b) => a.position - b.position);
   const allQuestions = ((useLiveQuery(() => db.templateQuestions.toArray(), []) as unknown as TemplateQuestion[] | undefined) ?? [])

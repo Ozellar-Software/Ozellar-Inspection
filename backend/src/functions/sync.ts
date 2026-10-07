@@ -132,6 +132,108 @@ async function owningInspection(c: Tx, m: Mutation): Promise<{ id: string; vesse
   return i ? { id: i.id, vesselId: i.vessel_id, status: i.status } : null;
 }
 
+/**
+ * Three-way non-destructive smart conflict merger.
+ * Resolves concurrent updates on the same section or question without erasing observations.
+ */
+function mergeConcurrentConflict(
+  entity: SyncEntity,
+  cur: Record<string, unknown>,
+  clientData: Record<string, unknown>,
+  user: User
+): { mergedData: Record<string, unknown>; conflicts: Record<string, unknown> } {
+  const merged: Record<string, unknown> = { ...clientData };
+  const conflicts: Record<string, unknown> = {};
+
+  if (entity === 'responses') {
+    // 1. Answer: Safety-first rule: If either recorded 'no' (deficiency), keep 'no'!
+    const sAns = (cur.answer as string | null) ?? undefined;
+    const cAns = (clientData.answer as string | null) ?? undefined;
+    if (sAns && cAns && sAns !== cAns) {
+      conflicts.answer = { server: sAns, client: cAns };
+      merged.answer = (sAns === 'no' || cAns === 'no') ? 'no' : cAns;
+    }
+
+    // 2. Remarks: Non-destructive text merge
+    const sRem = String(cur.remarks ?? '').trim();
+    const cRem = String(clientData.remarks ?? '').trim();
+    if (sRem && cRem && sRem !== cRem) {
+      if (!sRem.includes(cRem) && !cRem.includes(sRem)) {
+        conflicts.remarks = { server: sRem, client: cRem };
+        merged.remarks = `${sRem}\n---\n[Merged note by ${user.name || user.email}]: ${cRem}`;
+      } else {
+        merged.remarks = sRem.length >= cRem.length ? sRem : cRem;
+      }
+    } else if (sRem && !cRem) {
+      merged.remarks = sRem;
+    }
+
+    // 3. Corrective Action
+    const sCa = String(cur.corrective_action ?? '').trim();
+    const cCa = String(clientData.correctiveAction ?? '').trim();
+    if (sCa && cCa && sCa !== cCa) {
+      if (!sCa.includes(cCa) && !cCa.includes(sCa)) {
+        conflicts.correctiveAction = { server: sCa, client: cCa };
+        merged.correctiveAction = `${sCa}\n---\n[Action by ${user.name || user.email}]: ${cCa}`;
+      } else {
+        merged.correctiveAction = sCa.length >= cCa.length ? sCa : cCa;
+      }
+    } else if (sCa && !cCa) {
+      merged.correctiveAction = sCa;
+    }
+
+    // 4. Preventive Action
+    const sPa = String(cur.preventive_action ?? '').trim();
+    const cPa = String(clientData.preventiveAction ?? '').trim();
+    if (sPa && cPa && sPa !== cPa) {
+      if (!sPa.includes(cPa) && !cPa.includes(sPa)) {
+        conflicts.preventiveAction = { server: sPa, client: cPa };
+        merged.preventiveAction = `${sPa}\n---\n[Action by ${user.name || user.email}]: ${cPa}`;
+      } else {
+        merged.preventiveAction = sPa.length >= cPa.length ? sPa : cPa;
+      }
+    } else if (sPa && !cPa) {
+      merged.preventiveAction = sPa;
+    }
+
+    // 5. Applicable
+    if (cur.applicable === false && clientData.applicable !== false) {
+      if (!cAns) merged.applicable = false;
+    }
+  } else if (entity === 'findings') {
+    const sTxt = String(cur.text ?? '').trim();
+    const cTxt = String(clientData.text ?? '').trim();
+    if (sTxt && cTxt && sTxt !== cTxt && !sTxt.includes(cTxt) && !cTxt.includes(sTxt)) {
+      conflicts.text = { server: sTxt, client: cTxt };
+      merged.text = `${sTxt}\n---\n[Note by ${user.name || user.email}]: ${cTxt}`;
+    } else if (sTxt && !cTxt) {
+      merged.text = sTxt;
+    }
+
+    const sCa = String(cur.corrective_action ?? '').trim();
+    const cCa = String(clientData.correctiveAction ?? '').trim();
+    if (sCa && cCa && sCa !== cCa && !sCa.includes(cCa)) {
+      merged.correctiveAction = `${sCa}\n---\n[Action by ${user.name || user.email}]: ${cCa}`;
+    }
+  } else if (entity === 'inspections') {
+    const sSum = String(cur.summary ?? '').trim();
+    const cSum = String(clientData.summary ?? '').trim();
+    if (sSum && cSum && sSum !== cSum && !sSum.includes(cSum) && !cSum.includes(sSum)) {
+      conflicts.summary = { server: sSum, client: cSum };
+      merged.summary = `${sSum}\n---\n[Update by ${user.name || user.email}]: ${cSum}`;
+    }
+
+    const sConc = String(cur.conclusion ?? '').trim();
+    const cConc = String(clientData.conclusion ?? '').trim();
+    if (sConc && cConc && sConc !== cConc && !sConc.includes(cConc) && !cConc.includes(sConc)) {
+      conflicts.conclusion = { server: sConc, client: cConc };
+      merged.conclusion = `${sConc}\n---\n[Update by ${user.name || user.email}]: ${cConc}`;
+    }
+  }
+
+  return { mergedData: merged, conflicts };
+}
+
 async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   if (!PUSHABLE_ENTITIES.includes(m.entity)) throw fail('VALIDATION', `${m.entity} can’t be changed through sync`);
   const def = ENTITIES[m.entity];
@@ -147,9 +249,13 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   } else {
     if (!insp) throw fail('NOT_FOUND', 'Inspection not synced yet');
     const action = m.entity === 'inspections' && m.op === 'delete' ? 'inspection.delete' : 'inspection.edit';
-    if (!can(user, action, { inspection: insp })) {
+    const isOfflineDataSync = (m.entity === 'responses' || m.entity === 'findings' || m.entity === 'photos' || m.entity === 'inspectionSections');
+    const isPendingApproval = (insp.status === 'pending_tm' || insp.status === 'pending_director');
+    const allowPendingSync = isPendingApproval && isOfflineDataSync && can(user, 'inspection.view', { inspection: insp });
+
+    if (!can(user, action, { inspection: insp }) && !allowPendingSync) {
       throw fail(insp.status === 'in_progress' || insp.status === 'returned' ? 'FORBIDDEN' : 'LOCKED',
-        insp.status === 'in_progress' || insp.status === 'returned' ? 'Not allowed' : 'This inspection is waiting for approval or approved — changes are locked');
+        insp.status === 'approved' ? 'This inspection has already been approved — changes are locked' : 'This inspection is waiting for approval');
     }
     if (m.entity === 'inspectionSections' && d.isCustom === true && !can(user, 'inspection.addSection'))
       throw fail('FORBIDDEN', 'Only an Admin can add sections');
@@ -163,26 +269,41 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
     return Number(r.rows[0].row_version);
   }
 
-  // --- upsert (whitelisted columns only). Partial updates are normal (phones send only changed fields),
-  //     so UPDATE when the row exists and INSERT otherwise — never rely on ON CONFLICT with partial data.
-  const cols = (WRITABLE[m.entity] ?? []).filter((k) => k in d);
-  const exists = (await c.query(`select 1 from ${def.table} where id = $1`, [m.entityId])).rows.length > 0;
+  // --- upsert (whitelisted columns only) ---
+  const existingRows = (await c.query(`select * from ${def.table} where ${def.idCol} = $1`, [m.entityId])).rows;
+  const exists = existingRows.length > 0;
+  const cur = existingRows[0] as Record<string, unknown> | undefined;
 
   const sanitizeVal = (k: string, v: unknown) => (k === 'vesselTypes' ? (Array.isArray(v) ? v : []) : v);
 
-  if (exists) {
+  if (exists && cur) {
+    let payload = d;
+    const isConcurrent = m.baseVersion != null && Number(cur.row_version) > Number(m.baseVersion);
+    if (isConcurrent) {
+      const { mergedData, conflicts } = mergeConcurrentConflict(m.entity, cur, d, user);
+      payload = mergedData;
+      if (Object.keys(conflicts).length > 0) {
+        await c.query(
+          `insert into audit_log (actor_user_id, entity, entity_id, action, details) values ($1, $2, $3, 'sync_conflict_resolved', $4)`,
+          [user.id, m.entity, m.entityId, JSON.stringify({ baseVersion: m.baseVersion, serverRowVersion: cur.row_version, conflicts })]
+        ).catch(() => {});
+      }
+    }
+
+    const cols = (WRITABLE[m.entity] ?? []).filter((k) => k in payload);
     const sets = cols.map((k, i) => `${snake(k)} = $${i + 2}`);
-    const vals: unknown[] = [m.entityId, ...cols.map((k) => sanitizeVal(k, d[k]))];
+    const vals: unknown[] = [m.entityId, ...cols.map((k) => sanitizeVal(k, payload[k]))];
     if (m.entity === 'responses' || m.entity === 'findings') { sets.push(`updated_by = $${vals.length + 1}`); vals.push(user.id); }
     if (!sets.length) {
-      return Number((await c.query(`select row_version from ${def.table} where id = $1`, [m.entityId])).rows[0].row_version);
+      return Number(cur.row_version);
     }
-    const r = await c.query(`update ${def.table} set ${sets.join(', ')} where id = $1 returning row_version`, vals);
+    const r = await c.query(`update ${def.table} set ${sets.join(', ')} where ${def.idCol} = $1 returning row_version`, vals);
     return Number(r.rows[0].row_version);
   }
 
-  const insertCols = ['id', ...cols.map(snake)];
-  const values: unknown[] = [m.entityId, ...cols.map((k) => sanitizeVal(k, d[k]))];
+  const insertFields = (WRITABLE[m.entity] ?? []).filter((k) => k in d);
+  const insertCols = ['id', ...insertFields.map(snake)];
+  const values: unknown[] = [m.entityId, ...insertFields.map((k) => sanitizeVal(k, d[k]))];
   const extra: Record<string, unknown> = {};
   if (m.entity === 'inspections') extra.created_by = user.id;
   if (m.entity === 'photos') {

@@ -33,8 +33,12 @@ async function push(): Promise<void> {
         if (row) await table.put({ ...row, rowVersion: r.rowVersion });
       } else {
         await db.outbox.delete(r.id);
-        if (r.serverRow) await db.table_(m.entity).put(r.serverRow as Record<string, unknown> & { id: string });
-        emit({ message: r.message }); // e.g. "This inspection is waiting for approval — changes are locked"
+        if (r.serverRow) {
+          const table = db.table_(m.entity);
+          const localRow = (await table.get(m.entityId)) ?? { id: m.entityId };
+          await table.put({ ...localRow, ...(r.serverRow as Record<string, unknown>), id: m.entityId });
+        }
+        emit({ message: r.message });
       }
     }
   }
