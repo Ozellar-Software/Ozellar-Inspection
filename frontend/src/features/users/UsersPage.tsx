@@ -18,18 +18,37 @@ const ROLE_THEMES: Record<Role, { key: string; avatarClass: string; tagClass: st
   admin:         { key: 'tanker', avatarClass: 'avatar-rose', tagClass: 'tag-rose' },
 };
 
+import { useCurrentUser } from '../../auth/useCurrentUser';
+
 export function UsersPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<User>('/me') });
-  const users = useQuery({ queryKey: ['users'], queryFn: () => api<UserRow[]>('/users'), enabled: me.data?.role === 'admin' });
+  const me = useCurrentUser();
+  const dbUsers = useLiveQuery(() => db.users.toArray(), []) ?? [];
+  const users = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const remote = await api<UserRow[]>('/users');
+      if (Array.isArray(remote) && remote.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.users.bulkPut(remote as any);
+      }
+      return remote;
+    },
+    enabled: me.data?.role === 'admin' && navigator.onLine,
+  });
   const vessels = useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [];
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
 
-  const displayUsers = Array.isArray(users.data) ? users.data : [];
+  const displayUsers = useMemo(() => {
+    if (Array.isArray(users.data) && users.data.length > 0) {
+      return users.data;
+    }
+    return dbUsers.map((u) => ({ ...u, hasPassword: !!u.passwordHash })) as UserRow[];
+  }, [users.data, dbUsers]);
 
   const filteredUsers = useMemo(() => {
     return displayUsers.filter(u => {
@@ -52,12 +71,15 @@ export function UsersPage() {
   async function toggleActive(u: UserRow) {
     try {
       const payload = { isActive: !u.isActive };
-      await api(`/users/${u.id}`, { method: 'PUT', body: payload });
-      qc.setQueryData(['users'], (old: UserRow[] | undefined) => {
-        if (!old) return old;
-        return old.map(o => o.id === u.id ? { ...o, isActive: !u.isActive } : o);
-      });
-      await qc.invalidateQueries({ queryKey: ['users'] });
+      await db.users.update(u.id, payload);
+      if (navigator.onLine) {
+        await api(`/users/${u.id}`, { method: 'PUT', body: payload });
+        qc.setQueryData(['users'], (old: UserRow[] | undefined) => {
+          if (!old) return old;
+          return old.map(o => o.id === u.id ? { ...o, isActive: !u.isActive } : o);
+        });
+        await qc.invalidateQueries({ queryKey: ['users'] });
+      }
     } catch (e) {
       console.error('Failed to toggle user status', e);
     }

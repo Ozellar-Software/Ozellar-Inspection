@@ -8,18 +8,11 @@ import { NotificationsMenu } from './NotificationsMenu';
 import { getCachedUser, setCachedUser } from '../auth/session';
 import './TopNav.css';
 
+import { useCurrentUser } from '../auth/useCurrentUser';
+
 export function TopNav() {
   const nav = useNavigate();
-  const me = useQuery({
-    queryKey: ['me'],
-    queryFn: async () => {
-      const user = await api<User>('/me');
-      setCachedUser(user);
-      return user;
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
+  const me = useCurrentUser();
   const currentUser = me.data ?? getCachedUser();
 
   return (

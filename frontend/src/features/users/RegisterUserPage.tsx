@@ -89,22 +89,47 @@ export function RegisterUserPage() {
 
   useEffect(() => {
     if (isEditing && id) {
-      api(`/users/${id}`).then((u: any) => {
-        setForm({
-          id: u.id,
-          email: u.email,
-          name: u.name,
-          designation: u.designation || '',
-          role: u.role,
-          vesselIds: u.vesselIds || [],
-          isActive: u.isActive,
-          hasPassword: u.hasPassword,
-          password: '',
+      const loadFromLocal = async () => {
+        const u = await db.users.get(id);
+        if (u) {
+          setForm({
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            designation: u.designation || '',
+            role: u.role,
+            vesselIds: u.vesselIds || [],
+            isActive: u.isActive,
+            hasPassword: !!u.passwordHash,
+            password: '',
+          });
+          setWantsChangePassword(!u.passwordHash);
+        } else {
+          setError('User profile not found.');
+        }
+      };
+
+      if (navigator.onLine) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        api(`/users/${id}`).then((u: any) => {
+          setForm({
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            designation: u.designation || '',
+            role: u.role,
+            vesselIds: u.vesselIds || [],
+            isActive: u.isActive,
+            hasPassword: u.hasPassword,
+            password: '',
+          });
+          setWantsChangePassword(!u.hasPassword);
+        }).catch(() => {
+          void loadFromLocal();
         });
-        setWantsChangePassword(!u.hasPassword);
-      }).catch(err => {
-        setError('Failed to fetch user details.');
-      });
+      } else {
+        void loadFromLocal();
+      }
     } else {
       setWantsChangePassword(true); // new user needs password
     }
@@ -171,10 +196,25 @@ export function RegisterUserPage() {
     setBusy(true);
     setError(null);
     try {
-      if (form.id) {
-        await api(`/users/${form.id}`, { method: 'PUT', body: payload });
-      } else {
-        await api('/users', { method: 'POST', body: payload });
+      const targetId = form.id || crypto.randomUUID();
+      const localUserRecord = {
+        id: targetId,
+        email: payload.email,
+        name: payload.name,
+        designation: payload.designation,
+        role: payload.role,
+        vesselIds: payload.vesselIds,
+        isActive: payload.isActive,
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.users.put(localUserRecord as any);
+
+      if (navigator.onLine) {
+        if (form.id) {
+          await api(`/users/${form.id}`, { method: 'PUT', body: payload });
+        } else {
+          await api('/users', { method: 'POST', body: payload });
+        }
       }
       qc.invalidateQueries({ queryKey: ['users'] });
       navigate('/users');

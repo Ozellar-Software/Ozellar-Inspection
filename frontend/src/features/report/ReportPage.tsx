@@ -7,6 +7,7 @@ import { api, ApiError } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { syncNow } from '../../offline/sync';
+import { queueApprovalAction } from '../../offline/approvalQueue';
 import { BackIcon, WarningIcon, LockIcon } from '../../icons';
 import { loadReportData, type ReportData } from './reportData';
 import { generateInspectionPdf } from './pdf';
@@ -160,7 +161,23 @@ export function ReportPage() {
   const me = useCurrentUser();
   const history = useQuery({
     queryKey: ['approvalHistory', inspectionId], enabled: !!inspectionId,
-    queryFn: () => api<HistoryResponse>(`/inspections/${inspectionId}/approval`),
+    queryFn: async () => {
+      if (navigator.onLine) {
+        try {
+          return await api<HistoryResponse>(`/inspections/${inspectionId}/approval`);
+        } catch {
+          // offline fallback below
+        }
+      }
+      const localAppr = await db.approvals.get(inspectionId!);
+      if (localAppr) {
+        return {
+          approval: localAppr,
+          history: [],
+        } as HistoryResponse;
+      }
+      return { approval: null, history: [] } as HistoryResponse;
+    },
   });
 
   const [summary, setSummary] = useState('');
@@ -242,7 +259,36 @@ export function ReportPage() {
       if (isMock) {
         return [{ id: 'mock-1', email: 'demo@ozellar.com', name: 'Demo Approver', designation: 'Technical Manager', role: 'techManager' }] as Approver[];
       }
-      return api<Approver[]>(`/approvers?level=${approvalLevel}&inspectionId=${inspectionId}&vesselId=${dispInspection?.vesselId ?? ''}`);
+      if (navigator.onLine) {
+        try {
+          return await api<Approver[]>(`/approvers?level=${approvalLevel}&inspectionId=${inspectionId}&vesselId=${dispInspection?.vesselId ?? ''}`);
+        } catch {
+          // offline fallback below
+        }
+      }
+      const allUsers = await db.users.toArray();
+      const targetRole = approvalLevel === 'tm' ? 'techManager' : 'director';
+      const vesselId = dispInspection?.vesselId?.toLowerCase().trim();
+      return allUsers
+        .filter((u) => {
+          if (u.isActive === false) return false;
+          if (targetRole === 'director') return u.role === 'director' || u.role === 'admin';
+          if (targetRole === 'techManager') {
+            if (u.role === 'admin') return true;
+            if (u.role === 'techManager') {
+              if (!vesselId) return true;
+              return (u.vesselIds ?? []).some((vid) => vid.toLowerCase().trim() === vesselId);
+            }
+          }
+          return false;
+        })
+        .map((u) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          designation: u.designation,
+          role: u.role,
+        })) as Approver[];
     },
   });
 
@@ -274,15 +320,59 @@ export function ReportPage() {
     await localWrite('inspections', inspectionId!, { summary, conclusion });
   }
 
-  async function act(path: string, body: Record<string, unknown>) {
+  async function act(path: 'submit' | 'approve' | 'reject' | 'reopen', body: Record<string, unknown>) {
     setBusy(true); setError(null);
     try {
-      const res = await api<{ status: InspectionStatus }>(`/inspections/${inspectionId}/${path}`, { method: 'POST', body });
-      await db.inspections.update(inspectionId!, { status: res.status });
+      if (navigator.onLine) {
+        try {
+          const res = await api<{ status: InspectionStatus }>(`/inspections/${inspectionId}/${path}`, { method: 'POST', body });
+          await db.inspections.update(inspectionId!, { status: res.status });
+          await qc.invalidateQueries({ queryKey: ['approvalHistory', inspectionId] });
+          await qc.invalidateQueries({ queryKey: ['inbox'] });
+          return;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const isNetworkError = !navigator.onLine || msg.includes('Failed to fetch') || msg.includes('Network');
+          if (!isNetworkError) throw err;
+        }
+      }
+
+      // Offline Transition Handling: update local IndexedDB and queue for sync
+      let nextStatus: InspectionStatus = dispInspection.status;
+      if (path === 'submit') {
+        nextStatus = me.data?.role === 'vesselManager' ? 'pending_tm' : 'pending_director';
+      } else if (path === 'approve') {
+        nextStatus = dispInspection.status === 'pending_tm' ? 'pending_director' : 'approved';
+      } else if (path === 'reject') {
+        nextStatus = 'returned';
+      } else if (path === 'reopen') {
+        nextStatus = 'returned';
+      }
+
+      await db.inspections.update(inspectionId!, { status: nextStatus, updatedAt: new Date().toISOString() });
+      await queueApprovalAction(inspectionId!, path, body);
+
+      const stage = nextStatus === 'pending_tm' ? 'tm' : nextStatus === 'pending_director' ? 'director' : nextStatus === 'approved' ? 'approved' : 'returned';
+      const existingAppr = await db.approvals.get(inspectionId!);
+      const now = new Date().toISOString();
+      await db.approvals.put({
+        id: inspectionId!,
+        inspectionId: inspectionId!,
+        stage,
+        submittedBy: existingAppr?.submittedBy || me.data?.id || '',
+        submittedAt: existingAppr?.submittedAt || now,
+        tmUserId: (body.approverId as string) || (body.nextApproverId as string) || existingAppr?.tmUserId || null,
+        directorUserId: (body.approverId as string) || (body.nextApproverId as string) || existingAppr?.directorUserId || null,
+        approvedAt: nextStatus === 'approved' ? now : null,
+        returnedBy: nextStatus === 'returned' ? me.data?.id || null : null,
+        returnComment: nextStatus === 'returned' ? (body.comment as string) || null : null,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
       await qc.invalidateQueries({ queryKey: ['approvalHistory', inspectionId] });
       await qc.invalidateQueries({ queryKey: ['inbox'] });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
+      setError(err instanceof ApiError ? err.message : (err instanceof Error ? err.message : 'Something went wrong'));
     } finally {
       setBusy(false);
     }
@@ -302,7 +392,7 @@ export function ReportPage() {
       return;
     }
     await saveSummaryConclusion();
-    await syncNow();
+    if (navigator.onLine) await syncNow();
     await act('submit', { approverId, comment });
   }
 

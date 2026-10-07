@@ -72,6 +72,7 @@ export function NotificationsMenu() {
   const { data } = useQuery<{ notifications: AppNotification[]; unreadCount: number }>({
     queryKey: ['notifications'],
     queryFn: () => api('/notifications'),
+    enabled: navigator.onLine,
     refetchInterval: 15000,
   });
 

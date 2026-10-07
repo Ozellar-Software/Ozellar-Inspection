@@ -2,6 +2,7 @@ import type { PullResponse, PushResponse, SyncEntity } from '@ozellar/shared';
 import { api } from '../api/client';
 import { db, getMeta, setMeta } from './db';
 import { processPhotoQueue, prefetchInspectionPhotos } from './photoQueue';
+import { processApprovalQueue, hasPendingApproval } from './approvalQueue';
 
 type Listener = (s: SyncStatus) => void;
 export interface SyncStatus { state: 'idle' | 'syncing' | 'offline' | 'error'; lastSyncAt: string | null; pending: number; message?: string }
@@ -66,7 +67,23 @@ async function pull(): Promise<void> {
     const pendingIds = new Set(pendingOutbox.map((m) => m.entityId));
     for (const [entity, rows] of Object.entries(res.changes) as [SyncEntity, Array<Record<string, unknown> & { id: string }>][]) {
       const table = db.table_(entity);
-      await table.bulkPut(rows.filter((r) => !pendingIds.has(r.id)));
+      if (entity === 'inspections') {
+        const safeRows = [];
+        for (const r of rows) {
+          if (pendingIds.has(r.id)) continue;
+          if (await hasPendingApproval(r.id)) {
+            const local = await db.inspections.get(r.id);
+            if (local?.status) {
+              safeRows.push({ ...r, status: local.status });
+              continue;
+            }
+          }
+          safeRows.push(r);
+        }
+        await table.bulkPut(safeRows);
+      } else {
+        await table.bulkPut(rows.filter((r) => !pendingIds.has(r.id)));
+      }
     }
 
     if (res.changes.photos && res.changes.photos.length > 0) {
@@ -129,8 +146,9 @@ export function syncNow(): Promise<void> {
       await push();
       await pull();
       emit({ state: 'idle', lastSyncAt: new Date().toISOString(), pending: await db.outbox.count() });
-      // Process photo uploads in background without delaying inspection list sync
+      // Process photo uploads and queued offline approvals in background
       void processPhotoQueue();
+      void processApprovalQueue();
     } catch (e) {
       emit({ state: 'error', message: (e as Error).message, pending: await db.outbox.count() });
     }
