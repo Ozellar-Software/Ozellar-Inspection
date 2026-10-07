@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ROLE_LABELS, type Role, type User } from '@ozellar/shared';
@@ -106,7 +106,8 @@ export function UsersPage() {
         <div className="users-header-actions">
           <button className="user-primary-btn" onClick={() => navigate('/users/new')}>
             <PlusIcon width={16} height={16} />
-            <span>New User</span>
+            <span className="user-new-text-full">New User</span>
+            <span className="user-new-text-short">New</span>
           </button>
         </div>
       </header>
@@ -119,7 +120,7 @@ export function UsersPage() {
             <input
               type="text"
               className="users-search-input"
-              placeholder="Search by name, email or designation..."
+              placeholder="Search users, email, designation..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -140,7 +141,7 @@ export function UsersPage() {
             })}
           </div>
 
-          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 8px', flexShrink: 0 }} />
+          <div className="users-filter-divider" style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 8px', flexShrink: 0 }} />
 
           {/* Status Filters */}
           <div className="users-filter-scroll" style={{ marginRight: 'auto' }}>
@@ -184,7 +185,10 @@ export function UsersPage() {
       <div className="user-list-container">
         {filteredUsers.map(u => {
           const theme = ROLE_THEMES[u.role] || ROLE_THEMES.vesselManager;
-          const initials = (u.name || u.email).substring(0, 2).toUpperCase();
+          const uEmail = u.email || '';
+          const uPrefix = uEmail.includes('@') ? uEmail.split('@')[0] : uEmail;
+          const uDisplayName = u.name?.trim() || uPrefix || 'User';
+          const initials = (uDisplayName || '?').substring(0, 2).toUpperCase();
 
           return (
             <div key={u.id} className={`user-row-card user-type-${theme.key}`}>
@@ -198,7 +202,7 @@ export function UsersPage() {
                   <div className="user-row-info">
                     <div className="user-title-main">
                       <span className="user-name-text" style={!u.isActive ? { color: 'var(--muted)', textDecoration: 'line-through' } : {}}>
-                        {u.name || u.email.split('@')[0]}
+                        {uDisplayName}
                       </span>
                       <span className={`user-type-chip ${theme.tagClass}`}>{ROLE_LABELS[u.role]}</span>
                     </div>

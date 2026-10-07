@@ -1,0 +1,180 @@
+/* ── Photo Floating Tooltip Popover Menu ── */
+.ptt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99990;
+  background: rgba(15, 23, 42, 0.2);
+  -webkit-tap-highlight-color: transparent;
+  animation: pttFadeIn 0.15s ease-out;
+}
+
+@keyframes pttFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ptt-bubble {
+  position: fixed;
+  z-index: 99995;
+  width: 220px;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  box-shadow: 0 12px 30px -4px rgba(15, 23, 42, 0.22), 0 4px 12px rgba(15, 23, 42, 0.08);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  animation: pttScaleIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+@keyframes pttScaleIn {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Header pill inside tooltip */
+.ptt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 3px;
+}
+
+.ptt-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.ptt-status-chip.normal {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.ptt-status-chip.defect {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.ptt-header-hint {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* Tooltip Action Buttons */
+.ptt-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #1e293b;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.ptt-item:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.ptt-item:active {
+  background: #e2e8f0;
+  transform: scale(0.98);
+}
+
+.ptt-icon-defect {
+  color: #e11d48;
+  flex-shrink: 0;
+}
+
+.ptt-icon-success {
+  color: #16a34a;
+  flex-shrink: 0;
+}
+
+.ptt-icon-move {
+  color: #0284c7;
+  flex-shrink: 0;
+}
+
+.ptt-icon-assign {
+  color: #0d9488;
+  flex-shrink: 0;
+}
+
+.ptt-icon-del {
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.ptt-item.danger {
+  color: #dc2626;
+}
+
+.ptt-item.danger:hover {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+/* Arrow indicator on the bubble */
+.ptt-arrow {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  transform: rotate(45deg);
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  pointer-events: none;
+}
+
+.ptt-bubble.placed-top .ptt-arrow {
+  bottom: -6px;
+  border-top: none;
+  border-left: none;
+}
+
+.ptt-bubble.placed-bottom .ptt-arrow {
+  top: -6px;
+  border-bottom: none;
+  border-right: none;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .ptt-bubble {
+    width: 215px;
+    padding: 6px;
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.28);
+  }
+
+  .ptt-item {
+    min-height: 38px;
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+}

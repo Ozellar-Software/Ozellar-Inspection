@@ -126,6 +126,27 @@
   background: rgba(239, 68, 68, 0.35);
 }
 
+.ivm-btn-move {
+  background: rgba(2, 132, 199, 0.2);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+
+.ivm-btn-move:hover {
+  background: rgba(2, 132, 199, 0.35);
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #bae6fd;
+}
+
 .ivm-icon-btn {
   width: 36px;
   height: 36px;
@@ -296,6 +317,14 @@
   cursor: pointer;
   border: none;
   transition: all 0.18s ease;
+}
+
+.ivm-btn-text-full {
+  display: inline;
+}
+
+.ivm-btn-text-short {
+  display: none;
 }
 
 .ivm-action-btn.primary {
@@ -500,6 +529,13 @@
     border-radius: 6px;
   }
 
+  .ivm-btn-move {
+    font-size: 11px;
+    padding: 5px 8px;
+    min-height: 34px;
+    border-radius: 6px;
+  }
+
   .ivm-icon-btn.close-btn {
     width: 34px;
     height: 34px;
@@ -551,30 +587,56 @@
     text-align: center;
   }
 
-  /* Bottom Toolbar & Downloads with Safe-Area */
+  /* Bottom Toolbar & Downloads: ALL in a SINGLE ROW */
   .ivm-bottom-bar {
-    padding: 10px 12px;
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
+    padding: 8px 10px !important;
+    padding-bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 6px !important;
+    flex-wrap: nowrap !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   .ivm-download-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    width: 100%;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 5px !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .ivm-btn-text-full {
+    display: none !important;
+  }
+
+  .ivm-btn-text-short {
+    display: inline !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .ivm-action-btn {
-    min-height: 40px;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 6px 10px;
-    justify-content: center;
-    border-radius: 8px;
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    font-size: 11.5px !important;
+    font-weight: 600 !important;
+    padding: 6px 6px !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+    gap: 4px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -582,44 +644,83 @@
     transform: scale(0.97);
   }
 
-  /* "Download Image" primary button spans top row alongside trash button */
-  .ivm-action-btn.primary {
-    flex: 1 1 calc(100% - 48px);
-  }
-
-  /* ZIP download buttons share bottom row evenly */
+  .ivm-action-btn.primary,
   .ivm-action-btn.secondary,
   .ivm-action-btn.defect-btn {
-    flex: 1 1 calc(50% - 4px);
+    flex: 1 1 0 !important;
+    max-width: none !important;
+    width: auto !important;
+  }
+
+  .ivm-action-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+    min-width: 14px !important;
+    flex-shrink: 0 !important;
   }
 
   .ivm-delete-btn {
-    width: 40px;
-    height: 40px;
-    min-width: 40px;
-    border-radius: 8px;
-    align-self: flex-start;
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+    border-radius: 8px !important;
+    flex-shrink: 0 !important;
+    align-self: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .ivm-delete-btn svg {
+    width: 15px !important;
+    height: 15px !important;
   }
 
   /* Filmstrip at the bottom */
   .ivm-filmstrip {
-    padding: 6px 12px 10px;
-    gap: 6px;
+    padding: 6px 10px 10px !important;
+    gap: 6px !important;
     justify-content: flex-start !important;
-    -webkit-overflow-scrolling: touch;
+    -webkit-overflow-scrolling: touch !important;
   }
 
   .ivm-thumb {
-    width: 42px;
-    height: 42px;
-    border-radius: 5px;
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 5px !important;
   }
 }
 
-/* Extra small mobile screens (<380px) */
-@media (max-width: 380px) {
-  .ivm-action-btn.secondary,
-  .ivm-action-btn.defect-btn {
-    flex: 1 1 100%;
+/* Extra small mobile screens (<= 360px) */
+@media (max-width: 360px) {
+  .ivm-bottom-bar {
+    padding: 6px 8px !important;
+    gap: 4px !important;
+  }
+
+  .ivm-download-group {
+    gap: 4px !important;
+  }
+
+  .ivm-action-btn {
+    height: 35px !important;
+    min-height: 35px !important;
+    font-size: 10.5px !important;
+    padding: 5px 3px !important;
+    gap: 3px !important;
+  }
+
+  .ivm-action-btn svg {
+    width: 12px !important;
+    height: 12px !important;
+    min-width: 12px !important;
+  }
+
+  .ivm-delete-btn {
+    width: 35px !important;
+    height: 35px !important;
+    min-width: 35px !important;
   }
 }

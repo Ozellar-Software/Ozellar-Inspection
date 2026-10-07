@@ -1,6 +1,6 @@
 import './LoginScreen.css';
 import { useState } from 'react';
-import { login, requestReset } from './session';
+import { login } from './session';
 import { ShipIcon } from '../icons';
 
 /* ─── Feature bullet icons (inline SVG, no extra dep) ─────────────────── */
@@ -32,12 +32,10 @@ function IconClipboard() {
 
 /* ─── Main component ───────────────────────────────────────────────────── */
 export function LoginScreen() {
-  const [mode, setMode] = useState<'login' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
   const [showPw, setShowPw] = useState(false);
 
   async function onLogin(e: React.FormEvent) {
@@ -45,14 +43,6 @@ export function LoginScreen() {
     setError(null); setBusy(true);
     try { await login(email, password); }
     catch (err) { setError(err instanceof Error ? err.message : 'Sign in failed'); }
-    finally { setBusy(false); }
-  }
-
-  async function onForgot(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null); setBusy(true);
-    try { await requestReset(email); setSent(true); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong'); }
     finally { setBusy(false); }
   }
 
@@ -125,114 +115,67 @@ export function LoginScreen() {
         {/* ── RIGHT panel — form ── */}
         <div className="login-right">
           <div className="login-form-wrap">
-            {mode === 'login' ? (
-              <form onSubmit={onLogin}>
-                <div className="login-form-title">Welcome back</div>
-                <div className="login-form-sub">Sign in with your account email to continue.</div>
+            <form onSubmit={onLogin}>
+              <div className="login-form-title">Welcome back</div>
+              <div className="login-form-sub">Sign in with your account email to continue.</div>
 
-                <div className="login-field">
-                  <label htmlFor="lf-email">Email address</label>
+              <div className="login-field">
+                <label htmlFor="lf-email">Email address</label>
+                <input
+                  id="lf-email"
+                  className="auth-input"
+                  type="email"
+                  placeholder="you@company.com"
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="login-field">
+                <div className="login-field-row">
+                  <label htmlFor="lf-pw">Password</label>
+                </div>
+                <div className="login-pw-wrap">
                   <input
-                    id="lf-email"
+                    id="lf-pw"
                     className="auth-input"
-                    type="email"
-                    placeholder="you@company.com"
-                    autoComplete="username"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    type={showPw ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     required
-                    autoFocus
                   />
+                  <button
+                    type="button"
+                    className="login-pw-toggle"
+                    aria-label={showPw ? 'Hide password' : 'Show password'}
+                    onClick={() => setShowPw(v => !v)}
+                  >
+                    {showPw ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.06 10.06 0 0 1 12 20C7 20 2.73 16.39 1 12a10.06 10.06 0 0 1 2.06-3.94M6.53 6.53A9.94 9.94 0 0 1 12 4c5 0 9.27 3.61 11 8a10.06 10.06 0 0 1-1.53 2.47" />
+                        <path d="M2 2l20 20" />
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12C2.73 7.61 7 4 12 4s9.27 3.61 11 8c-1.73 4.39-6 8-11 8S2.73 16.39 1 12z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
                 </div>
+              </div>
 
-                <div className="login-field">
-                  <div className="login-field-row">
-                    <label htmlFor="lf-pw">Password</label>
-                    <button
-                      type="button"
-                      className="auth-link login-forgot-inline"
-                      onClick={() => { setMode('forgot'); setError(null); setSent(false); }}
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                  <div className="login-pw-wrap">
-                    <input
-                      id="lf-pw"
-                      className="auth-input"
-                      type={showPw ? 'text' : 'password'}
-                      placeholder="••••••••"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
-                    <button
-                      type="button"
-                      className="login-pw-toggle"
-                      aria-label={showPw ? 'Hide password' : 'Show password'}
-                      onClick={() => setShowPw(v => !v)}
-                    >
-                      {showPw ? (
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M17.94 17.94A10.06 10.06 0 0 1 12 20C7 20 2.73 16.39 1 12a10.06 10.06 0 0 1 2.06-3.94M6.53 6.53A9.94 9.94 0 0 1 12 4c5 0 9.27 3.61 11 8a10.06 10.06 0 0 1-1.53 2.47" />
-                          <path d="M2 2l20 20" />
-                        </svg>
-                      ) : (
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M1 12C2.73 7.61 7 4 12 4s9.27 3.61 11 8c-1.73 4.39-6 8-11 8S2.73 16.39 1 12z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                </div>
+              {error && <div className="auth-error login-msg">{error}</div>}
 
-                {error && <div className="auth-error login-msg">{error}</div>}
-
-                <button className="btn btn-primary btn-block login-submit" type="submit" disabled={busy}>
-                  {busy ? 'Signing in…' : 'Sign in'}
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={onForgot}>
-                <button
-                  type="button"
-                  className="login-back-btn"
-                  onClick={() => { setMode('login'); setError(null); }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M15 18l-6-6 6-6" />
-                  </svg>
-                  Back to sign in
-                </button>
-
-                <div className="login-form-title">Reset password</div>
-                <div className="login-form-sub">Enter your email and we'll send you a reset link.</div>
-
-                <div className="login-field">
-                  <label htmlFor="rf-email">Email address</label>
-                  <input
-                    id="rf-email"
-                    className="auth-input"
-                    type="email"
-                    placeholder="you@company.com"
-                    autoComplete="username"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                {error && <div className="auth-error login-msg">{error}</div>}
-                {sent && <div className="auth-success login-msg">If that email has an account, a reset link is on its way.</div>}
-
-                <button className="btn btn-primary btn-block login-submit" type="submit" disabled={busy || sent}>
-                  {busy ? 'Sending…' : 'Send reset link'}
-                </button>
-              </form>
-            )}
+              <button className="btn btn-primary btn-block login-submit" type="submit" disabled={busy}>
+                {busy ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
           </div>
         </div>
 

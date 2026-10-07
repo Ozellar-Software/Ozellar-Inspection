@@ -33,6 +33,20 @@
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 1px 4px rgba(11, 33, 56, 0.06);
+  transition: all 0.15s ease;
+}
+
+.section-photos-card.drag-over {
+  border: 2px dashed var(--accent, #0e7c86) !important;
+  background: rgba(14, 124, 134, 0.05) !important;
+  box-shadow: 0 6px 20px rgba(14, 124, 134, 0.18) !important;
+  transform: translateY(-2px);
+}
+
+.section-photos-card.drag-same-section {
+  border: 2px dashed #f87171 !important;
+  background: rgba(239, 68, 68, 0.04) !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12) !important;
 }
 
 .section-photos-header {

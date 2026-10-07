@@ -85,6 +85,14 @@
   outline: none; border-color: var(--accent);
   background: #fff;
 }
+.qcard textarea::placeholder,
+.qcard .observation-block textarea::placeholder,
+.qcard .corrective-preventive-block textarea::placeholder {
+  color: #94A3B8;
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 1;
+}
 .qcard .extras-hint { font-size: 12.5px; color: var(--muted); margin: 0 16px 10px; }
 
 /* ── Mobile responsiveness (≤ 640px) ── */
@@ -116,9 +124,218 @@
     padding: 0 12px 12px;
   }
   .qcard .observation-block textarea,
-  .qcard .corrective-preventive-block textarea {
-    font-size: 16px !important; /* Prevent iOS zoom */
-    padding: 10px;
+  .qcard .corrective-preventive-block textarea,
+  .qcard textarea {
+    font-size: 13px !important;
+    padding: 8px 10px !important;
+    border-radius: 8px;
+    min-height: 60px;
+  }
+  .qcard .observation-block textarea::placeholder,
+  .qcard .corrective-preventive-block textarea::placeholder,
+  .qcard textarea::placeholder {
+    font-size: 12px !important;
+    color: #94A3B8 !important;
+    font-weight: 400 !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .qcard .observation-block textarea,
+  .qcard .corrective-preventive-block textarea,
+  .qcard textarea {
+    font-size: 12.5px !important;
+    padding: 7px 9px !important;
+  }
+  .qcard .observation-block textarea::placeholder,
+  .qcard .corrective-preventive-block textarea::placeholder,
+  .qcard textarea::placeholder {
+    font-size: 11px !important;
+  }
+}
+
+/* ── Drag & Drop States for Question Card ── */
+.qcard {
+  position: relative;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.qcard.drag-over {
+  border: 2px dashed var(--accent, #0e7c86) !important;
+  border-left: 4px solid var(--accent, #0e7c86) !important;
+  background: rgba(14, 124, 134, 0.05) !important;
+  box-shadow: 0 6px 20px rgba(14, 124, 134, 0.18) !important;
+  transform: translateY(-2px);
+}
+
+.qcard.drag-same-question {
+  border: 2px dashed #f87171 !important;
+  border-left: 4px solid #ef4444 !important;
+  background: rgba(239, 68, 68, 0.04) !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12) !important;
+}
+
+.qcard-drag-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  pointer-events: none !important;
+  animation: qcardFadeIn 0.15s ease-out;
+}
+
+.qcard-drag-overlay * {
+  pointer-events: none !important;
+}
+
+.qcard-drag-overlay.same-question {
+  background: rgba(254, 242, 242, 0.96);
+  border: 2px dashed #f87171;
+}
+
+@keyframes qcardFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.qcard-drag-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent, #0e7c86);
+  padding: 18px;
+  text-align: center;
+}
+
+.qcard-drag-overlay.same-question .qcard-drag-overlay-inner {
+  color: #dc2626;
+}
+
+.qcard-drag-title {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: var(--ink, #0f172a);
+}
+
+.qcard-drag-overlay.same-question .qcard-drag-title {
+  color: #991b1b;
+}
+
+.qcard-drag-sub {
+  font-size: 12.5px;
+  color: var(--muted, #64748b);
+  font-weight: 500;
+}
+
+.qcard-drag-overlay.same-question .qcard-drag-sub {
+  color: #b91c1c;
+}
+
+.qcard-drag-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 0;
+  padding: 8px 14px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #16a34a;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  animation: qcardSlideDown 0.2s ease-out;
+}
+
+.qcard-drag-toast.warning {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+@keyframes qcardSlideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.qcard-drag-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent, #0e7c86);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.qcard-photos-container {
+  margin-top: 4px;
+}
+
+.qcard-dropzone-prompt {
+  margin-top: 6px;
+  border: 1.5px dashed var(--border, #e2e8f0);
+  border-radius: 8px;
+  padding: 12px 14px;
+  text-align: center;
+  color: var(--muted, #64748b);
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--bg, #f8fafc);
+  transition: all 0.15s ease;
+}
+
+.qcard-dropzone-prompt.unassigned {
+  margin-top: 8px;
+}
+
+.qcard-dropzone-prompt strong {
+  color: var(--ink, #0f172a);
+}
+
+.qcard.drag-over .qcard-dropzone-prompt {
+  border-color: var(--accent, #0e7c86);
+  background: var(--accent-tint, #e6f6f7);
+  color: var(--accent-dark, #0b6068);
+}
+
+/* ══════════════════════════════════════════════════════════
+   MOBILE DRAG & DROP RULES (≤ 640px)
+   ══════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .qcard.drag-over {
+    transform: none;
+    box-shadow: 0 4px 14px rgba(14, 124, 134, 0.25) !important;
+  }
+  .qcard-drag-overlay {
+    border-radius: 10px;
+  }
+  .qcard-drag-overlay-inner {
+    padding: 12px 14px;
+    gap: 6px;
+  }
+  .qcard-drag-title {
+    font-size: 14px;
+  }
+  .qcard-drag-sub {
+    font-size: 11.5px;
+  }
+  .qcard-drag-toast {
+    margin: 8px 12px 0;
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+  .qcard-dropzone-prompt {
+    padding: 10px 12px;
+    font-size: 11.5px;
+    margin-top: 6px;
   }
 }
 

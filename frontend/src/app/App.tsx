@@ -16,6 +16,7 @@ import { UsersPage } from '../features/users/UsersPage';
 import { RegisterUserPage } from '../features/users/RegisterUserPage';
 import { ChecklistPage } from '../features/checklist/ChecklistPage';
 import { UpdatePrompt } from './UpdatePrompt';
+import { ScrollToTop } from './ScrollToTop';
 
 export function App() {
   const token = useAuthToken();
@@ -23,11 +24,17 @@ export function App() {
 
   // Reached via an emailed link, whether signed in or not — always let it through.
   if (window.location.pathname === '/reset-password' && resetToken) {
-    return <div id="app"><ResetPasswordScreen token={resetToken} /></div>;
+    return (
+      <div id="app">
+        <ScrollToTop />
+        <ResetPasswordScreen token={resetToken} />
+      </div>
+    );
   }
 
   return (
     <>
+      <ScrollToTop />
       <div id="app">{token ? <SignedIn /> : <LoginScreen />}</div>
       {/* The service-worker update prompt is a PWA concept — a Capacitor app already ships its
           assets in the native bundle, and iOS WKWebView's service worker support is unreliable. */}

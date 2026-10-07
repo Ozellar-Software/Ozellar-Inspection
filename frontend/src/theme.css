@@ -44,6 +44,17 @@ body {
   line-height: 1.4;
 }
 button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+input::placeholder, textarea::placeholder {
+  color: #94A3B8;
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 1;
+}
+@media (max-width: 640px) {
+  input::placeholder, textarea::placeholder {
+    font-size: 12px;
+  }
+}
 button { cursor: pointer; }
 a { color: var(--accent-dark); }
 svg:not([width]):not([class*="-svg"]) { width: 18px; height: 18px; }

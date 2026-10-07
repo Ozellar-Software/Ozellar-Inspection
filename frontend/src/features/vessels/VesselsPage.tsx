@@ -232,7 +232,8 @@ export function VesselsPage() {
           <div className="vessels-header-actions">
             <button className="vessel-primary-btn" onClick={startNewVessel}>
               <PlusIcon width={16} height={16} />
-              <span>Register Vessel</span>
+              <span className="vessel-register-text-full">Register Vessel</span>
+              <span className="vessel-register-text-short">Register</span>
             </button>
           </div>
         )}
@@ -245,7 +246,7 @@ export function VesselsPage() {
             <span className="vessels-search-icon"><SearchIcon width={16} height={16} /></span>
             <input
               className="vessel-search-input"
-              placeholder="Search by vessel name, IMO number, flag, class society, port..."
+              placeholder="Search fleet vessels, IMO, flag..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -353,7 +354,7 @@ export function VesselsPage() {
                           <FlagIcon width={12} height={12} /> {flag}
                         </span>
                       )}
-                      <span className="vessel-sub-sep">•</span>
+                      {(v.imo || flag) && <span className="vessel-sub-sep">•</span>}
                       <span className="vessel-status-simple">
                         <span className="vessel-dot" /> Active
                       </span>

@@ -1,10 +1,12 @@
 import './QuestionCard.css';
-import { useState } from 'react';
-import type { InspectionQuestion, Photo, Response } from '@ozellar/shared';
+import { useState, useRef, useEffect } from 'react';
+import type { InspectionQuestion, InspectionSection, Photo, Response } from '@ozellar/shared';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
-import { PhotoStrip } from './PhotoStrip';
-import { CameraIcon, PlusIcon } from '../../icons';
+import { addPhoto } from '../../offline/photoQueue';
+import { PhotoStrip, type QuestionSummary } from './PhotoStrip';
+import { CameraIcon, PlusIcon, WarningIcon } from '../../icons';
+import { getDraggedPhoto, endPhotoDrag, onPhotoDragEnd } from './photoDragService';
 
 function stateClass(r?: Response): string {
   if (!r) return 'state-pending';
@@ -14,10 +16,11 @@ function stateClass(r?: Response): string {
   return 'state-pending';
 }
 
-async function saveResponse(inspectionId: string, questionId: string, patch: Record<string, unknown>): Promise<void> {
+async function saveResponse(inspectionId: string, questionId: string, patch: Record<string, unknown>): Promise<string> {
   const existing = await db.responses.where('inspectionQuestionId').equals(questionId).first();
   const id = existing?.id ?? crypto.randomUUID();
   await localWrite('responses', id, { inspectionId, inspectionQuestionId: questionId, ...patch });
+  return id;
 }
 
 // ─── Icon helpers ──────────────────────────────────────────────────────────
@@ -68,12 +71,40 @@ function PillBtn({ active, disabled, activeStyle, onClick, children }: PillBtnPr
   );
 }
 
-export function QuestionCard({ inspectionId, question, response, photos, locked }: {
-  inspectionId: string; question: InspectionQuestion; response?: Response; photos: Photo[]; locked: boolean;
+export function QuestionCard({
+  inspectionId,
+  question,
+  response,
+  photos,
+  locked,
+  allSections,
+  availableQuestions,
+}: {
+  inspectionId: string;
+  question: InspectionQuestion;
+  response?: Response;
+  photos: Photo[];
+  locked: boolean;
+  allSections?: InspectionSection[];
+  availableQuestions?: QuestionSummary[];
 }) {
   const [remarks, setRemarks] = useState(response?.remarks ?? '');
   const [correctiveAction, setCorrectiveAction] = useState(response?.correctiveAction ?? '');
   const [preventiveAction, setPreventiveAction] = useState(response?.preventiveAction ?? '');
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isSameQuestionDrag, setIsSameQuestionDrag] = useState(false);
+  const [dragFeedback, setDragFeedback] = useState<string | null>(null);
+  const [dragFeedbackType, setDragFeedbackType] = useState<'success' | 'warning'>('success');
+  const dragCounter = useRef(0);
+
+  // Clean up dragover overlay whenever any drag ends in window
+  useEffect(() => {
+    return onPhotoDragEnd(() => {
+      dragCounter.current = 0;
+      setIsDragOver(false);
+      setIsSameQuestionDrag(false);
+    });
+  }, []);
 
   const applicable = response?.applicable;
   const answer = response?.answer;
@@ -88,8 +119,190 @@ export function QuestionCard({ inspectionId, question, response, photos, locked 
     void saveResponse(inspectionId, question.id, { answer: val });
   }
 
+  function handleCardDragEnter(e: React.DragEvent) {
+    if (locked) return;
+    e.preventDefault();
+    dragCounter.current += 1;
+
+    // Check if dragging from the same question
+    const dragged = getDraggedPhoto();
+    if (dragged && dragged.fromResponseId && response?.id && dragged.fromResponseId === response.id) {
+      setIsSameQuestionDrag(true);
+      setIsDragOver(false);
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
+    setIsSameQuestionDrag(false);
+    setIsDragOver(true);
+  }
+
+  function handleCardDragOver(e: React.DragEvent) {
+    if (locked) return;
+    e.preventDefault();
+
+    const dragged = getDraggedPhoto();
+    if (dragged && dragged.fromResponseId && response?.id && dragged.fromResponseId === response.id) {
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
+    e.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleCardDragLeave(e: React.DragEvent) {
+    if (locked) return;
+    // Only clear if mouse genuinely left the card boundaries
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    dragCounter.current = 0;
+    setIsDragOver(false);
+    setIsSameQuestionDrag(false);
+  }
+
+  async function handleCardDrop(e: React.DragEvent) {
+    if (locked) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
+    setIsDragOver(false);
+    setIsSameQuestionDrag(false);
+    endPhotoDrag();
+
+    let photoId: string | null = null;
+    let fromResponseId: string | null = null;
+    try {
+      const json = e.dataTransfer.getData('application/json');
+      if (json) {
+        const parsed = JSON.parse(json);
+        if (parsed.photoId) photoId = parsed.photoId;
+        if (parsed.fromResponseId) fromResponseId = parsed.fromResponseId;
+      }
+    } catch {}
+    if (!photoId) {
+      photoId = e.dataTransfer.getData('text/plain') || null;
+    }
+
+    // Prevent dropping into the same question
+    const activePhoto = getDraggedPhoto();
+    const sourceRespId = fromResponseId || activePhoto?.fromResponseId;
+    if (sourceRespId && response?.id && sourceRespId === response.id) {
+      setDragFeedback(`Photo is already attached to ${question.ref || 'this question'}`);
+      setDragFeedbackType('warning');
+      setTimeout(() => setDragFeedback(null), 2500);
+      return;
+    }
+
+    // 1. Move/assign existing photo (from Section Photos or another question)
+    if (photoId) {
+      try {
+        const existingPhoto = await db.photos.get(photoId);
+        if (existingPhoto?.target === 'question' && existingPhoto?.responseId === response?.id) {
+          setDragFeedback(`Photo is already attached to ${question.ref || 'this question'}`);
+          setDragFeedbackType('warning');
+          setTimeout(() => setDragFeedback(null), 2500);
+          return;
+        }
+
+        let respId = response?.id;
+        if (!respId) {
+          respId = await saveResponse(inspectionId, question.id, {
+            applicable: true,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        if (existingPhoto) {
+          await localWrite('photos', photoId, {
+            ...existingPhoto,
+            target: 'question',
+            responseId: respId,
+            inspectionSectionId: null,
+            position: photos.length,
+          });
+          setDragFeedback(`Photo assigned to ${question.ref || 'question'}!`);
+          setDragFeedbackType('success');
+          setTimeout(() => setDragFeedback(null), 2500);
+        }
+      } catch (err) {
+        console.error('Failed to assign photo to question', err);
+      }
+      return;
+    }
+
+    // 2. Upload dropped image files from desktop/device
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+      if (!files.length) return;
+
+      try {
+        let respId = response?.id;
+        if (!respId) {
+          respId = await saveResponse(inspectionId, question.id, {
+            applicable: true,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        let pos = photos.length;
+        for (const file of files) {
+          await addPhoto({
+            file,
+            target: 'question',
+            inspectionId,
+            responseId: respId,
+            position: pos++,
+            isDefect: false,
+          });
+        }
+        setDragFeedback(`${files.length} photo${files.length > 1 ? 's' : ''} added to ${question.ref || 'question'}!`);
+        setDragFeedbackType('success');
+        setTimeout(() => setDragFeedback(null), 2500);
+      } catch (err) {
+        console.error('Failed to upload dropped files to question', err);
+      }
+    }
+  }
+
   return (
-    <div className={`qcard ${stateClass(response)}`}>
+    <div
+      className={`qcard ${stateClass(response)}${isDragOver ? ' drag-over' : ''}${isSameQuestionDrag ? ' drag-same-question' : ''}`}
+      data-question-card-id={question.id}
+      data-response-id={response?.id || ''}
+      onDragEnter={handleCardDragEnter}
+      onDragOver={handleCardDragOver}
+      onDragLeave={handleCardDragLeave}
+      onDrop={handleCardDrop}
+    >
+      {/* ── Drag overlay ── */}
+      {isDragOver && (
+        <div className="qcard-drag-overlay">
+          <div className="qcard-drag-overlay-inner">
+            <CameraIcon width={28} height={28} />
+            <div className="qcard-drag-title">Drop photo to assign to {question.ref || 'this question'}</div>
+            <div className="qcard-drag-sub">Release to attach this photo evidence</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Same Question Disabled Drag Overlay ── */}
+      {isSameQuestionDrag && (
+        <div className="qcard-drag-overlay same-question">
+          <div className="qcard-drag-overlay-inner">
+            <WarningIcon width={28} height={28} />
+            <div className="qcard-drag-title">Already in {question.ref || 'this question'}</div>
+            <div className="qcard-drag-sub">Cannot drop photo into the same question</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Drag feedback toast ── */}
+      {dragFeedback && (
+        <div className={`qcard-drag-toast ${dragFeedbackType}`}>
+          {dragFeedbackType === 'warning' ? <WarningIcon width={16} height={16} /> : <CheckIcon />}
+          <span>{dragFeedback}</span>
+        </div>
+      )}
+
       {/* ── Question header ── */}
       <div className="qhead">
         <span className="ref">{question.ref}</span>
@@ -189,39 +402,48 @@ export function QuestionCard({ inspectionId, question, response, photos, locked 
         />
 
         {/* ── Photos section ── */}
-        {response?.id ? (
-          <div>
-            <div className="seg-label" style={{ marginTop: 4 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <CameraIcon width={14} height={14} />
-                Photos
-              </span>
-            </div>
-            <PhotoStrip
-              photos={photos}
-              target="question"
-              inspectionId={inspectionId}
-              responseId={response.id}
-              locked={locked}
-              title={question.ref ? `Question ${question.ref}` : 'Question Photos'}
-            />
-            {!locked && photos.length === 0 && (
-              <div style={{
-                border: '1.5px dashed var(--border)', borderRadius: 8,
-                padding: '16px 12px', textAlign: 'center',
-                color: 'var(--faint)', fontSize: 13, marginTop: 6,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-              }}>
-                <CameraIcon width={28} height={28} style={{ color: 'var(--faint)' }} />
-                <span>No photos yet — tap below to add one</span>
-              </div>
+        <div className="qcard-photos-container">
+          <div className="seg-label" style={{ marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <CameraIcon width={14} height={14} />
+              Photos {photos.length > 0 ? `(${photos.length})` : ''}
+            </span>
+            {!locked && (
+              <span className="qcard-drag-hint">Drag section photos here to attach</span>
             )}
           </div>
-        ) : (
-          <p className="footer-note" style={{ textAlign: 'left', padding: '6px 0 0' }}>
-            Mark <strong>Applicable</strong> or <strong>N/A</strong> above to attach photos.
-          </p>
-        )}
+
+          {response?.id ? (
+            <div>
+              <PhotoStrip
+                photos={photos}
+                target="question"
+                inspectionId={inspectionId}
+                inspectionSectionId={question.inspectionSectionId}
+                responseId={response.id}
+                locked={locked}
+                title={question.ref ? `Question ${question.ref}` : 'Question Photos'}
+                allSections={allSections}
+                availableQuestions={availableQuestions}
+              />
+              {!locked && photos.length === 0 && (
+                <div className="qcard-dropzone-prompt">
+                  <CameraIcon width={22} height={22} style={{ color: 'var(--accent)' }} />
+                  <div className="qcard-dropzone-text">
+                    No photos yet — <strong>drag a section photo here</strong> or tap below to upload
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="qcard-dropzone-prompt unassigned">
+              <CameraIcon width={20} height={20} style={{ color: 'var(--muted)' }} />
+              <div className="qcard-dropzone-text">
+                <strong>Drag a section photo here</strong> or mark <strong>Applicable</strong> above to attach photos
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

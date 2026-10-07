@@ -93,6 +93,13 @@ export function RegisterVesselPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Always reset scroll to top when switching wizard tabs
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [activeTab]);
+
   useEffect(() => {
     if (isEditing && id) {
       db.vessels.get(id).then(v => {

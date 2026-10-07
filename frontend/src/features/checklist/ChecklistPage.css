@@ -107,6 +107,18 @@
   box-shadow: 0 6px 20px rgba(14, 124, 134, 0.35);
 }
 
+.cl-btn-text-short,
+.cl-tab-text-short,
+.cl-dropdown-label-short {
+  display: none;
+}
+
+.cl-btn-text-full,
+.cl-tab-text-full,
+.cl-dropdown-label-full {
+  display: inline;
+}
+
 /* ─── List Header Count ─── */
 .cl-results-count {
   font-size: 13px;
@@ -449,6 +461,15 @@
   box-shadow: 0 0 0 4px rgba(14, 124, 134, 0.08);
 }
 
+.cl-input::placeholder,
+.cl-textarea::placeholder,
+.cl-custom-type-input::placeholder {
+  color: var(--faint);
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 1;
+}
+
 .cl-textarea {
   height: auto;
   min-height: 120px;
@@ -590,54 +611,7 @@
   margin-top: 16px;
 }
 
-/* ─── Responsive Adjustments ─── */
-@media (max-width: 900px) {
-  .cl-page-wrap { padding: 24px; }
-  .cl-page-header { flex-wrap: wrap; gap: 16px; }
-}
 
-@media (max-width: 600px) {
-  .cl-page-wrap { padding: 16px; gap: 16px; }
-  
-  .cl-title-group { width: 100%; flex-wrap: wrap; }
-  .cl-title-row { flex-direction: column; gap: 4px; align-items: flex-start; }
-  
-  .cl-header-actions { width: 100%; }
-  .cl-primary-btn { width: 100%; justify-content: center; }
-
-  .cl-row-header {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 16px;
-    gap: 16px;
-  }
-  
-  .cl-row-controls {
-    opacity: 1;
-    transform: none;
-    width: 100%;
-    justify-content: flex-end;
-    border-top: 1px solid var(--border);
-    padding-top: 16px;
-  }
-  
-  .cl-form-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .cl-form-actions {
-    flex-direction: column;
-  }
-  
-  .cl-btn-cancel, .cl-btn-save {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .cl-vessel-mode-toggle {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* ==========================================================================
    Vessel Category Assignment & Filtering Styles
@@ -1294,5 +1268,792 @@
   background: #f0fdfa;
   color: #0e7c86;
   border: 1px solid #99f6e4;
+}
+
+/* ==========================================================================
+   Responsive Styles
+   ========================================================================== */
+
+/* ─── Tablet & Moderate Screens (<= 900px) ─── */
+@media (max-width: 900px) {
+  .cl-page-wrap {
+    padding: 20px 24px 60px;
+    gap: 18px;
+  }
+
+  .cl-page-header {
+    gap: 12px;
+  }
+
+  .cl-page-title {
+    font-size: 24px;
+  }
+
+  .cl-form-card {
+    padding: 20px;
+  }
+
+  .cl-filter-toolbar {
+    gap: 10px;
+  }
+}
+
+/* ─── Mobile Screens (<= 640px) ─── */
+@media (max-width: 640px) {
+  .cl-page-wrap {
+    padding: 12px 12px 70px !important;
+    gap: 12px !important;
+  }
+
+  /* ── Header: High Density Single Row ── */
+  .cl-page-header {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    padding-bottom: 0 !important;
+    gap: 8px !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .cl-title-group {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+    flex: 1 !important;
+  }
+
+  .back-btn-premium {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    border-radius: 9px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .back-btn-premium svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  .cl-title-row {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-width: 0 !important;
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+  }
+
+  .cl-page-title {
+    font-size: 17px !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.3px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    margin: 0 !important;
+    min-width: 0 !important;
+  }
+
+  .cl-count-pill {
+    font-size: 10.5px !important;
+    font-weight: 700 !important;
+    padding: 2px 7px !important;
+    border-radius: 12px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    line-height: 1.3 !important;
+  }
+
+  .cl-vessel-tag-header {
+    font-size: 10.5px !important;
+    padding: 2px 7px !important;
+    border-radius: 10px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    max-width: 110px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .cl-header-actions {
+    width: auto !important;
+    flex-shrink: 0 !important;
+    margin: 0 !important;
+  }
+
+  .cl-primary-btn {
+    width: auto !important;
+    min-height: 34px !important;
+    height: 34px !important;
+    padding: 6px 12px !important;
+    font-size: 12.5px !important;
+    font-weight: 700 !important;
+    border-radius: 8px !important;
+    gap: 5px !important;
+    white-space: nowrap !important;
+    box-shadow: 0 2px 8px rgba(14, 124, 134, 0.2) !important;
+  }
+
+  .cl-primary-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  /* ── Filter Toolbar ── */
+  .cl-filter-container {
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+    gap: 8px !important;
+  }
+
+  .cl-filter-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .cl-filter-right {
+    width: 100% !important;
+    margin-left: 0 !important;
+    order: 1 !important;
+  }
+
+  .cl-search-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 10px !important;
+    border-radius: 8px !important;
+    box-sizing: border-box !important;
+    gap: 6px !important;
+  }
+
+  .cl-search-icon {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  .cl-search-input {
+    font-size: 13px !important;
+    height: 34px !important;
+  }
+
+  .cl-search-input::placeholder {
+    font-size: 12px !important;
+    color: #94A3B8 !important;
+    font-weight: 400 !important;
+  }
+
+  .cl-filter-left {
+    width: 100% !important;
+    order: 2 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+
+  .cl-quick-tab {
+    padding: 5px 10px !important;
+    height: 32px !important;
+    font-size: 12px !important;
+    border-radius: 7px !important;
+    gap: 5px !important;
+  }
+
+  .cl-quick-tab svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .cl-tab-badge {
+    font-size: 10px !important;
+    padding: 1px 5px !important;
+  }
+
+  .cl-vessel-dropdown-wrap {
+    position: relative !important;
+  }
+
+  .cl-vessel-dropdown-btn {
+    padding: 5px 10px !important;
+    height: 32px !important;
+    font-size: 12px !important;
+    border-radius: 7px !important;
+    gap: 5px !important;
+  }
+
+  .cl-vessel-dropdown-btn svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .cl-vessel-dropdown-menu {
+    left: 0 !important;
+    max-width: calc(100vw - 48px) !important;
+    min-width: 230px !important;
+    z-index: 80 !important;
+    box-shadow: 0 10px 28px rgba(11, 33, 56, 0.18) !important;
+  }
+
+  .cl-dropdown-item {
+    padding: 7px 9px !important;
+    font-size: 12px !important;
+  }
+
+  .cl-filter-clear-btn {
+    padding: 5px 8px !important;
+    height: 32px !important;
+    font-size: 11.5px !important;
+    border-radius: 7px !important;
+  }
+
+  .cl-filter-subbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 7px !important;
+    padding-top: 8px !important;
+  }
+
+  .cl-filter-hint {
+    font-size: 11.5px !important;
+    gap: 6px !important;
+  }
+
+  .cl-scope-toggles {
+    display: flex !important;
+    width: 100% !important;
+    padding: 2px !important;
+    box-sizing: border-box !important;
+  }
+
+  .cl-scope-btn {
+    flex: 1 !important;
+    text-align: center !important;
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+    white-space: nowrap !important;
+  }
+
+  /* ── Results Count ── */
+  .cl-results-count {
+    font-size: 11.5px !important;
+    margin-top: 4px !important;
+    margin-bottom: -4px !important;
+  }
+
+  /* ── Row Cards (Section & Question Lists) ── */
+  .cl-list-container {
+    gap: 10px !important;
+  }
+
+  .cl-row-card {
+    border-radius: 12px !important;
+  }
+
+  .cl-row-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 0 !important;
+    gap: 0 !important;
+  }
+
+  .cl-row-main {
+    padding: 12px 14px !important;
+    gap: 12px !important;
+    align-items: flex-start !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .cl-section-avatar,
+  .cl-q-avatar {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    border-radius: 9px !important;
+    font-size: 13px !important;
+  }
+
+  .cl-section-avatar svg {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  .cl-row-info {
+    gap: 4px !important;
+    min-width: 0 !important;
+  }
+
+  .cl-title-main {
+    gap: 8px !important;
+  }
+
+  .cl-section-name {
+    font-size: 14.5px !important;
+    font-weight: 700 !important;
+    line-height: 1.35 !important;
+  }
+
+  .cl-q-text {
+    font-size: 13.5px !important;
+    line-height: 1.4 !important;
+  }
+
+  .cl-type-chip {
+    font-size: 9.5px !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+  }
+
+  .cl-vessel-tags-row {
+    gap: 4px !important;
+    margin: 1px 0 !important;
+  }
+
+  .cl-vessel-badge {
+    font-size: 10.5px !important;
+    padding: 2px 7px !important;
+    border-radius: 5px !important;
+    gap: 3px !important;
+  }
+
+  .cl-vessel-badge svg {
+    width: 11px !important;
+    height: 11px !important;
+  }
+
+  .cl-vessel-badge-counter {
+    font-size: 10.5px !important;
+  }
+
+  .cl-vessel-badge-cluster {
+    gap: 4px !important;
+  }
+
+  .cl-q-meta {
+    font-size: 11.5px !important;
+    gap: 5px !important;
+    color: var(--muted) !important;
+  }
+
+  .cl-sub-sep {
+    font-size: 10px !important;
+  }
+
+  /* Sleek, touch-friendly bottom controls shelf */
+  .cl-row-controls {
+    opacity: 1 !important;
+    transform: none !important;
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 6px 12px !important;
+    background: #F8FAFC !important;
+    border-top: 1px solid var(--border) !important;
+    box-sizing: border-box !important;
+    gap: 6px !important;
+  }
+
+  .cl-reorder-group {
+    display: flex !important;
+    align-items: center !important;
+    gap: 3px !important;
+    background: #FFFFFF !important;
+    padding: 2px 4px !important;
+    border-radius: 7px !important;
+    border: 1px solid var(--border) !important;
+    margin-right: auto !important;
+  }
+
+  .cl-icon-btn {
+    width: 27px !important;
+    height: 27px !important;
+    font-size: 12px !important;
+    border-radius: 6px !important;
+  }
+
+  .cl-icon-btn.edit,
+  .cl-icon-btn.delete {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 7px !important;
+    padding: 0 !important;
+    background: #FFFFFF !important;
+  }
+
+  .cl-icon-btn.edit svg,
+  .cl-icon-btn.delete svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  /* ── Forms: Add / Edit Section & Question ── */
+  .cl-form-card {
+    padding: 14px 12px !important;
+    border-radius: 12px !important;
+    margin-top: 10px !important;
+    box-shadow: 0 2px 8px rgba(11, 33, 56, 0.04) !important;
+  }
+
+  .cl-form-header {
+    margin-bottom: 14px !important;
+  }
+
+  .cl-form-header h2 {
+    font-size: 17px !important;
+    margin: 0 0 4px !important;
+  }
+
+  .cl-form-header p {
+    font-size: 12.5px !important;
+    line-height: 1.4 !important;
+  }
+
+  .cl-form-body {
+    gap: 14px !important;
+  }
+
+  .cl-form-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .cl-form-field {
+    gap: 5px !important;
+  }
+
+  .cl-label {
+    font-size: 11px !important;
+    letter-spacing: 0.4px !important;
+  }
+
+  .cl-input {
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+  }
+
+  .cl-input::placeholder {
+    font-size: 12px !important;
+    color: #94A3B8 !important;
+    font-weight: 400 !important;
+  }
+
+  .cl-textarea {
+    min-height: 95px !important;
+    padding: 10px 12px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+  }
+
+  .cl-textarea::placeholder {
+    font-size: 12px !important;
+    color: #94A3B8 !important;
+    font-weight: 400 !important;
+  }
+
+  .cl-photo-toggle {
+    padding: 10px 12px !important;
+    border-radius: 9px !important;
+    gap: 10px !important;
+  }
+
+  .cl-photo-toggle input[type="checkbox"] {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  .cl-photo-toggle-text strong {
+    font-size: 13.5px !important;
+  }
+
+  .cl-photo-toggle-text span {
+    font-size: 11.5px !important;
+  }
+
+  /* Vessel Assignment in Form */
+  .cl-vessel-assignment-box {
+    padding: 12px 10px !important;
+    border-radius: 10px !important;
+    gap: 10px !important;
+  }
+
+  .cl-assignment-subhint {
+    font-size: 11.5px !important;
+  }
+
+  .cl-vessel-mode-toggle {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .cl-vessel-mode-btn {
+    padding: 10px 12px !important;
+    border-radius: 8px !important;
+    gap: 10px !important;
+  }
+
+  .cl-mode-icon svg {
+    width: 17px !important;
+    height: 17px !important;
+  }
+
+  .cl-mode-text strong {
+    font-size: 13px !important;
+  }
+
+  .cl-mode-text small {
+    font-size: 11px !important;
+  }
+
+  .cl-specific-vessels-panel {
+    gap: 10px !important;
+    padding-top: 10px !important;
+  }
+
+  .cl-panel-toolbar {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .cl-selection-summary {
+    font-size: 12px !important;
+  }
+
+  .cl-quick-actions {
+    gap: 6px !important;
+  }
+
+  .cl-text-action-btn {
+    font-size: 11.5px !important;
+  }
+
+  .cl-vessel-chips-grid {
+    gap: 6px !important;
+  }
+
+  .cl-vessel-chip {
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
+    border-radius: 7px !important;
+    gap: 6px !important;
+  }
+
+  .cl-chip-check svg {
+    width: 11px !important;
+    height: 11px !important;
+  }
+
+  .cl-chip-empty-dot {
+    width: 10px !important;
+    height: 10px !important;
+  }
+
+  .cl-add-custom-type-row {
+    gap: 6px !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .cl-custom-type-input {
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 10px !important;
+    font-size: 12.5px !important;
+    border-radius: 7px !important;
+  }
+
+  .cl-custom-type-input::placeholder {
+    font-size: 11.5px !important;
+    color: #94A3B8 !important;
+    font-weight: 400 !important;
+  }
+
+  .cl-btn-add-custom {
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 12px !important;
+    font-size: 12px !important;
+    border-radius: 7px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .cl-warning-hint {
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
+    border-radius: 7px !important;
+  }
+
+  /* Form Actions (Side-by-side, single row) */
+  .cl-form-actions {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin-top: 6px !important;
+    padding-top: 14px !important;
+  }
+
+  .cl-btn-cancel {
+    flex: 1 !important;
+    width: auto !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+  }
+
+  .cl-btn-save {
+    flex: 1 !important;
+    width: auto !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    gap: 6px !important;
+  }
+
+  .cl-btn-save svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  /* ── Empty States & Banners ── */
+  .cl-empty-state {
+    padding: 36px 16px !important;
+    border-radius: 12px !important;
+    margin-top: 10px !important;
+  }
+
+  .cl-empty-icon {
+    width: 52px !important;
+    height: 52px !important;
+    border-radius: 14px !important;
+    margin-bottom: 14px !important;
+  }
+
+  .cl-empty-icon svg {
+    width: 26px !important;
+    height: 26px !important;
+  }
+
+  .cl-empty-title {
+    font-size: 16px !important;
+    margin-bottom: 6px !important;
+  }
+
+  .cl-empty-desc {
+    font-size: 13px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .cl-error-banner,
+  .cl-info-banner {
+    padding: 10px 12px !important;
+    font-size: 12.5px !important;
+    border-radius: 8px !important;
+    gap: 8px !important;
+  }
+}
+
+/* ─── Compact Breakpoint (<= 420px) ─── */
+@media (max-width: 420px) {
+  .cl-btn-text-full {
+    display: none !important;
+  }
+  .cl-btn-text-short {
+    display: inline !important;
+  }
+  .cl-tab-text-full {
+    display: none !important;
+  }
+  .cl-tab-text-short {
+    display: inline !important;
+  }
+  .cl-dropdown-label-full {
+    display: none !important;
+  }
+  .cl-dropdown-label-short {
+    display: inline !important;
+  }
+}
+
+/* ─── Extra Small Mobile Screens (<= 380px) ─── */
+@media (max-width: 380px) {
+  .cl-page-wrap {
+    padding: 10px 8px 60px !important;
+    gap: 10px !important;
+  }
+
+  .cl-page-title {
+    font-size: 15.5px !important;
+  }
+
+  .cl-count-pill {
+    font-size: 9.5px !important;
+    padding: 2px 5px !important;
+  }
+
+  .cl-primary-btn {
+    padding: 5px 9px !important;
+    font-size: 11.5px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+  }
+
+  .cl-section-avatar,
+  .cl-q-avatar {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    border-radius: 8px !important;
+    font-size: 12px !important;
+  }
+
+  .cl-section-name {
+    font-size: 13.5px !important;
+  }
+
+  .cl-q-text {
+    font-size: 13px !important;
+  }
+
+  .cl-vessel-badge {
+    font-size: 9.5px !important;
+    padding: 1.5px 5px !important;
+  }
+
+  .cl-icon-btn.edit,
+  .cl-icon-btn.delete {
+    width: 27px !important;
+    height: 27px !important;
+  }
+
+  .cl-vessel-tag-header {
+    display: none !important;
+  }
 }
 

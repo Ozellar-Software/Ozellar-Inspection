@@ -190,15 +190,22 @@
 
 .ru-text-input {
   width: 100%;
-  padding: 10px 14px;
+  padding: 9.5px 13px;
   border-radius: 8px;
   border: 1px solid #CBD5E1;
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--ink);
   background: #F8FAFC;
   outline: none;
   transition: all 0.15s ease;
   box-sizing: border-box;
+}
+
+.ru-text-input::placeholder {
+  color: #94A3B8;
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 1;
 }
 
 .ru-text-input:focus {
@@ -542,10 +549,14 @@
   transform: none;
 }
 
+/* ══════════════════════════════════════════════════════════
+   TABLET RESPONSIVE (<= 900px)
+   ══════════════════════════════════════════════════════════ */
 @media (max-width: 900px) {
   .ru-page-wrap {
     height: auto;
     overflow: visible;
+    padding: 16px 20px 60px;
   }
   .ru-content-container {
     flex-direction: column;
@@ -558,12 +569,249 @@
     overflow-y: visible;
   }
 }
-@media (max-width: 600px) {
-  .ru-page-wrap { padding: 16px; }
-  .ru-header { flex-direction: column; align-items: flex-start; gap: 16px; }
-  .ru-grid.two-cols { grid-template-columns: 1fr; }
-  .ru-role-grid { grid-template-columns: 1fr; }
-  .ru-vessel-grid { grid-template-columns: 1fr; }
-  .ru-form-footer { flex-direction: column-reverse; }
-  .ru-btn-cancel, .ru-btn-save { width: 100%; justify-content: center; }
+
+/* ══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE (<= 640px)
+   ══════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .ru-page-wrap {
+    padding: 12px 12px 48px;
+    gap: 12px;
+  }
+
+  /* Compact Header */
+  .ru-header {
+    gap: 10px;
+  }
+
+  .ru-back-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    gap: 4px;
+    border-radius: 7px;
+  }
+
+  .ru-header-title-group {
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .ru-title-badge {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .ru-title-badge svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .ru-page-title {
+    font-size: 18px;
+    line-height: 1.2;
+    letter-spacing: -0.3px;
+  }
+
+  .ru-page-subtitle {
+    font-size: 11.5px;
+    line-height: 1.35;
+    margin-top: 2px;
+  }
+
+  /* Form Card Body */
+  .ru-form-card {
+    border-radius: 12px;
+  }
+
+  .ru-form-body {
+    padding: 14px 12px;
+    gap: 16px;
+  }
+
+  .ru-form-section {
+    gap: 14px;
+  }
+
+  .ru-section-header {
+    padding-bottom: 8px;
+  }
+
+  .ru-section-header h2 {
+    font-size: 15px;
+  }
+
+  .ru-section-header p {
+    font-size: 11.5px;
+  }
+
+  /* 1-column form field grids */
+  .ru-grid {
+    gap: 12px;
+    grid-template-columns: 1fr !important;
+  }
+
+  .ru-input-group {
+    gap: 4px;
+  }
+
+  .ru-input-label {
+    font-size: 12px;
+  }
+
+  /* Compact Input Fields */
+  .ru-text-input {
+    font-size: 13px !important;
+    padding: 8px 11px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    border-radius: 8px !important;
+    background: #FFFFFF;
+    border-color: #CBD5E1;
+  }
+
+  .ru-text-input::placeholder {
+    font-size: 12px !important;
+    color: #94A3B8 !important;
+    font-weight: 400 !important;
+    opacity: 0.9 !important;
+    text-overflow: ellipsis;
+  }
+
+  .ru-pwd-icon-btn {
+    top: 3px !important;
+    right: 4px !important;
+  }
+
+  .ru-password-present {
+    padding: 8px 10px !important;
+    border-radius: 8px;
+  }
+
+  /* 2-column Role Tiles Grid */
+  .ru-role-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .ru-role-tile {
+    padding: 10px 8px;
+    border-radius: 8px;
+    gap: 4px;
+  }
+
+  .ru-role-name {
+    font-size: 12px;
+  }
+
+  .ru-role-desc {
+    font-size: 10.5px;
+    line-height: 1.3;
+  }
+
+  .ru-tile-check svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  /* Fleet Assignment Grid */
+  .ru-vessel-actions button {
+    font-size: 11.5px;
+  }
+
+  .ru-vessel-grid {
+    gap: 6px !important;
+  }
+
+  .ru-vessel-pill {
+    padding: 5px 10px;
+    font-size: 11.5px;
+    border-radius: 16px;
+    gap: 4px;
+  }
+
+  .ru-vessel-pill svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* Account Status Box */
+  .ru-auth-box {
+    padding: 10px 12px !important;
+    border-radius: 10px;
+  }
+
+  .ru-auth-row {
+    gap: 10px;
+  }
+
+  .ru-toggle {
+    width: 40px;
+    height: 22px;
+  }
+
+  .ru-toggle-slider:before {
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+  }
+
+  .ru-toggle input:checked + .ru-toggle-slider:before {
+    transform: translateX(18px);
+  }
+
+  .ru-auth-text strong {
+    font-size: 13px;
+  }
+
+  .ru-auth-text span {
+    font-size: 11px;
+  }
+
+  /* Form Footer: Side-by-side action buttons on 1 line */
+  .ru-form-footer {
+    padding: 10px 12px;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .ru-btn-cancel,
+  .ru-btn-save {
+    flex: 1;
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    justify-content: center;
+    border-radius: 8px;
+  }
+}
+
+/* Extra small screens (<= 360px) */
+@media (max-width: 360px) {
+  .ru-page-title {
+    font-size: 16.5px;
+  }
+  .ru-title-badge {
+    width: 34px;
+    height: 34px;
+  }
+  .ru-role-name {
+    font-size: 11px;
+  }
+  .ru-role-desc {
+    font-size: 9.5px;
+  }
+  .ru-text-input {
+    font-size: 12.5px !important;
+    padding: 7px 9px !important;
+    height: 35px !important;
+    min-height: 35px !important;
+  }
+  .ru-text-input::placeholder {
+    font-size: 11px !important;
+  }
 }

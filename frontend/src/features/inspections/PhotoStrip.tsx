@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Photo, PhotoTarget } from '@ozellar/shared';
+import type { InspectionSection, Photo, PhotoTarget } from '@ozellar/shared';
+import { db } from '../../offline/db';
 import { photoSrc, addPhoto } from '../../offline/photoQueue';
-import { localDelete } from '../../offline/outbox';
+import { localDelete, localWrite } from '../../offline/outbox';
 import {
   CameraIcon,
   UploadIcon,
@@ -9,20 +10,32 @@ import {
   EyeIcon,
   DownloadIcon,
   WarningIcon,
+  GripVerticalIcon,
+  ArrowRightCircleIcon,
+  MoreHorizontalIcon,
 } from '../../icons';
 import { ImageViewerModal } from './ImageViewerModal';
 import { PhotoUploadModal } from './PhotoUploadModal';
 import { CameraCaptureModal } from './CameraCaptureModal';
+import { AssignPhotoModal } from './AssignPhotoModal';
+import { PhotoTooltipMenu } from './PhotoTooltipMenu';
+import { MovePhotoModal } from './MovePhotoModal';
 import { downloadPhotosAsZip } from './photoDownload';
+import { startPhotoDrag, endPhotoDrag, startTouchPhotoDrag } from './photoDragService';
 import './PhotoStrip.css';
 
 /**
  * Thumbnail row + take/upload buttons for one target (a question, a finding, or a section's own photos).
- * Tapping "Take photo" opens the dedicated CameraCaptureModal with live viewfinder & multi-shot snapping.
- * Tapping "Upload photos" opens the dedicated PhotoUploadModal with drag-and-drop & file selection.
+ * Supports dragging photos to/from questions, and quick-assigning section photos to questions.
  */
 type SyncedPhoto = Photo & { deletedAt?: string | null };
 const MAX_ATTEMPTS = 6;
+
+export interface QuestionSummary {
+  id: string;
+  ref: string;
+  text: string;
+}
 
 export function PhotoStrip({
   photos,
@@ -33,6 +46,8 @@ export function PhotoStrip({
   findingId,
   locked,
   title,
+  allSections,
+  availableQuestions,
 }: {
   photos: SyncedPhoto[];
   target: PhotoTarget;
@@ -42,8 +57,18 @@ export function PhotoStrip({
   findingId?: string;
   locked: boolean;
   title?: string;
+  allSections?: InspectionSection[];
+  availableQuestions?: QuestionSummary[];
 }) {
   const [urls, setUrls] = useState<Record<string, string>>({});
+  const [assignModalPhoto, setAssignModalPhoto] = useState<SyncedPhoto | null>(null);
+  const [moveModalPhoto, setMoveModalPhoto] = useState<SyncedPhoto | null>(null);
+  const [tooltipTarget, setTooltipTarget] = useState<{ photo: SyncedPhoto; anchorEl: HTMLElement } | null>(null);
+
+  // Gesture refs for single-click (lightbox) vs double-click & long-press (tooltip options)
+  const clickTimeoutRef = useRef<number | null>(null);
+  const longPressTimeoutRef = useRef<number | null>(null);
+  const isLongPressTriggeredRef = useRef(false);
 
   // Lightbox / Image Viewer state
   const [viewerIndex, setViewerIndex] = useState(0);
@@ -124,11 +149,286 @@ export function PhotoStrip({
     setIsUploadModalOpen(true);
   };
 
-  // Drag and drop onto the strip directly
-  const handleStripDrop = (e: React.DragEvent) => {
+  // Toggle Normal / Defect classification
+  const handleToggleDefect = async (photoId: string, isDefect: boolean) => {
+    const existing = await db.photos.get(photoId);
+    if (existing) {
+      await localWrite('photos', photoId, {
+        ...existing,
+        isDefect,
+      });
+    }
+  };
+
+  // Move photo to any section in this inspection
+  const handleMoveToSection = async (photoId: string, targetSectionId: string) => {
+    const targetSectionPhotos = await db.photos
+      .where('inspectionId')
+      .equals(inspectionId)
+      .filter((p) => p.target === 'section' && p.inspectionSectionId === targetSectionId && !p.deletedAt)
+      .toArray();
+
+    const existing = await db.photos.get(photoId);
+    if (existing) {
+      await localWrite('photos', photoId, {
+        ...existing,
+        target: 'section',
+        inspectionSectionId: targetSectionId,
+        responseId: null,
+        findingId: null,
+        position: targetSectionPhotos.length,
+      });
+    }
+  };
+
+  // Assign or move photo to a chosen question
+  const handleAssignToQuestion = async (photoId: string, questionId: string, targetSectionId?: string) => {
+    try {
+      const existing = await db.responses
+        .where('inspectionId')
+        .equals(inspectionId)
+        .filter((r) => r.inspectionQuestionId === questionId)
+        .first();
+      let respId = existing?.id;
+      if (!respId) {
+        respId = crypto.randomUUID();
+        await localWrite('responses', respId, {
+          inspectionId,
+          inspectionQuestionId: questionId,
+          inspectionSectionId: targetSectionId || inspectionSectionId || null,
+          applicable: true,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      const qPhotos = await db.photos
+        .where('inspectionId')
+        .equals(inspectionId)
+        .filter((p) => p.target === 'question' && p.responseId === respId && !p.deletedAt)
+        .toArray();
+
+      const targetPhoto = await db.photos.get(photoId);
+      if (targetPhoto) {
+        await localWrite('photos', photoId, {
+          ...targetPhoto,
+          target: 'question',
+          responseId: respId,
+          inspectionSectionId: null,
+          findingId: null,
+          position: qPhotos.length,
+        });
+      }
+      setAssignModalPhoto(null);
+    } catch (err) {
+      console.error('Failed to assign photo to question', err);
+    }
+  };
+
+  // ── Thumbnail interaction: Single-click (view), Double-click (tooltip), Long hold (drag & drop) ──
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isHoldingTouchRef = useRef(false);
+
+  const handleThumbnailClick = (idx: number, photo: SyncedPhoto, el: HTMLElement) => {
+    if (isLongPressTriggeredRef.current || isHoldingTouchRef.current) {
+      isLongPressTriggeredRef.current = false;
+      isHoldingTouchRef.current = false;
+      return;
+    }
+
+    // Double-click detection within 230ms
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+      setTooltipTarget({ photo, anchorEl: el });
+      return;
+    }
+
+    // Single click: open image viewer directly (old behavior)
+    clickTimeoutRef.current = window.setTimeout(() => {
+      clickTimeoutRef.current = null;
+      setViewerIndex(idx);
+      setIsViewerOpen(true);
+    }, 220);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent, photo: SyncedPhoto, el: HTMLElement) => {
     e.preventDefault();
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
+    setTooltipTarget({ photo, anchorEl: el });
+  };
+
+  const handleTouchStart = (photo: SyncedPhoto, el: HTMLElement, e: React.TouchEvent) => {
+    if (locked) return;
+    if (e.touches.length > 1) return;
+
+    const t = e.touches[0];
+    const startCoord = { clientX: t.clientX, clientY: t.clientY };
+    touchStartPosRef.current = { x: t.clientX, y: t.clientY };
+    isHoldingTouchRef.current = false;
+    isLongPressTriggeredRef.current = false;
+
+    if (longPressTimeoutRef.current) clearTimeout(longPressTimeoutRef.current);
+
+    // 280ms hold threshold to activate mobile drag & drop!
+    longPressTimeoutRef.current = window.setTimeout(() => {
+      isLongPressTriggeredRef.current = true;
+      isHoldingTouchRef.current = true;
+      startTouchPhotoDrag(
+        startCoord,
+        {
+          photoId: photo.id,
+          fromTarget: target,
+          fromSectionId: inspectionSectionId,
+          fromResponseId: responseId,
+          isDefect: photo.isDefect,
+          photoUrl: urls[photo.id],
+        },
+        {
+          onDropToQuestion: async (photoId, questionId, targetSecId) => {
+            await handleAssignToQuestion(photoId, questionId, targetSecId);
+          },
+          onDropToSection: async (photoId, targetSecId) => {
+            await handleMoveToSection(photoId, targetSecId || inspectionSectionId || '');
+          },
+          onSameQuestionAttempt: () => {
+            // Same question drop prevented
+          },
+          onSameSectionAttempt: () => {
+            // Same section drop prevented
+          },
+        },
+        el
+      );
+    }, 280);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartPosRef.current) return;
+    if (!isHoldingTouchRef.current) {
+      const t = e.touches[0];
+      const dist = Math.hypot(t.clientX - touchStartPosRef.current.x, t.clientY - touchStartPosRef.current.y);
+      // If moved > 16px before 280ms hold timer fires, user is scrolling! Cancel hold timer.
+      if (dist > 16 && longPressTimeoutRef.current) {
+        clearTimeout(longPressTimeoutRef.current);
+        longPressTimeoutRef.current = null;
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimeoutRef.current) {
+      clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
+    touchStartPosRef.current = null;
+    if (isLongPressTriggeredRef.current) {
+      setTimeout(() => {
+        isLongPressTriggeredRef.current = false;
+        isHoldingTouchRef.current = false;
+      }, 450);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, photo: SyncedPhoto, el: HTMLElement) => {
+    e.preventDefault();
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
+    // Only open tooltip on desktop right-click with a mouse; on mobile touch, suppress it so it never blocks drag
+    const isTouch =
+      (e.nativeEvent as any).pointerType === 'touch' ||
+      isHoldingTouchRef.current ||
+      ('ontouchstart' in window && window.innerWidth <= 768);
+    if (!isTouch) {
+      setTooltipTarget({ photo, anchorEl: el });
+    }
+  };
+
+  // Touch drag initiation from the drag handle indicator
+  const handleTouchDragInitiate = (e: React.TouchEvent, photo: SyncedPhoto) => {
+    if (locked) return;
+    if (longPressTimeoutRef.current) {
+      clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
     e.stopPropagation();
-    if (!locked && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    const t = e.touches[0];
+    const startCoord = { clientX: t.clientX, clientY: t.clientY };
+    startTouchPhotoDrag(
+      startCoord,
+      {
+        photoId: photo.id,
+        fromTarget: target,
+        fromSectionId: inspectionSectionId,
+        fromResponseId: responseId,
+        isDefect: photo.isDefect,
+        photoUrl: urls[photo.id],
+      },
+      {
+        onDropToQuestion: async (photoId, questionId, targetSecId) => {
+          await handleAssignToQuestion(photoId, questionId, targetSecId);
+        },
+        onDropToSection: async (photoId, targetSecId) => {
+          await handleMoveToSection(photoId, targetSecId || inspectionSectionId || '');
+        },
+        onSameQuestionAttempt: () => {
+          // Prevent dropping into same question
+        },
+        onSameSectionAttempt: () => {
+          // Prevent dropping into same section
+        },
+      }
+    );
+  };
+
+  // Drag and drop onto the strip directly
+  const handleStripDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    endPhotoDrag();
+    if (locked) return;
+
+    // Check if an existing photo was dropped (e.g. from question back to section)
+    let photoId = '';
+    try {
+      const json = e.dataTransfer.getData('application/json');
+      if (json) {
+        const parsed = JSON.parse(json);
+        if (parsed.photoId) photoId = parsed.photoId;
+      }
+    } catch {}
+    if (!photoId) {
+      photoId = e.dataTransfer.getData('text/plain');
+    }
+
+    if (photoId) {
+      const existingPhoto = await db.photos.get(photoId);
+      if (existingPhoto) {
+        // Prevent drop into same section
+        if (target === 'section' && existingPhoto.target === 'section' && existingPhoto.inspectionSectionId === inspectionSectionId) {
+          return;
+        }
+        // Prevent drop into same question
+        if (target === 'question' && existingPhoto.target === 'question' && existingPhoto.responseId === responseId) {
+          return;
+        }
+
+        await localWrite('photos', photoId, {
+          ...existingPhoto,
+          target,
+          inspectionSectionId: target === 'section' ? inspectionSectionId : null,
+          responseId: target === 'question' ? responseId : null,
+          findingId: target === 'finding' ? findingId : null,
+          position: photos.length,
+        });
+      }
+      return;
+    }
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFilesChosen(e.dataTransfer.files);
     }
   };
@@ -227,14 +527,94 @@ export function PhotoStrip({
         {activePhotos.map((p, idx) => (
           <div
             key={p.id}
-            className={`thumb${p.isDefect ? ' defect' : ''}`}
-            onClick={() => {
-              setViewerIndex(idx);
-              setIsViewerOpen(true);
+            className={`thumb${p.isDefect ? ' defect' : ''}${!locked ? ' draggable' : ''}`}
+            draggable={!locked}
+            onDragStart={(e) => {
+              if (locked) return;
+              startPhotoDrag({
+                photoId: p.id,
+                fromTarget: target,
+                fromSectionId: inspectionSectionId,
+                fromResponseId: responseId,
+                isDefect: p.isDefect,
+                photoUrl: urls[p.id],
+              });
+              e.dataTransfer.setData('text/plain', p.id);
+              e.dataTransfer.setData(
+                'application/json',
+                JSON.stringify({
+                  type: 'ozellar-photo',
+                  photoId: p.id,
+                  fromTarget: target,
+                  fromInspectionSectionId: inspectionSectionId,
+                  fromResponseId: responseId,
+                })
+              );
+              e.dataTransfer.effectAllowed = 'copyMove';
             }}
-            style={{ cursor: 'pointer' }}
-            title={p.isDefect ? 'Defect Photo (Click to view)' : 'Normal Photo (Click to view)'}
+            onDragEnd={() => {
+              endPhotoDrag();
+            }}
+            onClick={(e) => handleThumbnailClick(idx, p, e.currentTarget)}
+            onDoubleClick={(e) => handleDoubleClick(e, p, e.currentTarget)}
+            onTouchStart={(e) => handleTouchStart(p, e.currentTarget, e)}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onContextMenu={(e) => handleContextMenu(e, p, e.currentTarget)}
+            style={{ cursor: !locked ? 'grab' : 'pointer' }}
+            title={
+              target === 'section'
+                ? 'Click to view, double-click or hold for options (normal/defect, move section)'
+                : 'Click to view, double-click or hold for options'
+            }
           >
+            {/* Drag grip icon */}
+            {!locked && (
+              <span
+                className="thumb-drag-indicator"
+                title="Drag to question"
+                onTouchStart={(e) => handleTouchDragInitiate(e, p)}
+              >
+                <GripVerticalIcon width={12} height={12} />
+              </span>
+            )}
+
+            {/* Quick options button (Double-click or hold) */}
+            {!locked && (
+              <button
+                type="button"
+                className="thumb-more-btn"
+                title="Options (Double-click or hold)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (clickTimeoutRef.current) {
+                    clearTimeout(clickTimeoutRef.current);
+                    clickTimeoutRef.current = null;
+                  }
+                  setTooltipTarget({ photo: p, anchorEl: e.currentTarget.parentElement as HTMLElement });
+                }}
+                aria-label="Photo options"
+              >
+                <MoreHorizontalIcon width={13} height={13} />
+              </button>
+            )}
+
+            {/* Quick assign button on Section photos */}
+            {!locked && target === 'section' && availableQuestions && availableQuestions.length > 0 && (
+              <button
+                type="button"
+                className="thumb-assign-btn"
+                title="Assign to question"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAssignModalPhoto(p);
+                }}
+                aria-label="Assign to question"
+              >
+                <ArrowRightCircleIcon width={13} height={13} />
+              </button>
+            )}
+
             {urls[p.id] ? (
               <img
                 src={urls[p.id]}
@@ -305,6 +685,11 @@ export function PhotoStrip({
           locked={locked}
           title={title}
           initialUrls={urls}
+          allSections={allSections}
+          currentSectionId={inspectionSectionId}
+          onMoveToSection={handleMoveToSection}
+          onMoveToQuestion={handleAssignToQuestion}
+          onPhotoToggled={handleToggleDefect}
         />
       )}
 
@@ -334,6 +719,56 @@ export function PhotoStrip({
           findingId={findingId}
           title={title}
           currentPhotoCount={photos.length}
+        />
+      )}
+
+      {/* ── Quick Assign to Question Modal (direct trigger from button) ── */}
+      {assignModalPhoto && availableQuestions && (
+        <AssignPhotoModal
+          isOpen={!!assignModalPhoto}
+          photo={assignModalPhoto}
+          photoUrl={urls[assignModalPhoto.id]}
+          questions={availableQuestions}
+          onAssign={(qId) => handleAssignToQuestion(assignModalPhoto.id, qId)}
+          onClose={() => setAssignModalPhoto(null)}
+        />
+      )}
+
+      {/* ── Photo Floating Tooltip Menu (Double-click, Hold, or More button) ── */}
+      {tooltipTarget && (
+        <PhotoTooltipMenu
+          photo={tooltipTarget.photo}
+          anchorEl={tooltipTarget.anchorEl}
+          locked={locked}
+          allSections={allSections}
+          availableQuestions={availableQuestions}
+          onToggleDefect={handleToggleDefect}
+          onOpenMoveModal={(p) => setMoveModalPhoto(p)}
+          onOpenAssignModal={availableQuestions && availableQuestions.length > 0 ? (p) => setAssignModalPhoto(p) : undefined}
+          onDeletePhoto={async (photoId) => {
+            await localDelete('photos', photoId);
+          }}
+          onClose={() => setTooltipTarget(null)}
+        />
+      )}
+
+      {/* ── Move Photo to Any Section / Question Modal ── */}
+      {moveModalPhoto && allSections && (
+        <MovePhotoModal
+          isOpen={!!moveModalPhoto}
+          photo={moveModalPhoto}
+          photoUrl={urls[moveModalPhoto.id]}
+          currentSectionId={inspectionSectionId}
+          sections={allSections}
+          onMoveToSection={async (targetSecId) => {
+            await handleMoveToSection(moveModalPhoto.id, targetSecId);
+            setMoveModalPhoto(null);
+          }}
+          onMoveToQuestion={async (targetQId, targetSecId) => {
+            await handleAssignToQuestion(moveModalPhoto.id, targetQId, targetSecId);
+            setMoveModalPhoto(null);
+          }}
+          onClose={() => setMoveModalPhoto(null)}
         />
       )}
     </div>

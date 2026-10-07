@@ -1,7 +1,7 @@
 import { app } from '@azure/functions';
 import { pool } from '../lib/db.js';
 import { fail, handler, jsonBody } from '../lib/http.js';
-import { signAccessToken } from '../lib/auth.js';
+import { signAccessToken, requireUser } from '../lib/auth.js';
 import { hashPassword, verifyPassword, newResetToken, hashResetToken } from '../lib/passwords.js';
 import { sendMail } from '../lib/mail.js';
 
@@ -53,3 +53,30 @@ export const resetPasswordHandler = handler(async (req) => {
   return { token: await signAccessToken(row.user_id) };
 });
 app.http('auth-reset-password', { route: 'auth/reset-password', methods: ['POST', 'OPTIONS'], authLevel: 'anonymous', handler: resetPasswordHandler });
+
+/** Authenticated password change for currently signed-in user. */
+export const changePasswordHandler = handler(async (req) => {
+  const me = await requireUser(req);
+  const { currentPassword, newPassword } = await jsonBody<{ currentPassword?: string; newPassword?: string }>(req);
+  if (!newPassword || newPassword.trim().length < 6) {
+    throw fail('VALIDATION', 'New password must be at least 6 characters');
+  }
+
+  const row = (await pool.query(
+    `select password_hash from users where id = $1`, [me.id])).rows[0];
+
+  if (row?.password_hash) {
+    if (!currentPassword || !(await verifyPassword(currentPassword, row.password_hash))) {
+      throw fail('UNAUTHORIZED', 'Current password is incorrect');
+    }
+  }
+
+  const hash = await hashPassword(newPassword.trim());
+  await pool.query(`update users set password_hash = $1 where id = $2`, [hash, me.id]);
+  await pool.query(
+    `insert into audit_log (actor_user_id, entity, entity_id, action, details) values ($1, 'user', $2, 'change_password', '{}')`,
+    [me.id, me.id]
+  );
+  return { ok: true };
+});
+app.http('auth-change-password', { route: 'auth/change-password', methods: ['POST', 'OPTIONS'], authLevel: 'anonymous', handler: changePasswordHandler });

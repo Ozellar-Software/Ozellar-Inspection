@@ -343,15 +343,22 @@
 
 .rv-text-input {
   width: 100%;
-  padding: 10px 14px;
+  padding: 9.5px 13px;
   border-radius: 8px;
   border: 1px solid #CBD5E1;
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--ink);
   background: #F8FAFC;
   outline: none;
   transition: all 0.15s ease;
   box-sizing: border-box;
+}
+
+.rv-text-input::placeholder {
+  color: #94A3B8;
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 1;
 }
 
 .rv-text-input:focus {
@@ -518,14 +525,26 @@
   transform: none;
 }
 
+/* ══════════════════════════════════════════════════════════
+   TABLET RESPONSIVE (<= 900px)
+   ══════════════════════════════════════════════════════════ */
 @media (max-width: 900px) {
   .rv-page-wrap {
     height: auto;
     overflow: visible;
+    padding: 16px 20px 60px;
   }
   .rv-content-container {
     flex-direction: column;
     align-items: stretch;
+    gap: 16px;
+  }
+  .rv-sidebar {
+    width: 100%;
+    position: static;
+    overflow-y: visible;
+    padding-bottom: 0;
+    gap: 10px;
   }
   .rv-form-card {
     min-height: auto;
@@ -533,44 +552,343 @@
   .rv-form-body {
     overflow-y: visible;
   }
-  .rv-sidebar {
-    width: 100%;
-    position: static;
-    overflow-y: visible;
-    padding-bottom: 0;
-  }
-  .rv-stepper {
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 12px;
-  }
-  .rv-step-text {
-    display: none;
-  }
   .rv-custom-type-row {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
   }
   .rv-text-input.custom {
     width: 100%;
   }
 }
 
-@media (max-width: 600px) {
+/* ══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE (<= 640px)
+   ══════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
   .rv-page-wrap {
-    padding: 16px 16px 64px;
-  }
-  .rv-form-body {
-    padding: 20px 16px;
-  }
-  .rv-form-footer {
-    padding: 16px;
-    flex-direction: column;
+    padding: 12px 12px 48px;
     gap: 12px;
   }
-  .rv-footer-left, .rv-footer-right, .rv-btn-nav, .rv-btn-save {
+
+  /* Compact Header */
+  .rv-header {
+    gap: 10px;
+  }
+
+  .rv-back-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    gap: 4px;
+    border-radius: 7px;
+  }
+
+  .rv-header-title-group {
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .rv-title-badge {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .rv-title-badge svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .rv-page-title {
+    font-size: 18px;
+    line-height: 1.2;
+    letter-spacing: -0.3px;
+  }
+
+  .rv-page-subtitle {
+    font-size: 11.5px;
+    line-height: 1.35;
+    margin-top: 2px;
+  }
+
+  /* Progress Card */
+  .rv-progress-card {
+    padding: 9px 12px;
+    border-radius: 10px;
+  }
+
+  .rv-progress-header {
+    font-size: 11px;
+    margin-bottom: 6px;
+    gap: 6px;
+  }
+
+  .rv-progress-meta {
+    font-size: 11px;
+    margin-bottom: 5px;
+  }
+
+  .rv-progress-track {
+    height: 5px;
+  }
+
+  /* Horizontal Scrollable Stepper Pill Strip */
+  .rv-stepper {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 10px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .rv-stepper::-webkit-scrollbar {
+    display: none;
+  }
+
+  .rv-step-item {
+    padding: 5px 10px;
+    border-radius: 18px;
+    flex-shrink: 0;
+    min-height: 32px;
+    gap: 6px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    transition: all 0.15s ease;
+  }
+
+  .rv-step-item.active {
+    background: #0F172A;
+    border-color: #0F172A;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.18);
+  }
+
+  .rv-step-item.active .rv-step-title {
+    color: #FFFFFF !important;
+  }
+
+  .rv-step-item.active .rv-step-indicator {
+    background: #FFFFFF;
+    color: #0F172A;
+    border-color: #FFFFFF;
+  }
+
+  .rv-step-item.complete:not(.active) {
+    background: #ECFDF5;
+    border-color: #A7F3D0;
+  }
+
+  .rv-step-item.complete:not(.active) .rv-step-indicator {
+    background: #10B981;
+    color: #FFFFFF;
+    border-color: #10B981;
+  }
+
+  .rv-step-indicator {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .rv-step-text {
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  .rv-step-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    line-height: 1;
+    color: #334155;
+  }
+
+  .rv-step-subtitle {
+    display: none !important;
+  }
+
+  /* Form Card Body */
+  .rv-form-card {
+    border-radius: 12px;
+  }
+
+  .rv-form-body {
+    padding: 14px 12px;
+    gap: 16px;
+  }
+
+  .rv-form-section {
+    gap: 16px;
+  }
+
+  .rv-section-header {
+    padding-bottom: 8px;
+  }
+
+  .rv-section-header h2 {
+    font-size: 15px;
+  }
+
+  .rv-section-header p {
+    font-size: 11.5px;
+  }
+
+  /* 1-column form field grids */
+  .rv-grid {
+    gap: 12px;
+    grid-template-columns: 1fr !important;
+  }
+
+  .rv-input-group {
+    gap: 4px;
+  }
+
+  .rv-input-label {
+    font-size: 12px;
+  }
+
+  .rv-field-hint {
+    font-size: 11px;
+  }
+
+  /* Crisp, compact inputs and proportional placeholder sizing */
+  .rv-text-input {
+    font-size: 13px !important;
+    padding: 8px 11px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    border-radius: 8px;
+    background: #FFFFFF;
+    border-color: #CBD5E1;
+  }
+
+  .rv-text-input::placeholder {
+    font-size: 12px !important;
+    color: #94A3B8 !important;
+    font-weight: 400 !important;
+    opacity: 0.9 !important;
+    text-overflow: ellipsis;
+  }
+
+  .rv-text-input.custom::placeholder {
+    font-size: 11.5px !important;
+  }
+
+  /* Category Selection Box & 2-column Grid */
+  .rv-category-box {
+    padding: 12px 10px;
+    border-radius: 10px;
+    gap: 10px;
+  }
+
+  .rv-category-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .rv-category-tile {
+    padding: 10px 8px;
+    border-radius: 8px;
+    gap: 4px;
+  }
+
+  .rv-tile-dot {
+    width: 10px;
+    height: 10px;
+  }
+
+  .rv-tile-name {
+    font-size: 11.5px;
+  }
+
+  .rv-tile-check {
+    top: -5px;
+    right: -5px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .rv-tile-check svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .rv-custom-type-row {
+    gap: 6px;
+    padding-top: 10px;
+    margin-top: 4px;
+  }
+
+  .rv-custom-label {
+    font-size: 11.5px;
+  }
+
+  /* Form Footer: Side-by-side action buttons on 1 line */
+  .rv-form-footer {
+    padding: 10px 12px;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .rv-footer-left {
+    display: flex;
+    flex: 1;
+  }
+
+  .rv-footer-left:empty {
+    display: none;
+  }
+
+  .rv-footer-right {
+    display: flex;
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .rv-btn-nav,
+  .rv-btn-save {
     width: 100%;
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 700;
     justify-content: center;
+    border-radius: 8px;
+  }
+}
+
+/* Extra small screens (<= 360px) */
+@media (max-width: 360px) {
+  .rv-page-title {
+    font-size: 16.5px;
+  }
+  .rv-title-badge {
+    width: 34px;
+    height: 34px;
+  }
+  .rv-step-item {
+    padding: 4px 8px;
+  }
+  .rv-step-title {
+    font-size: 10.5px;
+  }
+  .rv-category-tile {
+    padding: 8px 6px;
+  }
+  .rv-tile-name {
+    font-size: 10.5px;
+  }
+  .rv-text-input {
+    font-size: 12.5px !important;
+    padding: 7px 9px !important;
+    height: 35px !important;
+    min-height: 35px !important;
+  }
+  .rv-text-input::placeholder {
+    font-size: 11px !important;
   }
 }
 

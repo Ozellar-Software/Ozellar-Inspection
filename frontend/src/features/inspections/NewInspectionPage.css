@@ -295,9 +295,17 @@
     min-width: 0;
     box-sizing: border-box;
     width: 100%;
-    padding: 10px 12px;
-    font-size: 14px;
-    min-height: 42px;
+    padding: 8px 11px;
+    font-size: 13px;
+    height: 38px;
+    min-height: 38px;
+    border-radius: 8px;
+  }
+
+  .auth-input::placeholder {
+    font-size: 12px;
+    color: #94A3B8;
+    font-weight: 400;
   }
 
   .ni-summary-banner {
@@ -336,5 +344,14 @@
 
   .ni-type-sub {
     font-size: 9.5px;
+  }
+  .auth-input {
+    height: 35px;
+    min-height: 35px;
+    padding: 7px 9px;
+    font-size: 12.5px;
+  }
+  .auth-input::placeholder {
+    font-size: 11px;
   }
 }

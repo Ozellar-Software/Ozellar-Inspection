@@ -1,0 +1,351 @@
+/* ── Assign Photo Modal (Responsive, Portal-mounted) ── */
+.apm-overlay {
+  position: fixed;
+  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 99999;
+  background: rgba(11, 33, 56, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  animation: apmFadeIn 0.2s ease-out;
+  overflow-y: auto;
+}
+
+@keyframes apmFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.apm-card {
+  background: var(--surface, #ffffff);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 500px;
+  max-height: min(90vh, 620px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: auto;
+  box-shadow: 0 20px 45px rgba(11, 33, 56, 0.25), 0 4px 12px rgba(11, 33, 56, 0.08);
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  animation: apmSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+@keyframes apmSlideUp {
+  from { transform: translateY(16px) scale(0.98); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.apm-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.apm-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.apm-icon-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #e6f6f7;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.apm-title {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.apm-subtitle {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.apm-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--faint);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.apm-close-btn:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* Photo preview row */
+.apm-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.apm-preview-img {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.apm-preview-fallback {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  background: #e2e8f0;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.apm-preview-info {
+  min-width: 0;
+}
+
+.apm-preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--faint);
+}
+
+.apm-preview-desc {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 2px;
+}
+
+/* Search wrap */
+.apm-search-wrap {
+  position: relative;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+}
+
+.apm-search-icon {
+  position: absolute;
+  left: 30px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.apm-search-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 32px 0 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  background: #ffffff;
+  color: var(--ink);
+  box-sizing: border-box;
+}
+
+.apm-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(14, 124, 134, 0.12);
+}
+
+.apm-search-clear {
+  position: absolute;
+  right: 28px;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+}
+
+/* Questions list */
+.apm-question-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+}
+
+.apm-question-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.apm-question-item:hover {
+  background: #f8fafc;
+  border-color: var(--accent);
+  transform: translateX(2px);
+}
+
+.apm-question-item.saving {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.apm-q-ref {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent);
+  background: #e6f6f7;
+  padding: 3px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+
+.apm-q-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.4;
+  flex: 1;
+}
+
+.apm-q-arrow {
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.apm-question-item:hover .apm-q-arrow {
+  color: var(--accent);
+}
+
+.apm-empty-state {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Footer */
+.apm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  gap: 12px;
+}
+
+.apm-footer-hint {
+  font-size: 11px;
+  color: var(--muted);
+  flex: 1;
+}
+
+.apm-cancel-btn {
+  padding: 7px 16px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.apm-cancel-btn:hover {
+  background: #f1f5f9;
+}
+
+.apm-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(14, 124, 134, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: apmSpin 0.6s linear infinite;
+}
+
+@keyframes apmSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 480px) {
+  .apm-card {
+    border-radius: 14px;
+  }
+  .apm-header {
+    padding: 14px 16px 12px;
+  }
+  .apm-title {
+    font-size: 15px;
+  }
+  .apm-preview-row {
+    padding: 10px 16px;
+  }
+  .apm-search-wrap {
+    padding: 8px 16px;
+  }
+  .apm-question-list {
+    padding: 6px 10px;
+    max-height: 280px;
+  }
+  .apm-footer {
+    padding: 10px 16px;
+  }
+  .apm-footer-hint {
+    display: none;
+  }
+  .apm-cancel-btn {
+    width: 100%;
+  }
+}

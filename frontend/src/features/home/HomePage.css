@@ -661,6 +661,9 @@
     border: 1px solid #e2e8f0;
     box-sizing: border-box;
   }
+  .premium-search input::placeholder {
+    font-size: 12px;
+  }
 
   /* Filters — side by side */
   .filters-row {

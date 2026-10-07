@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Finding, Photo } from '@ozellar/shared';
+import type { Finding, InspectionSection, Photo } from '@ozellar/shared';
 import { localWrite, localDelete } from '../../offline/outbox';
 import { PhotoStrip } from './PhotoStrip';
 import { TrashIcon } from '../../icons';
@@ -14,7 +14,17 @@ async function save(id: string, patch: Record<string, unknown>): Promise<void> {
   await localWrite('findings', id, patch);
 }
 
-export function FindingCard({ finding, photos, locked }: { finding: Finding; photos: Photo[]; locked: boolean }) {
+export function FindingCard({
+  finding,
+  photos,
+  locked,
+  allSections,
+}: {
+  finding: Finding;
+  photos: Photo[];
+  locked: boolean;
+  allSections?: InspectionSection[];
+}) {
   const [text, setText] = useState(finding.text);
   const [correctiveAction, setCorrectiveAction] = useState(finding.correctiveAction);
   const [preventiveAction, setPreventiveAction] = useState(finding.preventiveAction);
@@ -53,7 +63,15 @@ export function FindingCard({ finding, photos, locked }: { finding: Finding; pho
 
       <div className="observation-block">
         <div className="seg-label">Photos</div>
-        <PhotoStrip photos={photos} target="finding" inspectionId={finding.inspectionId} findingId={finding.id} locked={locked} title="Finding Photo" />
+        <PhotoStrip
+          photos={photos}
+          target="finding"
+          inspectionId={finding.inspectionId}
+          findingId={finding.id}
+          locked={locked}
+          title="Finding Photo"
+          allSections={allSections}
+        />
       </div>
     </div>
   );

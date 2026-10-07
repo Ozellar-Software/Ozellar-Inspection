@@ -10,6 +10,7 @@ import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon } from '../../icons
 import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
+import { endPhotoDrag } from './photoDragService';
 import './SectionDetailPage.css';
 
 export function SectionDetailPage() {
@@ -29,12 +30,22 @@ export function SectionDetailPage() {
     ?.filter((f) => !f.deletedAt).sort((a, b) => a.position - b.position) ?? [];
   const photos = useLiveQuery(
     () => (inspectionId ? db.photos.where('inspectionId').equals(inspectionId).toArray() : []), [inspectionId]) ?? [];
+  const allSections = useLiveQuery(
+    () => (inspectionId ? db.inspectionSections.where('inspectionId').equals(inspectionId).sortBy('position') : []),
+    [inspectionId]
+  ) ?? [];
 
-  
   // MOCK FALLBACK
   const isMock = !inspection && inspectionId?.startsWith('mock');
   const dispInspection = isMock ? { status: 'in_progress', id: inspectionId } : inspection;
   const dispSection = isMock ? { id: sectionId, name: 'Sample Section (Demo)', zone: 'Demo Zone', photoOnly: false } : section;
+  const dispAllSections = isMock
+    ? [
+        dispSection as any,
+        { id: 'sec-demo-2', name: 'Bridge & Navigation (Demo)', zone: 'Navigation', photoOnly: false, inspectionId, position: 2 },
+        { id: 'sec-demo-3', name: 'Main Deck & Cargo Holds (Demo)', zone: 'Deck', photoOnly: false, inspectionId, position: 3 },
+      ]
+    : allSections;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dispQuestions: any[] = isMock ? [
     { id: 'q1', text: 'Is the equipment in good condition?', position: 1, inspectionSectionId: sectionId, qid: 1, ref: 'Q1' },
@@ -172,16 +183,57 @@ export function SectionDetailPage() {
             response={byQuestion.get(q.id)}
             photos={photosByResponse.get(byQuestion.get(q.id)?.id ?? '') ?? []}
             locked={locked}
+            allSections={dispAllSections}
+            availableQuestions={dispQuestions.map((item) => ({ id: item.id, ref: item.ref, text: item.text }))}
           />
         ))}
 
         {/* Section photos card */}
-        <div className="section-photos-card">
+        <div
+          className="section-photos-card"
+          data-section-photos-drop="true"
+          data-section-id={sectionId}
+          onDragOver={(e) => {
+            if (!locked) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+            }
+          }}
+          onDrop={async (e) => {
+            if (locked) return;
+            e.preventDefault();
+            let photoId = '';
+            try {
+              const json = e.dataTransfer.getData('application/json');
+              if (json) {
+                const parsed = JSON.parse(json);
+                if (parsed.photoId) photoId = parsed.photoId;
+              }
+            } catch {}
+            if (!photoId) photoId = e.dataTransfer.getData('text/plain');
+            if (photoId) {
+              const existing = await db.photos.get(photoId);
+              if (existing && !(existing.target === 'section' && existing.inspectionSectionId === sectionId)) {
+                await localWrite('photos', photoId, {
+                  ...existing,
+                  target: 'section',
+                  inspectionSectionId: sectionId,
+                  responseId: null,
+                  findingId: null,
+                  position: sectionPhotos.length,
+                });
+              }
+            }
+            endPhotoDrag();
+          }}
+        >
           <div className="section-photos-header">
             <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CameraIcon width={18} height={18} /></span>
             <div>
               <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>Section photos</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>General photos for this location — not tied to a specific question</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                General photos for this location — drag any photo onto a question above to assign it
+              </div>
             </div>
           </div>
           <div style={{ padding: '12px 16px' }}>
@@ -192,6 +244,8 @@ export function SectionDetailPage() {
               inspectionSectionId={sectionId}
               locked={locked}
               title={dispSection?.name || 'Section Photos'}
+              allSections={dispAllSections}
+              availableQuestions={dispQuestions.map((q) => ({ id: q.id, ref: q.ref, text: q.text }))}
             />
           </div>
         </div>
@@ -214,7 +268,13 @@ export function SectionDetailPage() {
         </p>
 
         {findings.map((f) => (
-          <FindingCard key={f.id} finding={f} photos={photosByFinding.get(f.id) ?? []} locked={locked} />
+          <FindingCard
+            key={f.id}
+            finding={f}
+            photos={photosByFinding.get(f.id) ?? []}
+            locked={locked}
+            allSections={dispAllSections}
+          />
         ))}
 
         {!locked && (

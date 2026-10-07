@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ROLE_LABELS, type User } from '@ozellar/shared';
-import { logout, requestReset } from '../auth/session';
+import { logout } from '../auth/session';
 import { LockIcon, SignOutIcon, ClipboardIcon, UsersIcon, ShipIcon } from '../icons';
+import { ChangePasswordModal } from '../auth/ChangePasswordModal';
 import './TopNav.css';
 
 export function UserMenu({ me }: { me: User }) {
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
@@ -20,17 +22,20 @@ export function UserMenu({ me }: { me: User }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
 
-  const initial = (me.name || me.email || '?').trim().charAt(0).toUpperCase();
-  const roleLine = [ROLE_LABELS[me.role], me.designation].filter(Boolean).join(' — ');
+  if (!me) return null;
+
+  const email = me.email || '';
+  const emailPrefix = email.includes('@') ? email.split('@')[0] : email;
+  const displayName = me.name?.trim() || emailPrefix || 'User';
+  const initial = displayName.charAt(0).toUpperCase() || '?';
+  const roleLabel = (me.role && ROLE_LABELS[me.role]) || me.role || '';
+  const roleLine = [roleLabel, me.designation].filter(Boolean).join(' — ');
   const isAdmin = me.role === 'admin';
   const isDirector = me.role === 'director';
-  const displayName = me.name || me.email.split('@')[0];
-  const roleLabel = ROLE_LABELS[me.role];
 
-  async function onChangePassword() {
+  function onChangePassword() {
     setOpen(false);
-    try { await requestReset(me.email); alert('Check your email for a link to set a new password.'); }
-    catch { alert('Could not send the email right now. Try again shortly.'); }
+    setShowChangePasswordModal(true);
   }
 
   return (
@@ -39,7 +44,7 @@ export function UserMenu({ me }: { me: User }) {
         type="button"
         className={`nav-user-pill ${open ? 'active' : ''}`}
         aria-label="Account menu"
-        title={me.email}
+        title={email || displayName}
         onClick={() => setOpen((v) => !v)}
       >
         <div className="nav-user-avatar">
@@ -47,7 +52,7 @@ export function UserMenu({ me }: { me: User }) {
         </div>
         <div className="nav-user-info hide-on-mobile">
           <span className="nav-user-name">{displayName}</span>
-          <span className="nav-user-role">{roleLabel}</span>
+          {roleLabel && <span className="nav-user-role">{roleLabel}</span>}
         </div>
         <svg
           className={`nav-user-chevron hide-on-mobile ${open ? 'open' : ''}`}
@@ -63,9 +68,9 @@ export function UserMenu({ me }: { me: User }) {
             <div className="dropdown-header">
               <div className="dropdown-avatar">{initial}</div>
               <div className="dropdown-user-details">
-                <div className="dropdown-name">{me.name || me.email}</div>
-                {me.email && me.name && (
-                  <div className="dropdown-email">{me.email}</div>
+                <div className="dropdown-name">{displayName}</div>
+                {email && (
+                  <div className="dropdown-email">{email}</div>
                 )}
                 {roleLine && (
                   <div className="dropdown-role-chip">{roleLine}</div>
@@ -119,6 +124,11 @@ export function UserMenu({ me }: { me: User }) {
             </div>
           </div>
       )}
+
+      <ChangePasswordModal
+        isOpen={showChangePasswordModal}
+        onClose={() => setShowChangePasswordModal(false)}
+      />
     </div>
   );
 }

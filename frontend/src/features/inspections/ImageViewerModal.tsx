@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import type { Photo } from '@ozellar/shared';
+import type { InspectionSection, Photo } from '@ozellar/shared';
 import { localWrite, localDelete } from '../../offline/outbox';
 import { photoSrc, getPhotoUrls } from '../../offline/photoQueue';
 import {
@@ -10,7 +10,9 @@ import {
   TrashIcon,
   WarningIcon,
   CheckIcon,
+  CompassIcon,
 } from '../../icons';
+import { MovePhotoModal } from './MovePhotoModal';
 import {
   downloadSinglePhoto,
   downloadPhotosAsZip,
@@ -28,6 +30,10 @@ export interface ImageViewerModalProps {
   title?: string;
   initialUrls?: Record<string, string>;
   onPhotoToggled?: (photoId: string, isDefect: boolean) => void;
+  allSections?: InspectionSection[];
+  currentSectionId?: string;
+  onMoveToSection?: (photoId: string, targetSectionId: string) => Promise<void> | void;
+  onMoveToQuestion?: (photoId: string, questionId: string, sectionId: string) => Promise<void> | void;
 }
 
 export function ImageViewerModal({
@@ -39,6 +45,10 @@ export function ImageViewerModal({
   title,
   initialUrls,
   onPhotoToggled,
+  allSections = [],
+  currentSectionId,
+  onMoveToSection,
+  onMoveToQuestion,
 }: ImageViewerModalProps) {
   const activePhotos = photos.filter((p) => !p.deletedAt);
   const [index, setIndex] = useState(initialIndex);
@@ -46,6 +56,7 @@ export function ImageViewerModal({
   const [loading, setLoading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const activeThumbRef = useRef<HTMLDivElement>(null);
 
   // Sync index when initialIndex or activePhotos change
@@ -253,6 +264,18 @@ export function ImageViewerModal({
           </div>
 
           <div className="ivm-actions">
+            {!locked && allSections && allSections.length > 0 && onMoveToSection && (
+              <button
+                type="button"
+                className="ivm-btn-move"
+                onClick={() => setIsMoveModalOpen(true)}
+                title="Move this photo to another section in this inspection"
+              >
+                <CompassIcon style={{ width: 13, height: 13 }} />
+                <span>Move</span>
+              </button>
+            )}
+
             {!locked && (
               <button
                 type="button"
@@ -339,7 +362,8 @@ export function ImageViewerModal({
               title="Download this specific photo"
             >
               <DownloadIcon style={{ width: 16, height: 16 }} />
-              <span>Download Image</span>
+              <span className="ivm-btn-text-full">Download Image</span>
+              <span className="ivm-btn-text-short">Image</span>
             </button>
 
             {/* Download All Photos */}
@@ -351,7 +375,8 @@ export function ImageViewerModal({
               title={`Download all ${activePhotos.length} photos as ZIP`}
             >
               <DownloadIcon style={{ width: 16, height: 16 }} />
-              <span>Download All ({activePhotos.length})</span>
+              <span className="ivm-btn-text-full">Download All ({activePhotos.length})</span>
+              <span className="ivm-btn-text-short">All ({activePhotos.length})</span>
             </button>
 
             {/* Download Defect Photos */}
@@ -367,7 +392,8 @@ export function ImageViewerModal({
               }
             >
               <WarningIcon style={{ width: 16, height: 16 }} />
-              <span>Download Defect ({defectCount})</span>
+              <span className="ivm-btn-text-full">Download Defect ({defectCount})</span>
+              <span className="ivm-btn-text-short">Defect ({defectCount})</span>
             </button>
           </div>
 
@@ -415,6 +441,32 @@ export function ImageViewerModal({
           </div>
         )}
       </div>
+
+      {/* ── Move Photo to Section / Question Modal ── */}
+      {isMoveModalOpen && (onMoveToSection || onMoveToQuestion) && (
+        <MovePhotoModal
+          isOpen={isMoveModalOpen}
+          photo={currentPhoto}
+          photoUrl={urls[currentPhoto.id]}
+          currentSectionId={currentSectionId}
+          sections={allSections}
+          onMoveToSection={onMoveToSection ? async (targetSecId) => {
+            await onMoveToSection(currentPhoto.id, targetSecId);
+            setIsMoveModalOpen(false);
+            if (activePhotos.length <= 1) {
+              onClose();
+            }
+          } : undefined}
+          onMoveToQuestion={onMoveToQuestion ? async (targetQId, targetSecId) => {
+            await onMoveToQuestion(currentPhoto.id, targetQId, targetSecId);
+            setIsMoveModalOpen(false);
+            if (activePhotos.length <= 1) {
+              onClose();
+            }
+          } : undefined}
+          onClose={() => setIsMoveModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

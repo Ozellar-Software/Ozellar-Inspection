@@ -426,12 +426,16 @@ body:has(.login-root) {
   .login-field {
     margin-bottom: 16px;
   }
-  /* Prevent iOS Safari 100% zoom-in when tapping input */
   .login-field input.auth-input,
   .login-pw-wrap .auth-input {
-    font-size: 16px !important;
-    padding: 12px 14px;
+    font-size: 14px !important;
+    padding: 10px 14px;
+    min-height: 42px;
     border-radius: 10px;
+  }
+  .login-field input.auth-input::placeholder,
+  .login-pw-wrap .auth-input::placeholder {
+    font-size: 13px !important;
   }
   .login-submit {
     min-height: 48px !important;

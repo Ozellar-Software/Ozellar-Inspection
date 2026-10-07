@@ -82,6 +82,13 @@ export function ChecklistPage() {
     }
   }, [categoryDropdownOpen]);
 
+  // Always reset scroll to top when opening a section view or modal/form
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [openSectionId, Boolean(sectionForm), Boolean(questionForm)]);
+
   const availableVesselTypes = useMemo(() => {
     const list: string[] = [...COMMON_VESSEL_TYPES];
     for (const s of sections) {
@@ -337,7 +344,9 @@ export function ChecklistPage() {
           {!openSection.photoOnly && !questionForm && (
             <div className="cl-header-actions">
               <button className="cl-primary-btn" onClick={() => setQuestionForm({ ref: '', text: '' })}>
-                <PlusIcon width={16} height={16} /> Add Question
+                <PlusIcon width={16} height={16} />
+                <span className="cl-btn-text-full">Add Question</span>
+                <span className="cl-btn-text-short">Add</span>
               </button>
             </div>
           )}
@@ -471,7 +480,9 @@ export function ChecklistPage() {
         {!sectionForm && (
           <div className="cl-header-actions">
             <button className="cl-primary-btn" onClick={handleOpenAddSection}>
-              <PlusIcon width={16} height={16} /> Add Section
+              <PlusIcon width={16} height={16} />
+              <span className="cl-btn-text-full">Add Section</span>
+              <span className="cl-btn-text-short">Add</span>
             </button>
           </div>
         )}
@@ -498,7 +509,8 @@ export function ChecklistPage() {
                   setCategoryDropdownOpen(false);
                 }}
               >
-                <span>All Sections</span>
+                <span className="cl-tab-text-full">All Sections</span>
+                <span className="cl-tab-text-short">All</span>
                 <span className="cl-tab-badge">{categoryCounts.all}</span>
               </button>
 
@@ -525,8 +537,11 @@ export function ChecklistPage() {
                   onClick={() => setCategoryDropdownOpen((prev) => !prev)}
                 >
                   <ShipIcon width={14} height={14} />
-                  <span>
+                  <span className="cl-dropdown-label-full">
                     {isVesselTypeActive ? selectedCategory : 'Filter by Vessel Type'}
+                  </span>
+                  <span className="cl-dropdown-label-short">
+                    {isVesselTypeActive ? selectedCategory : 'Vessel Type'}
                   </span>
                   {isVesselTypeActive && (
                     <span className="cl-tab-badge">{categoryCounts[selectedCategory] ?? 0}</span>
