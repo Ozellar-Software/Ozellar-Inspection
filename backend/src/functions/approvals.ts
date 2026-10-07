@@ -83,10 +83,12 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
       const tms = await getTechManagers(c, insp.vessel_id);
       targetNotifyUserIds = [...targetNotifyUserIds, ...dirs, ...tms];
     } else if (r.event.action === 'approved') {
+      const dirs = await getDirectors(c);
       const vms = await getVesselManagers(c, insp.vessel_id);
       const tms = await getTechManagers(c, insp.vessel_id);
+      if (a.directorUserId) targetNotifyUserIds.push(a.directorUserId);
       if (a.submittedBy) targetNotifyUserIds.push(a.submittedBy);
-      targetNotifyUserIds = [...targetNotifyUserIds, ...tms, ...vms];
+      targetNotifyUserIds = [...targetNotifyUserIds, ...dirs, ...tms, ...vms];
     } else if (r.event.action === 'rejected') {
       const vms = await getVesselManagers(c, insp.vessel_id);
       if (a.submittedBy) targetNotifyUserIds.push(a.submittedBy);
@@ -100,12 +102,12 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
 
     const notifTitle =
       r.event.action === 'submitted' ? 'Inspection Submitted for Review'
-      : r.event.action === 'approved' ? (r.status === 'approved' ? 'Inspection Approved' : 'Technical Review Completed')
+      : r.event.action === 'approved' ? (r.status === 'approved' ? 'Inspection Approved' : 'Technical Review Completed — Director Approval Needed')
       : 'Inspection Returned for Correction';
 
     const notifMsg =
       r.event.action === 'submitted' ? `${insp.vessel_name}: Inspection submitted for review by ${actor.name || actor.email}`
-      : r.event.action === 'approved' ? (r.status === 'approved' ? `${insp.vessel_name}: Inspection officially approved by ${actor.name || actor.email}` : `${insp.vessel_name}: Reviewed and endorsed by ${actor.name || actor.email}`)
+      : r.event.action === 'approved' ? (r.status === 'approved' ? `${insp.vessel_name}: Inspection officially approved by ${actor.name || actor.email}` : `${insp.vessel_name}: Reviewed and endorsed by ${actor.name || actor.email}. Ready for final Director approval.`)
       : `${insp.vessel_name}: Returned by ${actor.name || actor.email}${r.event.comment ? ` — "${r.event.comment}"` : ''}`;
 
     await createNotifications(c, {
@@ -118,7 +120,7 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
       link: `/inspections/${inspectionId}/report`,
     });
 
-    const recipients = (await c.query(`select email from users where id = any($1)`, [r.notify])).rows.map((x: { email: string }) => x.email);
+    const recipients = (await c.query(`select email from users where id = any($1)`, [targetNotifyUserIds])).rows.map((x: { email: string }) => x.email);
     return { r, insp, recipients };
   });
 

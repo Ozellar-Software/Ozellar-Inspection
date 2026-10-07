@@ -242,8 +242,10 @@ create table if not exists approval_events (
   actor_role            text not null default '',
   target_user_id        uuid references users(id),    -- who it was sent to
   comment               text not null default '',
-  created_at            timestamptz not null default now()
+  created_at            timestamptz not null default now(),
+  row_version           bigint not null default nextval('sync_seq')
 );
+alter table approval_events add column if not exists row_version bigint not null default nextval('sync_seq');
 create index if not exists approval_events_insp_idx on approval_events (inspection_id, created_at);
 
 -- ---------- Settings & audit ----------

@@ -67,7 +67,7 @@ function doScroll(deltaY: number) {
     window.scrollBy(0, deltaY);
   }
   const nextY = window.scrollY || document.documentElement.scrollTop || 0;
-  if (nextY === prevY) {
+  if (Math.abs(nextY - prevY) < 1) {
     if (document.scrollingElement) {
       document.scrollingElement.scrollTop += deltaY;
     } else {
@@ -92,21 +92,20 @@ function runAutoScroll() {
 
 /**
  * Updates auto-scroll speed based on pointer/touch clientY position.
- * Uses a generous 160px–220px threshold so mobile users can easily scroll while dragging.
  */
 export function updateDragAutoScroll(clientY: number) {
   const innerHeight = window.innerHeight;
-  // Dynamic threshold: 25% of viewport height, minimum 160px for easy mobile triggering
-  const threshold = Math.max(160, Math.min(220, Math.round(innerHeight * 0.25)));
+  // Make threshold larger (up to 35% of screen or 250px) for easier mobile activation
+  const threshold = Math.max(200, Math.min(250, Math.round(innerHeight * 0.35)));
 
   if (clientY < threshold) {
     // Near top: scroll up proportionally
     const intensity = Math.min(1.5, Math.max(0.12, (threshold - clientY) / threshold));
-    currentScrollSpeed = -Math.round(intensity * 26) - 5;
+    currentScrollSpeed = -Math.round(intensity * 35) - 8;
   } else if (clientY > innerHeight - threshold) {
     // Near bottom: scroll down proportionally
     const intensity = Math.min(1.5, Math.max(0.12, (clientY - (innerHeight - threshold)) / threshold));
-    currentScrollSpeed = Math.round(intensity * 26) + 5;
+    currentScrollSpeed = Math.round(intensity * 35) + 8;
   } else {
     currentScrollSpeed = 0;
   }

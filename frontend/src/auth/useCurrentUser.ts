@@ -12,9 +12,16 @@ export function useCurrentUser() {
   return useQuery({
     queryKey: ['me'],
     queryFn: async () => {
-      const user = await api<User>('/me');
-      setCachedUser(user);
-      return user;
+      if (!navigator.onLine) {
+        return getCachedUser() ?? null;
+      }
+      try {
+        const user = await api<User>('/me');
+        setCachedUser(user);
+        return user;
+      } catch {
+        return getCachedUser() ?? null;
+      }
     },
     initialData: getCachedUser() ?? undefined,
     staleTime: 5 * 60 * 1000,

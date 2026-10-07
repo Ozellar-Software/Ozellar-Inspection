@@ -9,6 +9,7 @@ export type SyncEntity =
   | 'findings'
   | 'photos'
   | 'approvals'
+  | 'approvalEvents'
   | 'templateSections'
   | 'templateQuestions'
   | 'users';

@@ -50,7 +50,7 @@ export function ImageViewerModal({
   onMoveToSection,
   onMoveToQuestion,
 }: ImageViewerModalProps) {
-  const activePhotos = photos.filter((p) => !p.deletedAt);
+  const activePhotos = React.useMemo(() => photos.filter((p) => !p.deletedAt), [photos]);
   const [index, setIndex] = useState(initialIndex);
   const [urls, setUrls] = useState<Record<string, string>>(initialUrls || {});
   const [loading, setLoading] = useState(false);
@@ -70,7 +70,17 @@ export function ImageViewerModal({
   // Sync with initialUrls if provided from parent PhotoStrip
   useEffect(() => {
     if (initialUrls && Object.keys(initialUrls).length > 0) {
-      setUrls((prev) => ({ ...initialUrls, ...prev }));
+      setUrls((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [id, url] of Object.entries(initialUrls)) {
+          if (next[id] !== url) {
+            next[id] = url;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
     }
   }, [initialUrls]);
 
@@ -106,7 +116,17 @@ export function ImageViewerModal({
     const allIds = activePhotos.map((p) => p.id);
     getPhotoUrls(allIds).then((resolved) => {
       if (!isCancelled && Object.keys(resolved).length > 0) {
-        setUrls((prev) => ({ ...prev, ...resolved }));
+        setUrls((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const [id, url] of Object.entries(resolved)) {
+            if (next[id] !== url) {
+              next[id] = url;
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
       }
     });
 
@@ -308,7 +328,8 @@ export function ImageViewerModal({
             <button
               type="button"
               className="ivm-arrow-btn prev"
-              onClick={goPrev}
+              onClick={(e) => { e.stopPropagation(); goPrev(); }}
+              onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); goPrev(); }}
               aria-label="Previous photo"
             >
               <ChevronLeftIcon />
@@ -334,7 +355,8 @@ export function ImageViewerModal({
             <button
               type="button"
               className="ivm-arrow-btn next"
-              onClick={goNext}
+              onClick={(e) => { e.stopPropagation(); goNext(); }}
+              onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); goNext(); }}
               aria-label="Next photo"
             >
               <ChevronRightIcon />

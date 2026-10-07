@@ -409,10 +409,12 @@ export function PhotoStrip({
       if (existingPhoto) {
         // Prevent drop into same section
         if (target === 'section' && existingPhoto.target === 'section' && existingPhoto.inspectionSectionId === inspectionSectionId) {
+          showDragNotification('Photo is already in section photos', 'warning');
           return;
         }
         // Prevent drop into same question
         if (target === 'question' && existingPhoto.target === 'question' && existingPhoto.responseId === responseId) {
+          showDragNotification('Photo is already attached to this question', 'warning');
           return;
         }
 
@@ -487,7 +489,14 @@ export function PhotoStrip({
             <button
               type="button"
               className="photostrip-btn-link"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
+                setViewerIndex(0);
+                setIsViewerOpen(true);
+              }}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
                 setViewerIndex(0);
                 setIsViewerOpen(true);
               }}
@@ -500,7 +509,8 @@ export function PhotoStrip({
             <button
               type="button"
               className="photostrip-btn-link"
-              onClick={() => handleBatchDownload('all')}
+              onClick={(e) => { e.stopPropagation(); handleBatchDownload('all'); }}
+              onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('all'); }}
               title="Download all photos as ZIP"
             >
               <DownloadIcon style={{ width: 13, height: 13 }} />
@@ -511,7 +521,8 @@ export function PhotoStrip({
               <button
                 type="button"
                 className="photostrip-btn-link defect-btn"
-                onClick={() => handleBatchDownload('defect')}
+                onClick={(e) => { e.stopPropagation(); handleBatchDownload('defect'); }}
+                onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('defect'); }}
                 title="Download defect photos as ZIP"
               >
                 <WarningIcon style={{ width: 13, height: 13 }} />
@@ -656,7 +667,8 @@ export function PhotoStrip({
           <button
             type="button"
             className="btn btn-outline btn-sm"
-            onClick={() => setIsCameraModalOpen(true)}
+            onClick={(e) => { e.stopPropagation(); setIsCameraModalOpen(true); }}
+            onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); setIsCameraModalOpen(true); }}
             title="Open camera to capture photos"
           >
             <CameraIcon />
@@ -667,7 +679,14 @@ export function PhotoStrip({
           <button
             type="button"
             className="btn btn-outline btn-sm"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
+              setModalInitialFiles([]);
+              setIsUploadModalOpen(true);
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
               setModalInitialFiles([]);
               setIsUploadModalOpen(true);
             }}

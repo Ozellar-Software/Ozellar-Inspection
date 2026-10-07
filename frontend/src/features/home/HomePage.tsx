@@ -26,8 +26,45 @@ export function HomePage() {
 
   const me = useCurrentUser();
   const inbox = useQuery({
-    queryKey: ['inbox'], enabled: navigator.onLine,
-    queryFn: () => api<{ waiting: Array<{ id: string; vesselName: string }>; returned: Array<{ id: string; vesselName: string; returnComment: string }> }>('/approvals/inbox'),
+    queryKey: ['inbox', me.data?.id, me.data?.role],
+    queryFn: async () => {
+      if (navigator.onLine) {
+        try {
+          return await api<{ waiting: Array<{ id: string; vesselName: string }>; returned: Array<{ id: string; vesselName: string; returnComment: string }> }>('/approvals/inbox');
+        } catch {
+          // offline fallback below
+        }
+      }
+      const [allInsp, allAppr] = await Promise.all([
+        db.inspections.toArray(),
+        db.approvals.toArray(),
+      ]);
+      const activeInsp = allInsp.filter((i) => !i.deletedAt);
+      const apprMap = new Map(allAppr.map((a) => [a.id || (a as any).inspectionId, a]));
+      const waiting: Array<{ id: string; vesselName: string }> = [];
+      const returned: Array<{ id: string; vesselName: string; returnComment: string }> = [];
+      const user = me.data;
+      if (!user) return { waiting, returned };
+
+      for (const i of activeInsp) {
+        const a = apprMap.get(i.id);
+        if (i.status === 'pending_tm') {
+          if (user.role === 'admin' || (user.role === 'techManager' && (!a?.tmUserId || a.tmUserId === user.id))) {
+            waiting.push({ id: i.id, vesselName: i.vesselName });
+          }
+        } else if (i.status === 'pending_director') {
+          if (user.role === 'admin' || (user.role === 'director' && (!a?.directorUserId || a.directorUserId === user.id))) {
+            waiting.push({ id: i.id, vesselName: i.vesselName });
+          }
+        } else if (i.status === 'returned') {
+          if (user.role === 'admin' || a?.submittedBy === user.id || user.role === 'vesselManager') {
+            returned.push({ id: i.id, vesselName: i.vesselName, returnComment: a?.returnComment || '' });
+          }
+        }
+      }
+      return { waiting, returned };
+    },
+    refetchInterval: navigator.onLine ? 30000 : false,
   });
 
   const homeData = useLiveQuery(async () => {
@@ -60,6 +97,7 @@ export function HomePage() {
     const role = me.data?.role;
     if (role === 'admin' || role === 'director' || !me.data) return inspections;
     const vesselIds = (me.data.vesselIds ?? []).map((id) => id.toLowerCase().trim());
+    if (vesselIds.length === 0) return inspections;
     return inspections.filter((i) => i.vesselId && vesselIds.includes(i.vesselId.toLowerCase().trim()));
   }, [inspections, me.data]);
 

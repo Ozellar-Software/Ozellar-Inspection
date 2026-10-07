@@ -164,19 +164,24 @@ export function ReportPage() {
     queryFn: async () => {
       if (navigator.onLine) {
         try {
-          return await api<HistoryResponse>(`/inspections/${inspectionId}/approval`);
+          const res = await api<HistoryResponse>(`/inspections/${inspectionId}/approval`);
+          if (res?.approval) {
+            await db.approvals.put({ ...res.approval, id: inspectionId! } as any);
+          }
+          if (res?.history?.length) {
+            await db.approvalEvents.bulkPut(res.history as any);
+          }
+          return res;
         } catch {
           // offline fallback below
         }
       }
       const localAppr = await db.approvals.get(inspectionId!);
-      if (localAppr) {
-        return {
-          approval: localAppr,
-          history: [],
-        } as HistoryResponse;
-      }
-      return { approval: null, history: [] } as HistoryResponse;
+      const localEvents = await db.approvalEvents.where('inspectionId').equals(inspectionId!).sortBy('createdAt');
+      return {
+        approval: localAppr ?? null,
+        history: localEvents ?? [],
+      } as HistoryResponse;
     },
   });
 
@@ -327,7 +332,15 @@ export function ReportPage() {
         try {
           const res = await api<{ status: InspectionStatus }>(`/inspections/${inspectionId}/${path}`, { method: 'POST', body });
           await db.inspections.update(inspectionId!, { status: res.status });
+          try {
+            const fresh = await api<HistoryResponse>(`/inspections/${inspectionId}/approval`);
+            if (fresh?.approval) await db.approvals.put({ ...fresh.approval, id: inspectionId! } as any);
+            if (fresh?.history?.length) await db.approvalEvents.bulkPut(fresh.history as any);
+          } catch {
+            // ignore
+          }
           await qc.invalidateQueries({ queryKey: ['approvalHistory', inspectionId] });
+          await qc.invalidateQueries({ queryKey: ['notifications'] });
           await qc.invalidateQueries({ queryKey: ['inbox'] });
           return;
         } catch (err: unknown) {
@@ -349,12 +362,12 @@ export function ReportPage() {
         nextStatus = 'returned';
       }
 
-      await db.inspections.update(inspectionId!, { status: nextStatus, updatedAt: new Date().toISOString() });
+      const now = new Date().toISOString();
+      await db.inspections.update(inspectionId!, { status: nextStatus, updatedAt: now });
       await queueApprovalAction(inspectionId!, path, body);
 
       const stage = nextStatus === 'pending_tm' ? 'tm' : nextStatus === 'pending_director' ? 'director' : nextStatus === 'approved' ? 'approved' : 'returned';
       const existingAppr = await db.approvals.get(inspectionId!);
-      const now = new Date().toISOString();
       await db.approvals.put({
         id: inspectionId!,
         inspectionId: inspectionId!,
@@ -369,7 +382,58 @@ export function ReportPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
+      // Save local ApprovalEvent so Audit Trail shows immediately offline!
+      const levelLabel = path === 'submit'
+        ? (me.data?.role === 'vesselManager' ? 'To Tech Manager' : 'To Director')
+        : path === 'approve'
+          ? (dispInspection.status === 'pending_tm' ? 'Level 1 — Tech Manager' : 'Final — Director')
+          : path === 'reject' ? 'Returned by Reviewer' : 'Reopened by Admin';
+
+      const localEvent: ApprovalEvent = {
+        id: crypto.randomUUID(),
+        inspectionId: inspectionId!,
+        action: path === 'submit' ? 'submitted' : path === 'approve' ? 'approved' : path === 'reject' ? 'rejected' : 'reopened',
+        level: levelLabel,
+        actorUserId: me.data?.id || '',
+        actorName: me.data?.name || me.data?.email || 'User',
+        actorDesignation: me.data?.designation || '',
+        actorRole: me.data?.role || 'techManager',
+        targetUserId: (body.nextApproverId as string) || (body.approverId as string) || null,
+        comment: (body.comment as string) || '',
+        createdAt: now,
+      };
+      await db.approvalEvents.put(localEvent as any);
+
+      // Create local notifications for the Director / user
+      const notifTitle = path === 'approve'
+        ? (nextStatus === 'approved' ? 'Inspection Approved' : 'Technical Review Completed — Director Approval Needed')
+        : path === 'submit' ? 'Inspection Submitted for Review' : 'Inspection Returned for Correction';
+      const notifMsg = path === 'approve'
+        ? (nextStatus === 'approved' ? `${dispInspection.vesselName}: Inspection officially approved by ${me.data?.name || 'Tech Manager'}` : `${dispInspection.vesselName}: Reviewed and endorsed by ${me.data?.name || 'Tech Manager'}. Ready for final Director approval.`)
+        : path === 'submit' ? `${dispInspection.vesselName}: Inspection submitted for review` : `${dispInspection.vesselName}: Returned by reviewer`;
+
+      try {
+        const allUsers = await db.users.toArray();
+        const targetDirs = allUsers.filter(u => u.role === 'director' || u.id === (body.nextApproverId as string));
+        for (const dir of targetDirs) {
+          await db.notifications.put({
+            id: crypto.randomUUID(),
+            userId: dir.id,
+            inspectionId: inspectionId!,
+            type: path === 'approve' ? 'inspection_approved' : path === 'submit' ? 'inspection_submitted' : 'inspection_returned',
+            title: notifTitle,
+            message: notifMsg,
+            link: `/inspections/${inspectionId}/report`,
+            read: false,
+            createdAt: now,
+          });
+        }
+      } catch {
+        // ignore
+      }
+
       await qc.invalidateQueries({ queryKey: ['approvalHistory', inspectionId] });
+      await qc.invalidateQueries({ queryKey: ['notifications'] });
       await qc.invalidateQueries({ queryKey: ['inbox'] });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : (err instanceof Error ? err.message : 'Something went wrong'));

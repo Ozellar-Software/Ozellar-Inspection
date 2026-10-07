@@ -1,5 +1,6 @@
 import type { PullResponse, PushResponse, SyncEntity } from '@ozellar/shared';
 import { api } from '../api/client';
+import { getCachedUser } from '../auth/session';
 import { db, getMeta, setMeta } from './db';
 import { processPhotoQueue, prefetchInspectionPhotos } from './photoQueue';
 import { processApprovalQueue, hasPendingApproval } from './approvalQueue';
@@ -47,10 +48,12 @@ async function push(): Promise<void> {
 
 /** Pull everything changed since the last cursor; skip rows that still have local unsent changes. */
 async function pull(): Promise<void> {
-  let cursor = await getMeta<number>('cursor', 0);
+  const user = getCachedUser();
+  const cursorKey = user?.id ? `cursor_${user.id}` : 'cursor';
+  let cursor = await getMeta<number>(cursorKey, 0);
   if (cursor > 100_000_000) {
     cursor = 0;
-    await setMeta('cursor', 0);
+    await setMeta(cursorKey, 0);
   }
 
   // Auto-heal: If local DB has 0 inspections but cursor is ahead, reset cursor to 0 to pull full list
@@ -58,7 +61,7 @@ async function pull(): Promise<void> {
   if (localCount === 0 && cursor > 0) {
     console.log('[Sync] Local inspections empty with cursor > 0; resetting cursor to 0 for full initial sync');
     cursor = 0;
-    await setMeta('cursor', 0);
+    await setMeta(cursorKey, 0);
   }
 
   for (;;) {
@@ -67,6 +70,7 @@ async function pull(): Promise<void> {
     const pendingIds = new Set(pendingOutbox.map((m) => m.entityId));
     for (const [entity, rows] of Object.entries(res.changes) as [SyncEntity, Array<Record<string, unknown> & { id: string }>][]) {
       const table = db.table_(entity);
+      if (!table) continue;
       if (entity === 'inspections') {
         const safeRows = [];
         for (const r of rows) {
@@ -97,40 +101,10 @@ async function pull(): Promise<void> {
     }
 
     cursor = res.nextCursor;
+    await setMeta(cursorKey, cursor);
     await setMeta('cursor', cursor);
 
-    // Reconcile and purge local inspections deleted from server only on the final batch
     if (!res.hasMore) {
-      if (res.activeInspectionIds && res.activeInspectionIds.length > 0) {
-        // Protect any inspections that have pending local mutations in outbox
-        const protectedInspectionIds = new Set<string>();
-        for (const m of pendingOutbox) {
-          if (m.entity === 'inspections') protectedInspectionIds.add(m.entityId);
-          if (typeof m.data?.inspectionId === 'string') protectedInspectionIds.add(m.data.inspectionId);
-        }
-
-        const serverSet = new Set(res.activeInspectionIds);
-        const localInspections = await db.inspections.toArray();
-        const toDelete = localInspections
-          .filter((i) => !serverSet.has(i.id) && !protectedInspectionIds.has(i.id))
-          .map((i) => i.id);
-
-        if (toDelete.length) {
-          console.warn('[Sync] Purging', toDelete.length, 'inspection(s) deleted on server:', toDelete);
-          await db.inspections.bulkDelete(toDelete);
-          for (const inspId of toDelete) {
-            const secs = await db.inspectionSections.where('inspectionId').equals(inspId).toArray();
-            const secIds = secs.map((s) => s.id);
-            await db.inspectionSections.bulkDelete(secIds);
-            for (const sId of secIds) {
-              await db.inspectionQuestions.where('inspectionSectionId').equals(sId).delete();
-            }
-            await db.responses.where('inspectionId').equals(inspId).delete();
-            await db.findings.where('inspectionId').equals(inspId).delete();
-            await db.photos.where('inspectionId').equals(inspId).delete();
-          }
-        }
-      }
       return;
     }
   }

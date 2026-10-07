@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type AppNotification } from '@ozellar/shared';
 import { api } from '../api/client';
+import { db } from '../offline/db';
+import { useCurrentUser } from '../auth/useCurrentUser';
 import {
   BellIcon,
   CheckCircleIcon,
@@ -68,12 +70,32 @@ export function NotificationsMenu() {
   const menuRef = useRef<HTMLDivElement>(null);
   const nav = useNavigate();
   const qc = useQueryClient();
+  const me = useCurrentUser();
 
   const { data } = useQuery<{ notifications: AppNotification[]; unreadCount: number }>({
-    queryKey: ['notifications'],
-    queryFn: () => api('/notifications'),
-    enabled: navigator.onLine,
-    refetchInterval: 15000,
+    queryKey: ['notifications', me.data?.id],
+    queryFn: async () => {
+      const currentUserId = me.data?.id;
+      if (navigator.onLine) {
+        try {
+          const res = await api<{ notifications: AppNotification[]; unreadCount: number }>('/notifications');
+          if (res?.notifications?.length) {
+            await db.notifications.bulkPut(res.notifications);
+          }
+          return res;
+        } catch {
+          // offline fallback below
+        }
+      }
+      let localNotifs = await db.notifications.toArray();
+      if (currentUserId) {
+        localNotifs = localNotifs.filter((n) => !n.userId || n.userId === currentUserId);
+      }
+      localNotifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const unread = localNotifs.filter((n) => !n.read).length;
+      return { notifications: localNotifs, unreadCount: unread };
+    },
+    refetchInterval: navigator.onLine ? 15000 : false,
   });
 
   const notifications = data?.notifications ?? [];
@@ -91,7 +113,15 @@ export function NotificationsMenu() {
 
   async function markAllAsRead() {
     try {
-      await api('/notifications/read', { method: 'POST', body: { all: true } });
+      if (navigator.onLine) {
+        await api('/notifications/read', { method: 'POST', body: { all: true } });
+      }
+      const currentUserId = me.data?.id;
+      if (currentUserId) {
+        await db.notifications.where('userId').equals(currentUserId).modify({ read: true });
+      } else {
+        await db.notifications.toCollection().modify({ read: true });
+      }
       qc.invalidateQueries({ queryKey: ['notifications'] });
     } catch (err) {
       console.error('Failed to mark all notifications as read', err);
@@ -101,7 +131,10 @@ export function NotificationsMenu() {
   async function handleNotificationClick(item: AppNotification) {
     if (!item.read) {
       try {
-        await api('/notifications/read', { method: 'POST', body: { id: item.id } });
+        if (navigator.onLine) {
+          await api('/notifications/read', { method: 'POST', body: { id: item.id } });
+        }
+        await db.notifications.update(item.id, { read: true });
         qc.invalidateQueries({ queryKey: ['notifications'] });
       } catch (err) {
         console.error('Failed to mark notification as read', err);

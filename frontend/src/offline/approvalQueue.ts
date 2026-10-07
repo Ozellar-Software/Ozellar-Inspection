@@ -60,6 +60,14 @@ export async function processApprovalQueue(): Promise<void> {
         if (res?.status) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await db.inspections.update(item.inspectionId, { status: res.status as any });
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const appr = await api<any>(`/inspections/${item.inspectionId}/approval`);
+            if (appr?.approval) await db.approvals.put({ ...appr.approval, id: item.inspectionId });
+            if (appr?.history?.length) await db.approvalEvents.bulkPut(appr.history);
+          } catch {
+            // non-fatal
+          }
         }
       } catch (err: unknown) {
         console.warn(`[ApprovalQueue] Failed processing ${item.path} for ${item.inspectionId}:`, err);

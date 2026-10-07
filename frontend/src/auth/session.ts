@@ -300,6 +300,9 @@ export async function tryOfflineLogin(
       localStorage.setItem(OFFLINE_ACCOUNTS_KEY, JSON.stringify(accounts));
       localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
       setToken(account.token || `oz_offline_${account.id}_${Date.now()}`);
+      if (account.user) {
+        account.user.vesselIds = account.user.vesselIds ?? [];
+      }
       setCachedUser(account.user);
       return { ok: true };
     }
@@ -329,9 +332,18 @@ export async function tryOfflineLogin(
 
       if (passwordMatched) {
         const offlineToken = `oz_offline_${dbUser.id}_${Date.now()}`;
-        await saveOfflineAccount(dbUser, offlineToken, password);
+        const fullUser: User = {
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          designation: dbUser.designation,
+          role: dbUser.role,
+          isActive: dbUser.isActive,
+          vesselIds: dbUser.vesselIds ?? [],
+        };
+        await saveOfflineAccount(fullUser, offlineToken, password);
         setToken(offlineToken);
-        setCachedUser(dbUser);
+        setCachedUser(fullUser);
         localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
         return { ok: true };
       }

@@ -35,6 +35,7 @@ const ENTITIES: Record<SyncEntity, EntityDef> = {
   findings:            { table: 'findings', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
   photos:              { table: 'photos', idCol: 'id', visJoin: 'left join inspections i on i.id = t.inspection_id', visExpr: 'coalesce(i.vessel_id, t.vessel_id)' },
   approvals:           { table: 'approvals', idCol: 'inspection_id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
+  approvalEvents:      { table: 'approval_events', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
   templateSections:    { table: 'template_sections', idCol: 'id', visJoin: '', visExpr: null },
   templateQuestions:   { table: 'template_questions', idCol: 'id', visJoin: '', visExpr: null },
   users:               { table: 'users', idCol: 'id', visJoin: '', visExpr: null, hidden: ['entra_oid'] },
@@ -67,12 +68,24 @@ export const syncPullHandler = handler(async (req): Promise<PullResponse> => {
     const changes: PullResponse['changes'] = {};
     for (const [entity, ids] of byEntity) {
       const d = ENTITIES[entity];
-      const rows = (await pool.query(`select * from ${d.table} where ${d.idCol}::text = any($1)`, [ids])).rows;
+      let rows: Array<Record<string, unknown>>;
+      if (entity === 'users') {
+        rows = (await pool.query(
+          `select u.*, coalesce(array_agg(uv.vessel_id::text) filter (where uv.vessel_id is not null), '{}') as vessel_ids
+             from users u left join user_vessels uv on uv.user_id = u.id
+            where u.id::text = any($1)
+            group by u.id`, [ids])).rows;
+      } else {
+        rows = (await pool.query(`select * from ${d.table} where ${d.idCol}::text = any($1)`, [ids])).rows;
+      }
       changes[entity] = rows.map((row) => {
         for (const h of d.hidden ?? []) delete row[h];
         const c = camel<Record<string, unknown>>(row);
         if ('vesselTypes' in c && !Array.isArray(c.vesselTypes)) {
           c.vesselTypes = [];
+        }
+        if ('vesselIds' in c && !Array.isArray(c.vesselIds)) {
+          c.vesselIds = [];
         }
         return { ...c, id: String(row[d.idCol]), rowVersion: Number(row.row_version) } as never;
       });

@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type {
-  Approval, Finding, Inspection, InspectionQuestion, InspectionSection, Mutation, Photo, Response, SyncEntity, User, Vessel,
+  Approval, ApprovalEvent, AppNotification, Finding, Inspection, InspectionQuestion, InspectionSection, Mutation, Photo, Response, SyncEntity, User, Vessel,
 } from '@ozellar/shared';
 
 type Synced<T> = T & { rowVersion?: number; deletedAt?: string | null };
@@ -28,6 +28,8 @@ export class VirDB extends Dexie {
   findings!: Table<Synced<Finding>, string>;
   photos!: Table<Synced<Photo>, string>;
   approvals!: Table<Synced<Approval> & { id: string }, string>;
+  approvalEvents!: Table<Synced<ApprovalEvent> & { id: string }, string>;
+  notifications!: Table<AppNotification, string>;
   templateSections!: Table<Record<string, unknown> & { id: string }, string>;
   templateQuestions!: Table<Record<string, unknown> & { id: string }, string>;
   users!: Table<Synced<User>, string>;
@@ -52,6 +54,10 @@ export class VirDB extends Dexie {
       outbox: 'id, createdAt',
       photoQueue: 'photoId, status',
       meta: 'key',
+    });
+    this.version(2).stores({
+      approvalEvents: 'id, inspectionId, createdAt',
+      notifications: 'id, userId, read, createdAt',
     });
   }
 
