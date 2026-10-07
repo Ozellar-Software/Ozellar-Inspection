@@ -290,6 +290,99 @@ body:has(.login-root) {
   background: #f1f5f9;
 }
 
+/* ── Offline Banner & Account Selector ── */
+.login-offline-banner {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.login-offline-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #92400e;
+}
+.login-offline-icon {
+  display: flex;
+  align-items: center;
+  color: #d97706;
+}
+.login-offline-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #92400e;
+  letter-spacing: -0.2px;
+}
+.login-offline-desc {
+  font-size: 12px;
+  color: #b45309;
+  line-height: 1.4;
+}
+
+.login-offline-accounts {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.login-offline-acc-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+.login-offline-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.login-offline-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.login-offline-chip:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+.login-offline-chip.selected {
+  background: #f0fdfa;
+  border-color: #0d9488;
+  color: #0f766e;
+  font-weight: 600;
+}
+.login-offline-chip-name {
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.login-offline-chip-role {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  background: #e2e8f0;
+  color: #475569;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.login-offline-chip.selected .login-offline-chip-role {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
 /* ── Messages ── */
 .login-msg {
   font-size: 13px;

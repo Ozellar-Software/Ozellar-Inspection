@@ -19,7 +19,8 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401 || (res.status === 403 && (json?.error?.code === 'FORBIDDEN' || json?.error?.message?.includes('access')))) {
+    if ((res.status === 401 && (json?.error?.code === 'UNAUTHORIZED' || json?.error?.message?.includes('Sign in required') || json?.error?.message?.includes('Invalid or expired'))) ||
+        (res.status === 403 && (json?.error?.code === 'FORBIDDEN' || json?.error?.message?.includes('access')))) {
       logout(); // expired/invalid token or removed user: drop back to sign-in screen
     }
     throw new ApiError(res.status, json?.error?.code ?? 'ERROR', json?.error?.message ?? res.statusText);

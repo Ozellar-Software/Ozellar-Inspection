@@ -2,7 +2,21 @@ import type { User } from '@ozellar/shared';
 
 const TOKEN_KEY = 'oz_token';
 const USER_KEY = 'oz_user';
+const OFFLINE_ACCOUNTS_KEY = 'oz_offline_accounts';
+const LAST_EMAIL_KEY = 'oz_last_email';
 const BASE = (import.meta.env.VITE_API_BASE as string) ?? '/api';
+
+export interface OfflineAccount {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  token: string;
+  user: User;
+  salt: string;
+  passwordHash: string;
+  lastLoginAt: string;
+}
 
 type Listener = () => void;
 let listeners: Listener[] = [];
@@ -20,8 +34,12 @@ export function getCachedUser(): User | null {
 
 export function setCachedUser(user: User | null): void {
   try {
-    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
-    else localStorage.removeItem(USER_KEY);
+    if (user) {
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+      syncOfflineUser(user);
+    } else {
+      localStorage.removeItem(USER_KEY);
+    }
   } catch { /* storage blocked */ }
 }
 
@@ -36,6 +54,7 @@ function setToken(token: string | null): void {
   } catch { /* private browsing / storage blocked: session just won't persist across reloads */ }
   notify();
 }
+
 /** Re-renders whatever's watching sign-in state (see useAuthToken) without a full auth library. */
 export function subscribe(fn: Listener): () => void {
   listeners.push(fn);
@@ -49,6 +68,183 @@ export async function apiToken(): Promise<string> {
   return t;
 }
 
+/** Computes a client-side SHA-256 hash using native Web Crypto with fallback. */
+export async function hashPasswordOffline(password: string, salt: string): Promise<string> {
+  const enc = new TextEncoder();
+  const data = enc.encode(`${salt}:${password}`);
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    try {
+      const buf = await crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    } catch {
+      // fallback below
+    }
+  }
+  let h = 0x811c9dc5;
+  for (let i = 0; i < data.length; i++) {
+    h ^= data[i];
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16);
+}
+
+/** List of accounts previously signed in on this device available for offline access. */
+export function getOfflineAccounts(): OfflineAccount[] {
+  try {
+    const raw = localStorage.getItem(OFFLINE_ACCOUNTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getLastOfflineEmail(): string | null {
+  try {
+    return localStorage.getItem(LAST_EMAIL_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Saves or updates an offline account profile and password hash on this device. */
+export async function saveOfflineAccount(user: User, token: string, password?: string): Promise<void> {
+  try {
+    const accounts = getOfflineAccounts();
+    const cleanEmail = user.email.toLowerCase().trim();
+    let account = accounts.find((a) => a.email.toLowerCase().trim() === cleanEmail);
+
+    let salt = account?.salt || crypto.randomUUID();
+    let passwordHash = account?.passwordHash || '';
+
+    if (password) {
+      salt = crypto.randomUUID();
+      passwordHash = await hashPasswordOffline(password, salt);
+    }
+
+    if (account) {
+      account.id = user.id;
+      account.name = user.name;
+      account.role = user.role;
+      account.token = token;
+      account.user = user;
+      account.salt = salt;
+      account.passwordHash = passwordHash;
+      account.lastLoginAt = new Date().toISOString();
+    } else {
+      account = {
+        id: user.id,
+        email: cleanEmail,
+        name: user.name,
+        role: user.role,
+        token,
+        user,
+        salt,
+        passwordHash,
+        lastLoginAt: new Date().toISOString(),
+      };
+      accounts.push(account);
+    }
+
+    localStorage.setItem(OFFLINE_ACCOUNTS_KEY, JSON.stringify(accounts));
+    localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
+  } catch {
+    // storage unavailable
+  }
+}
+
+function syncOfflineUser(user: User): void {
+  try {
+    const token = getToken();
+    if (!token) return;
+    const accounts = getOfflineAccounts();
+    const cleanEmail = user.email.toLowerCase().trim();
+    const account = accounts.find((a) => a.email.toLowerCase().trim() === cleanEmail);
+    if (account) {
+      account.name = user.name;
+      account.role = user.role;
+      account.user = user;
+      account.token = token;
+      localStorage.setItem(OFFLINE_ACCOUNTS_KEY, JSON.stringify(accounts));
+    }
+  } catch {
+    // storage unavailable
+  }
+}
+
+/** Auto-seeds offline accounts from existing storage session if needed */
+function autoSeedOfflineAccount(): void {
+  try {
+    const token = getToken();
+    const user = getCachedUser();
+    if (token && user && user.email) {
+      const accounts = getOfflineAccounts();
+      const cleanEmail = user.email.toLowerCase().trim();
+      if (!accounts.some((a) => a.email.toLowerCase().trim() === cleanEmail)) {
+        accounts.push({
+          id: user.id,
+          email: cleanEmail,
+          name: user.name,
+          role: user.role,
+          token,
+          user,
+          salt: '',
+          passwordHash: '',
+          lastLoginAt: new Date().toISOString(),
+        });
+        localStorage.setItem(OFFLINE_ACCOUNTS_KEY, JSON.stringify(accounts));
+      }
+      if (!localStorage.getItem(LAST_EMAIL_KEY)) {
+        localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
+      }
+    }
+  } catch {
+    // non-fatal
+  }
+}
+autoSeedOfflineAccount();
+
+/** Validates credentials against locally stored offline accounts. */
+export async function tryOfflineLogin(
+  email: string,
+  password: string
+): Promise<{ ok: boolean; reason?: 'not_found' | 'wrong_password' | 'invalid' }> {
+  const cleanEmail = email.toLowerCase().trim();
+  const accounts = getOfflineAccounts();
+  const account = accounts.find((a) => a.email.toLowerCase().trim() === cleanEmail);
+
+  if (!account) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  // If this account was seeded from an existing session without a saved password hash,
+  // allow sign in and establish the password hash for subsequent offline sign ins
+  if (!account.passwordHash) {
+    if (password.length >= 6) {
+      account.salt = crypto.randomUUID();
+      account.passwordHash = await hashPasswordOffline(password, account.salt);
+      account.lastLoginAt = new Date().toISOString();
+      localStorage.setItem(OFFLINE_ACCOUNTS_KEY, JSON.stringify(accounts));
+    }
+    setToken(account.token);
+    setCachedUser(account.user);
+    localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
+    return { ok: true };
+  }
+
+  // Verify against cached password hash
+  const inputHash = await hashPasswordOffline(password, account.salt);
+  if (inputHash !== account.passwordHash) {
+    return { ok: false, reason: 'wrong_password' };
+  }
+
+  account.lastLoginAt = new Date().toISOString();
+  localStorage.setItem(OFFLINE_ACCOUNTS_KEY, JSON.stringify(accounts));
+  localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
+  setToken(account.token);
+  setCachedUser(account.user);
+  return { ok: true };
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -59,9 +255,60 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function login(email: string, password: string): Promise<void> {
-  const { token } = await postJson<{ token: string }>('/auth/login', { email, password });
-  setToken(token);
+  const cleanEmail = email.trim().toLowerCase();
+
+  // If online, attempt online login first
+  if (navigator.onLine) {
+    try {
+      const { token } = await postJson<{ token: string }>('/auth/login', { email: cleanEmail, password });
+      setToken(token);
+
+      // Fetch user profile immediately and persist offline account with password hash
+      try {
+        const res = await fetch(`${BASE}/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const user = await res.json() as User;
+          setCachedUser(user);
+          await saveOfflineAccount(user, token, password);
+        } else {
+          const existing = getCachedUser();
+          if (existing) await saveOfflineAccount(existing, token, password);
+        }
+      } catch {
+        const existing = getCachedUser();
+        if (existing) await saveOfflineAccount(existing, token, password);
+      }
+      return;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // If server returned an explicit auth rejection (incorrect password or revoked access), don't fallback
+      const isAuthRejection = msg.includes('Incorrect') || msg.includes('access has been removed') || msg.includes('UNAUTHORIZED') || msg.includes('FORBIDDEN');
+      if (isAuthRejection) {
+        throw err;
+      }
+      // If it failed because network dropped or server was unreachable, fall through to offline login
+    }
+  }
+
+  // Device is offline or network request failed: authenticate against local offline account
+  const offlineResult = await tryOfflineLogin(cleanEmail, password);
+  if (offlineResult.ok) {
+    return;
+  }
+
+  if (offlineResult.reason === 'wrong_password') {
+    throw new Error('Incorrect password for offline access.');
+  }
+
+  if (offlineResult.reason === 'not_found') {
+    throw new Error('Offline: No cached account found for this email on this device. Please connect to the internet once to sign in.');
+  }
+
+  throw new Error('Offline sign-in failed. Please verify your credentials or connect to the internet.');
 }
+
 export async function requestReset(email: string): Promise<void> {
   await postJson('/auth/request-reset', { email });
 }
@@ -70,21 +317,12 @@ export async function resetPassword(resetToken: string, password: string): Promi
   setToken(token);
 }
 
-/** Signs out: clears the JWT, wipes the React Query cache (so old user's data doesn't show on next login),
- *  and clears the local Dexie sync store (vessel/inspection data is user-scoped). */
+/** Signs out: clears the JWT and user session, but preserves the offline database and cached accounts. */
 export function logout(): void {
   setToken(null);
   setCachedUser(null);
-  // Lazy-import to avoid circular deps (main.tsx imports session.ts indirectly)
   import('../main').then(({ queryClient }) => {
     queryClient.clear();
   }).catch(() => {/* non-fatal */});
-  // Wipe the local offline DB so the next user starts fresh
-  import('../offline/db').then(({ clearAllData }) => {
-    void clearAllData().finally(() => {
-      window.location.href = '/';
-    });
-  }).catch(() => {
-    window.location.href = '/';
-  });
+  window.location.href = '/';
 }

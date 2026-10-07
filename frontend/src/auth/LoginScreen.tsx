@@ -1,7 +1,7 @@
 import './LoginScreen.css';
-import { useState } from 'react';
-import { login } from './session';
-import { ShipIcon } from '../icons';
+import { useEffect, useState } from 'react';
+import { login, getOfflineAccounts, getLastOfflineEmail, type OfflineAccount } from './session';
+import { ShipIcon, WifiIcon } from '../icons';
 
 /* ─── Feature bullet icons (inline SVG, no extra dep) ─────────────────── */
 function IconShield() {
@@ -37,13 +37,41 @@ export function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPw, setShowPw] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [offlineAccounts, setOfflineAccounts] = useState<OfflineAccount[]>([]);
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
+    const accounts = getOfflineAccounts();
+    setOfflineAccounts(accounts);
+    const last = getLastOfflineEmail();
+    if (last) {
+      setEmail(last);
+    } else if (accounts.length > 0) {
+      setEmail(accounts[0].email);
+    }
+
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault();
-    setError(null); setBusy(true);
-    try { await login(email, password); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Sign in failed'); }
-    finally { setBusy(false); }
+    setError(null);
+    setBusy(true);
+    try {
+      await login(email, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign in failed');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -119,6 +147,39 @@ export function LoginScreen() {
               <div className="login-form-title">Welcome back</div>
               <div className="login-form-sub">Sign in with your account email to continue.</div>
 
+              {!isOnline && (
+                <div className="login-offline-banner">
+                  <div className="login-offline-badge-row">
+                    <span className="login-offline-icon"><WifiIcon width={14} height={14} /></span>
+                    <span className="login-offline-title">Offline Mode</span>
+                  </div>
+                  <div className="login-offline-desc">
+                    {offlineAccounts.length > 0
+                      ? 'You can sign in using an account previously used on this device.'
+                      : 'You are currently offline. Connect to the internet once to sign in for the first time.'}
+                  </div>
+                </div>
+              )}
+
+              {offlineAccounts.length > 0 && !isOnline && (
+                <div className="login-offline-accounts">
+                  <div className="login-offline-acc-label">Saved accounts on this device:</div>
+                  <div className="login-offline-chips">
+                    {offlineAccounts.map((acc) => (
+                      <button
+                        key={acc.email}
+                        type="button"
+                        className={`login-offline-chip ${email.toLowerCase().trim() === acc.email.toLowerCase().trim() ? 'selected' : ''}`}
+                        onClick={() => setEmail(acc.email)}
+                      >
+                        <span className="login-offline-chip-name">{acc.name || acc.email}</span>
+                        <span className="login-offline-chip-role">{acc.role || 'user'}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="login-field">
                 <label htmlFor="lf-email">Email address</label>
                 <input
@@ -173,7 +234,7 @@ export function LoginScreen() {
               {error && <div className="auth-error login-msg">{error}</div>}
 
               <button className="btn btn-primary btn-block login-submit" type="submit" disabled={busy}>
-                {busy ? 'Signing in…' : 'Sign in'}
+                {busy ? 'Signing in…' : !isOnline ? 'Sign in (Offline)' : 'Sign in'}
               </button>
             </form>
           </div>
