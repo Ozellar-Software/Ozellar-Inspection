@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -6,6 +6,7 @@ import { can, isEditable, type Photo, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
+import { prefetchInspectionPhotos } from '../../offline/photoQueue';
 import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon } from '../../icons';
 import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
@@ -20,6 +21,12 @@ export function SectionDetailPage() {
   const { id: inspectionId, sectionId } = useParams<{ id: string; sectionId: string }>();
   const me = useCurrentUser();
   const [completing, setCompleting] = useState(false);
+
+  useEffect(() => {
+    if (inspectionId) {
+      void prefetchInspectionPhotos(inspectionId);
+    }
+  }, [inspectionId]);
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);
   const section = useLiveQuery(() => (sectionId ? db.inspectionSections.get(sectionId) : undefined), [sectionId]);

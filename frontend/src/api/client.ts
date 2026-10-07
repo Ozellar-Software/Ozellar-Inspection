@@ -21,7 +21,11 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   if (!res.ok) {
     if ((res.status === 401 && (json?.error?.code === 'UNAUTHORIZED' || json?.error?.message?.includes('Sign in required') || json?.error?.message?.includes('Invalid or expired'))) ||
         (res.status === 403 && (json?.error?.code === 'FORBIDDEN' || json?.error?.message?.includes('access')))) {
-      logout(); // expired/invalid token or removed user: drop back to sign-in screen
+      if (token.startsWith('oz_offline_')) {
+        console.warn('[API] Offline session token received 401 online; preserving local offline session');
+      } else {
+        logout(); // expired/invalid token or removed user: drop back to sign-in screen
+      }
     }
     throw new ApiError(res.status, json?.error?.code ?? 'ERROR', json?.error?.message ?? res.statusText);
   }

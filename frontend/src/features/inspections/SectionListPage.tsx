@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -6,6 +6,7 @@ import { can, isEditable, STATUS_LABELS, type InspectionStatus, type User } from
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
+import { prefetchInspectionPhotos } from '../../offline/photoQueue';
 import { BackIcon, CameraIcon, PlusIcon, XIcon, DownloadIcon, WarningIcon } from '../../icons';
 import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
@@ -45,6 +46,12 @@ export function SectionListPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+
+  useEffect(() => {
+    if (inspectionId) {
+      void prefetchInspectionPhotos(inspectionId);
+    }
+  }, [inspectionId]);
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);
   const sections = useLiveQuery(

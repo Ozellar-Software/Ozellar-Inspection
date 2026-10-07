@@ -1,7 +1,7 @@
 import type { PullResponse, PushResponse, SyncEntity } from '@ozellar/shared';
 import { api } from '../api/client';
 import { db, getMeta, setMeta } from './db';
-import { processPhotoQueue } from './photoQueue';
+import { processPhotoQueue, prefetchInspectionPhotos } from './photoQueue';
 
 type Listener = (s: SyncStatus) => void;
 export interface SyncStatus { state: 'idle' | 'syncing' | 'offline' | 'error'; lastSyncAt: string | null; pending: number; message?: string }
@@ -67,6 +67,16 @@ async function pull(): Promise<void> {
     for (const [entity, rows] of Object.entries(res.changes) as [SyncEntity, Array<Record<string, unknown> & { id: string }>][]) {
       const table = db.table_(entity);
       await table.bulkPut(rows.filter((r) => !pendingIds.has(r.id)));
+    }
+
+    if (res.changes.photos && res.changes.photos.length > 0) {
+      const inspIds = new Set<string>();
+      for (const p of res.changes.photos) {
+        if (p.inspectionId && typeof p.inspectionId === 'string') inspIds.add(p.inspectionId);
+      }
+      for (const inspId of inspIds) {
+        void prefetchInspectionPhotos(inspId);
+      }
     }
 
     cursor = res.nextCursor;

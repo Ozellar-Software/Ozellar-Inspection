@@ -1,4 +1,6 @@
 import type { User } from '@ozellar/shared';
+import bcrypt from 'bcryptjs';
+import { db } from '../offline/db';
 
 const TOKEN_KEY = 'oz_token';
 const USER_KEY = 'oz_user';
@@ -203,7 +205,56 @@ function autoSeedOfflineAccount(): void {
 }
 autoSeedOfflineAccount();
 
-/** Validates credentials against locally stored offline accounts. */
+export interface AvailableOfflineUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+}
+
+/** Returns all accounts available for offline login: both previously signed-in accounts and synced db.users. */
+export async function getAllOfflineUsers(): Promise<AvailableOfflineUser[]> {
+  const result: AvailableOfflineUser[] = [];
+  const seenEmails = new Set<string>();
+
+  // 1. Accounts previously signed in on this device
+  for (const acc of getOfflineAccounts()) {
+    const clean = acc.email.toLowerCase().trim();
+    if (!seenEmails.has(clean)) {
+      seenEmails.add(clean);
+      result.push({
+        id: acc.id,
+        email: acc.email,
+        name: acc.name || acc.email,
+        role: acc.role || 'user',
+      });
+    }
+  }
+
+  // 2. All active users synchronized into Dexie db.users
+  try {
+    const dbUsers = await db.users.toArray();
+    for (const u of dbUsers) {
+      if (u.isActive === false) continue;
+      const clean = u.email.toLowerCase().trim();
+      if (!seenEmails.has(clean)) {
+        seenEmails.add(clean);
+        result.push({
+          id: u.id,
+          email: u.email,
+          name: u.name || u.email,
+          role: u.role || 'user',
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('[Auth] Error querying Dexie users:', e);
+  }
+
+  return result;
+}
+
+/** Validates credentials against locally stored offline accounts and synced database users. */
 export async function tryOfflineLogin(
   email: string,
   password: string
@@ -212,37 +263,90 @@ export async function tryOfflineLogin(
   const accounts = getOfflineAccounts();
   const account = accounts.find((a) => a.email.toLowerCase().trim() === cleanEmail);
 
-  if (!account) {
-    return { ok: false, reason: 'not_found' };
-  }
+  // 1. Check existing cached account in localStorage
+  if (account) {
+    let passwordMatched = false;
 
-  // If this account was seeded from an existing session without a saved password hash,
-  // allow sign in and establish the password hash for subsequent offline sign ins
-  if (!account.passwordHash) {
-    if (password.length >= 6) {
-      account.salt = crypto.randomUUID();
-      account.passwordHash = await hashPasswordOffline(password, account.salt);
-      account.lastLoginAt = new Date().toISOString();
-      localStorage.setItem(OFFLINE_ACCOUNTS_KEY, JSON.stringify(accounts));
+    // Check custom offline password hash
+    if (account.passwordHash && account.salt) {
+      const inputHash = await hashPasswordOffline(password, account.salt);
+      if (inputHash === account.passwordHash) {
+        passwordMatched = true;
+      }
     }
-    setToken(account.token);
-    setCachedUser(account.user);
-    localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
-    return { ok: true };
+
+    // Check bcrypt hash stored on account.user
+    if (!passwordMatched && account.user?.passwordHash) {
+      try {
+        if (await bcrypt.compare(password, account.user.passwordHash)) {
+          passwordMatched = true;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // If account was seeded without password hash (allow initial setup)
+    if (!passwordMatched && !account.passwordHash && !account.user?.passwordHash) {
+      passwordMatched = password.length >= 6;
+    }
+
+    if (passwordMatched) {
+      account.lastLoginAt = new Date().toISOString();
+      if (password.length >= 6 && !account.passwordHash) {
+        account.salt = crypto.randomUUID();
+        account.passwordHash = await hashPasswordOffline(password, account.salt);
+      }
+      localStorage.setItem(OFFLINE_ACCOUNTS_KEY, JSON.stringify(accounts));
+      localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
+      setToken(account.token || `oz_offline_${account.id}_${Date.now()}`);
+      setCachedUser(account.user);
+      return { ok: true };
+    }
   }
 
-  // Verify against cached password hash
-  const inputHash = await hashPasswordOffline(password, account.salt);
-  if (inputHash !== account.passwordHash) {
+  // 2. Not in localStorage or password changed: Look up in local Dexie database (all synced users)
+  try {
+    const allUsers = await db.users.toArray();
+    const dbUser = allUsers.find((u) => u.email.toLowerCase().trim() === cleanEmail);
+
+    if (dbUser) {
+      if (dbUser.isActive === false) {
+        return { ok: false, reason: 'invalid' };
+      }
+
+      let passwordMatched = false;
+      if (dbUser.passwordHash) {
+        try {
+          passwordMatched = await bcrypt.compare(password, dbUser.passwordHash);
+        } catch {
+          passwordMatched = false;
+        }
+      } else {
+        // User exists in db.users but passwordHash hasn't synced yet (or password not set on server)
+        passwordMatched = password.length >= 6;
+      }
+
+      if (passwordMatched) {
+        const offlineToken = `oz_offline_${dbUser.id}_${Date.now()}`;
+        await saveOfflineAccount(dbUser, offlineToken, password);
+        setToken(offlineToken);
+        setCachedUser(dbUser);
+        localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
+        return { ok: true };
+      }
+
+      return { ok: false, reason: 'wrong_password' };
+    }
+  } catch (err) {
+    console.warn('[Auth] Error querying offline users from DB:', err);
+  }
+
+  if (account) {
     return { ok: false, reason: 'wrong_password' };
   }
 
-  account.lastLoginAt = new Date().toISOString();
-  localStorage.setItem(OFFLINE_ACCOUNTS_KEY, JSON.stringify(accounts));
-  localStorage.setItem(LAST_EMAIL_KEY, cleanEmail);
-  setToken(account.token);
-  setCachedUser(account.user);
-  return { ok: true };
+  return { ok: false, reason: 'not_found' };
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
@@ -292,7 +396,7 @@ export async function login(email: string, password: string): Promise<void> {
     }
   }
 
-  // Device is offline or network request failed: authenticate against local offline account
+  // Device is offline or network request failed: authenticate against local offline account or synced users
   const offlineResult = await tryOfflineLogin(cleanEmail, password);
   if (offlineResult.ok) {
     return;
@@ -302,8 +406,12 @@ export async function login(email: string, password: string): Promise<void> {
     throw new Error('Incorrect password for offline access.');
   }
 
+  if (offlineResult.reason === 'invalid') {
+    throw new Error('This account has been deactivated.');
+  }
+
   if (offlineResult.reason === 'not_found') {
-    throw new Error('Offline: No cached account found for this email on this device. Please connect to the internet once to sign in.');
+    throw new Error('Offline: No account found for this email on this device.');
   }
 
   throw new Error('Offline sign-in failed. Please verify your credentials or connect to the internet.');

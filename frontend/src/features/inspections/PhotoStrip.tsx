@@ -627,7 +627,11 @@ export function PhotoStrip({
                   scheduleRetry(p.id);
                 }}
               />
-            ) : null}
+            ) : (
+              <div className="thumb-loading-placeholder" title="Photo loading or stored offline">
+                <CameraIcon style={{ width: 20, height: 20, opacity: 0.5 }} />
+              </div>
+            )}
             {!locked && (
               <button
                 type="button"

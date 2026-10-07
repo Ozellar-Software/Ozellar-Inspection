@@ -11,6 +11,7 @@ export interface User {
   isActive: boolean;
   /** Vessel ids assigned to Tech / Vessel Managers (ignored for Admin / Director). */
   vesselIds: string[];
+  passwordHash?: string | null;
 }
 
 export type InspectionType = 'port' | 'remote' | 'sailing';

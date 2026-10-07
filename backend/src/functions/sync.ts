@@ -37,7 +37,7 @@ const ENTITIES: Record<SyncEntity, EntityDef> = {
   approvals:           { table: 'approvals', idCol: 'inspection_id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
   templateSections:    { table: 'template_sections', idCol: 'id', visJoin: '', visExpr: null },
   templateQuestions:   { table: 'template_questions', idCol: 'id', visJoin: '', visExpr: null },
-  users:               { table: 'users', idCol: 'id', visJoin: '', visExpr: null, hidden: ['entra_oid', 'password_hash'] },
+  users:               { table: 'users', idCol: 'id', visJoin: '', visExpr: null, hidden: ['entra_oid'] },
 };
 
 export const syncPullHandler = handler(async (req): Promise<PullResponse> => {
