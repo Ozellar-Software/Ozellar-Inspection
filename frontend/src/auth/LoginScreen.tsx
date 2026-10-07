@@ -1,6 +1,6 @@
 import './LoginScreen.css';
 import { useEffect, useState } from 'react';
-import { login, getAllOfflineUsers, getLastOfflineEmail, type AvailableOfflineUser } from './session';
+import { login, getLastOfflineEmail } from './session';
 import { ShipIcon, WifiIcon } from '../icons';
 
 /* ─── Feature bullet icons (inline SVG, no extra dep) ─────────────────── */
@@ -38,7 +38,6 @@ export function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showPw, setShowPw] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [offlineAccounts, setOfflineAccounts] = useState<AvailableOfflineUser[]>([]);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -46,15 +45,10 @@ export function LoginScreen() {
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
 
-    getAllOfflineUsers().then((accounts) => {
-      setOfflineAccounts(accounts);
-      const last = getLastOfflineEmail();
-      if (last && accounts.some((a) => a.email.toLowerCase().trim() === last.toLowerCase().trim())) {
-        setEmail(last);
-      } else if (accounts.length > 0) {
-        setEmail(accounts[0].email);
-      }
-    });
+    const last = getLastOfflineEmail();
+    if (last) {
+      setEmail(last);
+    }
 
     return () => {
       window.removeEventListener('online', onOnline);
@@ -155,28 +149,7 @@ export function LoginScreen() {
                     <span className="login-offline-title">Offline Mode</span>
                   </div>
                   <div className="login-offline-desc">
-                    {offlineAccounts.length > 0
-                      ? 'Select an account below or type your email to sign in offline.'
-                      : 'You are currently offline. Connect to the internet once to sign in for the first time.'}
-                  </div>
-                </div>
-              )}
-
-              {offlineAccounts.length > 0 && !isOnline && (
-                <div className="login-offline-accounts">
-                  <div className="login-offline-acc-label">Available accounts on this device:</div>
-                  <div className="login-offline-chips">
-                    {offlineAccounts.map((acc) => (
-                      <button
-                        key={acc.email}
-                        type="button"
-                        className={`login-offline-chip ${email.toLowerCase().trim() === acc.email.toLowerCase().trim() ? 'selected' : ''}`}
-                        onClick={() => setEmail(acc.email)}
-                      >
-                        <span className="login-offline-chip-name">{acc.name || acc.email}</span>
-                        <span className="login-offline-chip-role">{acc.role || 'user'}</span>
-                      </button>
-                    ))}
+                    You are currently offline. Sign in with your registered account credentials.
                   </div>
                 </div>
               )}

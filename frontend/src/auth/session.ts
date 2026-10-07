@@ -411,7 +411,7 @@ export async function login(email: string, password: string): Promise<void> {
   }
 
   if (offlineResult.reason === 'not_found') {
-    throw new Error('Offline: No account found for this email on this device.');
+    throw new Error('Account not found on this device. Please contact your administrator or wait until you are online.');
   }
 
   throw new Error('Offline sign-in failed. Please verify your credentials or connect to the internet.');
