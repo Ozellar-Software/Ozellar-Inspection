@@ -427,8 +427,14 @@ export function SectionListPage() {
             return (
               <div
                 key={s.id}
+                id={`sec-row-${s.id}`}
                 className="section-card-row"
-                onClick={() => nav(`/inspections/${inspectionId}/sections/${s.id}`)}
+                onClick={() => {
+                  if (inspectionId) {
+                    sessionStorage.setItem(`oz_last_sec_${inspectionId}`, `sec-row-${s.id}`);
+                  }
+                  nav(`/inspections/${inspectionId}/sections/${s.id}`);
+                }}
               >
                 {/* Section number or camera badge */}
                 <div

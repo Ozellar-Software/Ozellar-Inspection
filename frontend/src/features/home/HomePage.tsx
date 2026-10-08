@@ -515,11 +515,20 @@ export function HomePage() {
             return (
               <div
                 key={i.id}
+                id={`vessel-row-${i.id}`}
                 className={`vessel-row ${accentClass}`}
-                onClick={() => nav(`/inspections/${i.id}`)}
+                onClick={() => {
+                  sessionStorage.setItem('oz_last_home_item', `vessel-row-${i.id}`);
+                  nav(`/inspections/${i.id}`);
+                }}
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') nav(`/inspections/${i.id}`); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    sessionStorage.setItem('oz_last_home_item', `vessel-row-${i.id}`);
+                    nav(`/inspections/${i.id}`);
+                  }
+                }}
               >
                 {/* Left accent bar */}
                 <div className="vessel-row-accent" />
