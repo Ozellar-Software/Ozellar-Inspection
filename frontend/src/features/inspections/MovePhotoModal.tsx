@@ -17,11 +17,10 @@ import './MovePhotoModal.css';
 
 interface MovePhotoModalProps {
   isOpen: boolean;
-  photo: Photo | null;
-  photoUrl?: string;
+  photos: Photo[];
+  photoUrls?: string[];
   currentSectionId?: string;
   sections: InspectionSection[];
-  onMove?: (targetSectionId: string) => Promise<void> | void;
   onMoveToSection?: (targetSectionId: string) => Promise<void> | void;
   onMoveToQuestion?: (questionId: string, sectionId: string) => Promise<void> | void;
   onClose: () => void;
@@ -29,11 +28,10 @@ interface MovePhotoModalProps {
 
 export function MovePhotoModal({
   isOpen,
-  photo,
-  photoUrl,
+  photos,
+  photoUrls = [],
   currentSectionId,
   sections,
-  onMove,
   onMoveToSection,
   onMoveToQuestion,
   onClose,
@@ -102,7 +100,7 @@ export function MovePhotoModal({
     }
   }, [filter, tab, sections]);
 
-  if (!isOpen || !photo) return null;
+  if (!isOpen || photos.length === 0) return null;
 
   const currentSection = sections.find((s) => s.id === currentSectionId);
   const normalizedFilter = filter.toLowerCase().trim();
@@ -139,17 +137,17 @@ export function MovePhotoModal({
   // Handle moving to Section
   async function handleSelectSection(targetSectionId: string) {
     if (movingTarget) return;
-    const isAlreadyInThisSection =
-      photo?.target === 'section' && targetSectionId === currentSectionId;
-    if (isAlreadyInThisSection) return;
+    
+    // Check if ALL photos are already in this section
+    const allAlreadyHere = photos.every(p => p.target === 'section' && targetSectionId === currentSectionId);
+    if (allAlreadyHere) return;
 
     setMovingTarget(targetSectionId);
     try {
-      const fn = onMoveToSection || onMove;
-      if (fn) await fn(targetSectionId);
+      if (onMoveToSection) await onMoveToSection(targetSectionId);
       onClose();
     } catch (err) {
-      console.error('Failed to move photo to section', err);
+      console.error('Failed to move photo(s) to section', err);
     } finally {
       setMovingTarget(null);
     }
@@ -166,11 +164,13 @@ export function MovePhotoModal({
       }
       onClose();
     } catch (err) {
-      console.error('Failed to move photo to question', err);
+      console.error('Failed to move photo(s) to question', err);
     } finally {
       setMovingTarget(null);
     }
   }
+
+  const isMultiple = photos.length > 1;
 
   return createPortal(
     <div className="mpm-overlay" onClick={() => !movingTarget && onClose()}>
@@ -185,7 +185,7 @@ export function MovePhotoModal({
               <CompassIcon width={18} height={18} />
             </div>
             <div>
-              <h3 className="mpm-title">Move Photo</h3>
+              <h3 className="mpm-title">Move Photo{isMultiple ? 's' : ''}</h3>
               <p className="mpm-subtitle">Move to another section or attach to a specific question</p>
             </div>
           </div>
@@ -202,17 +202,30 @@ export function MovePhotoModal({
 
         {/* Selected Photo Info Card */}
         <div className="mpm-photo-preview-bar">
-          {photoUrl ? (
-            <img src={photoUrl} alt="Photo thumbnail" className="mpm-thumb-img" />
+          {!isMultiple && photoUrls[0] ? (
+            <img src={photoUrls[0]} alt="Photo thumbnail" className="mpm-thumb-img" />
+          ) : isMultiple ? (
+            <div className="mpm-thumb-fallback" style={{ position: 'relative' }}>
+               <CameraIcon width={22} height={22} />
+               <div style={{ position: 'absolute', top: -5, right: -5, background: 'var(--blue-500)', color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '10px' }}>
+                 {photos.length}
+               </div>
+            </div>
           ) : (
             <div className="mpm-thumb-fallback">
               <CameraIcon width={22} height={22} />
             </div>
           )}
+          
           <div className="mpm-photo-meta">
-            <span className={`mpm-badge ${photo.isDefect ? 'defect' : 'normal'}`}>
-              {photo.isDefect ? 'Defect Image' : 'Normal Image'}
-            </span>
+            {isMultiple ? (
+              <span className="mpm-badge normal">{photos.length} Photos Selected</span>
+            ) : (
+              <span className={`mpm-badge ${photos[0].isDefect ? 'defect' : 'normal'}`}>
+                {photos[0].isDefect ? 'Defect Image' : 'Normal Image'}
+              </span>
+            )}
+            
             {currentSection && (
               <div className="mpm-current-sec">
                 Currently in: <strong>{currentSection.name}</strong>
@@ -315,8 +328,7 @@ export function MovePhotoModal({
                 );
               });
 
-              const isAlreadySectionPhotoHere =
-                photo.target === 'section' && isCurrentSection;
+              const isAlreadySectionPhotoHere = photos.every(p => p.target === 'section' && isCurrentSection);
 
               return (
                 <div
@@ -364,7 +376,7 @@ export function MovePhotoModal({
                           ) : (
                             <>
                               <CompassIcon width={13} height={13} />
-                              <span>{isAlreadySectionPhotoHere ? 'Current' : 'To Section'}</span>
+                              <span>{isAlreadySectionPhotoHere ? 'Current' : isMultiple ? `Move (${photos.length})` : 'To Section'}</span>
                             </>
                           )}
                         </button>
@@ -415,7 +427,7 @@ export function MovePhotoModal({
                               ) : (
                                 <>
                                   <ArrowRightCircleIcon width={13} height={13} />
-                                  <span>Attach</span>
+                                  <span>{isMultiple ? `Attach (${photos.length})` : 'Attach'}</span>
                                 </>
                               )}
                             </div>
@@ -449,3 +461,4 @@ export function MovePhotoModal({
     document.body
   );
 }
+

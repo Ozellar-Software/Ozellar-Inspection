@@ -510,3 +510,178 @@
   background: #f1f5f9;
 }
 
+/* ── Selection Mode Banner & Toolbar ── */
+.photostrip-select-banner {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #7dd3fc;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: 0 1px 3px rgba(14, 165, 233, 0.1);
+  animation: bannerFadeIn 0.2s ease-out;
+}
+
+@keyframes bannerFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.photostrip-select-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.photostrip-select-pill {
+  background: #0284c7;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-shadow: 0 1px 2px rgba(2, 132, 199, 0.3);
+}
+
+.photostrip-select-instruction {
+  font-size: 12px;
+  color: #0369a1;
+  font-weight: 500;
+}
+
+.photostrip-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: all 0.15s ease;
+}
+
+.photostrip-btn-primary:hover:not(:disabled) {
+  background: #0369a1;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.photostrip-btn-primary:disabled {
+  background: #94a3b8;
+  color: #f1f5f9;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.photostrip-btn-link.select-btn {
+  color: #0284c7;
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.photostrip-btn-link.select-btn:hover {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+}
+
+.photostrip-btn-link.normal-btn {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.photostrip-btn-link.normal-btn:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.photostrip-btn-link.delete-btn {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.photostrip-btn-link.delete-btn:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.photostrip-btn-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── Selection Mode Thumbnails ── */
+.photostrip-wrap .thumb.select-mode {
+  cursor: pointer !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  position: relative;
+}
+
+.photostrip-wrap .thumb.select-mode:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+}
+
+/* Selection Badge Checkbox - reduced size */
+.thumb-select-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1.5px solid #ffffff;
+  background: rgba(15, 23, 42, 0.45);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  z-index: 10;
+  pointer-events: none;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.photostrip-wrap .thumb.select-mode:hover .thumb-select-badge {
+  background: rgba(15, 23, 42, 0.65);
+  transform: scale(1.08);
+}
+
+/* When Photo is Selected */
+.photostrip-wrap .thumb.select-mode.selected {
+  transform: scale(0.97);
+  box-shadow: 0 0 0 2.5px #0284c7, 0 3px 6px rgba(2, 132, 199, 0.25) !important;
+  border-radius: 6px;
+}
+
+.thumb-select-badge.checked {
+  background: #0284c7 !important;
+  border-color: #ffffff;
+  transform: scale(1.08) !important;
+  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.45);
+}
+
+.thumb-selected-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 132, 199, 0.16);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+

@@ -468,8 +468,8 @@ export function ImageViewerModal({
       {isMoveModalOpen && (onMoveToSection || onMoveToQuestion) && (
         <MovePhotoModal
           isOpen={isMoveModalOpen}
-          photo={currentPhoto}
-          photoUrl={urls[currentPhoto.id]}
+          photos={[currentPhoto]}
+          photoUrls={[urls[currentPhoto.id] || '']}
           currentSectionId={currentSectionId}
           sections={allSections}
           onMoveToSection={onMoveToSection ? async (targetSecId) => {

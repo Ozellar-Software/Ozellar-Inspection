@@ -13,6 +13,10 @@ import {
   GripVerticalIcon,
   ArrowRightCircleIcon,
   MoreHorizontalIcon,
+  CompassIcon,
+  CheckIcon,
+  CheckCircleIcon,
+  TrashIcon,
 } from '../../icons';
 import { ImageViewerModal } from './ImageViewerModal';
 import { PhotoUploadModal } from './PhotoUploadModal';
@@ -62,7 +66,9 @@ export function PhotoStrip({
 }) {
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [assignModalPhoto, setAssignModalPhoto] = useState<SyncedPhoto | null>(null);
-  const [moveModalPhoto, setMoveModalPhoto] = useState<SyncedPhoto | null>(null);
+  const [moveModalPhotos, setMoveModalPhotos] = useState<SyncedPhoto[] | null>(null);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   const [tooltipTarget, setTooltipTarget] = useState<{ photo: SyncedPhoto; anchorEl: HTMLElement } | null>(null);
 
   // Gesture refs for single-click (lightbox) vs double-click & long-press (tooltip options)
@@ -160,13 +166,41 @@ export function PhotoStrip({
     }
   };
 
+  // Batch toggle Defect / Normal classification for selected photos
+  const handleBatchSetDefect = async (defectValue: boolean) => {
+    if (selectedPhotoIds.size === 0) return;
+    for (const id of selectedPhotoIds) {
+      await handleToggleDefect(id, defectValue);
+    }
+  };
+
+  // Batch delete selected photos
+  const handleBatchDelete = async () => {
+    if (selectedPhotoIds.size === 0) return;
+    const count = selectedPhotoIds.size;
+    const confirmMsg = `Are you sure you want to delete ${count} selected photo${count > 1 ? 's' : ''}? This cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    for (const id of selectedPhotoIds) {
+      await localDelete('photos', id);
+    }
+    setSelectedPhotoIds(new Set());
+    if (activePhotos.length <= count) {
+      setIsSelectMode(false);
+    }
+  };
+
   // Move photo to any section in this inspection
-  const handleMoveToSection = async (photoId: string, targetSectionId: string) => {
-    const targetSectionPhotos = await db.photos
-      .where('inspectionId')
-      .equals(inspectionId)
-      .filter((p) => p.target === 'section' && p.inspectionSectionId === targetSectionId && !p.deletedAt)
-      .toArray();
+  const handleMoveToSection = async (photoId: string, targetSectionId: string, customPosition?: number) => {
+    let position = customPosition;
+    if (position === undefined) {
+      const targetSectionPhotos = await db.photos
+        .where('inspectionId')
+        .equals(inspectionId)
+        .filter((p) => p.target === 'section' && p.inspectionSectionId === targetSectionId && !p.deletedAt)
+        .toArray();
+      position = targetSectionPhotos.length;
+    }
 
     const existing = await db.photos.get(photoId);
     if (existing) {
@@ -176,13 +210,18 @@ export function PhotoStrip({
         inspectionSectionId: targetSectionId,
         responseId: null,
         findingId: null,
-        position: targetSectionPhotos.length,
+        position,
       });
     }
   };
 
   // Assign or move photo to a chosen question
-  const handleAssignToQuestion = async (photoId: string, questionId: string, targetSectionId?: string) => {
+  const handleAssignToQuestion = async (
+    photoId: string,
+    questionId: string,
+    targetSectionId?: string,
+    customPosition?: number
+  ) => {
     try {
       const existing = await db.responses
         .where('inspectionId')
@@ -201,11 +240,15 @@ export function PhotoStrip({
         });
       }
 
-      const qPhotos = await db.photos
-        .where('inspectionId')
-        .equals(inspectionId)
-        .filter((p) => p.target === 'question' && p.responseId === respId && !p.deletedAt)
-        .toArray();
+      let position = customPosition;
+      if (position === undefined) {
+        const qPhotos = await db.photos
+          .where('inspectionId')
+          .equals(inspectionId)
+          .filter((p) => p.target === 'question' && p.responseId === respId && !p.deletedAt)
+          .toArray();
+        position = qPhotos.length;
+      }
 
       const targetPhoto = await db.photos.get(photoId);
       if (targetPhoto) {
@@ -215,7 +258,7 @@ export function PhotoStrip({
           responseId: respId,
           inspectionSectionId: null,
           findingId: null,
-          position: qPhotos.length,
+          position,
         });
       }
       setAssignModalPhoto(null);
@@ -229,6 +272,16 @@ export function PhotoStrip({
   const isHoldingTouchRef = useRef(false);
 
   const handleThumbnailClick = (idx: number, photo: SyncedPhoto, el: HTMLElement) => {
+    if (isSelectMode) {
+      setSelectedPhotoIds(prev => {
+        const next = new Set(prev);
+        if (next.has(photo.id)) next.delete(photo.id);
+        else next.add(photo.id);
+        return next;
+      });
+      return;
+    }
+
     if (isLongPressTriggeredRef.current || isHoldingTouchRef.current) {
       isLongPressTriggeredRef.current = false;
       isHoldingTouchRef.current = false;
@@ -261,7 +314,7 @@ export function PhotoStrip({
   };
 
   const handleTouchStart = (photo: SyncedPhoto, el: HTMLElement, e: React.TouchEvent) => {
-    if (locked) return;
+    if (locked || isSelectMode) return;
     if (e.touches.length > 1) return;
 
     const t = e.touches[0];
@@ -476,188 +529,368 @@ export function PhotoStrip({
     >
       {/* ── Strip Header with Counts & Fast Actions ── */}
       {activePhotos.length > 0 && (
-        <div className="photostrip-header">
-          <div className="photostrip-count">
-            <span>{activePhotos.length} Photo{activePhotos.length > 1 ? 's' : ''}</span>
-            {defectCount > 0 && (
-              <span className="photostrip-defect-pill">
-                {defectCount} Defect{defectCount > 1 ? 's' : ''}
+        isSelectMode ? (
+          <div className="photostrip-header photostrip-select-banner">
+            <div className="photostrip-select-info">
+              <span className="photostrip-select-pill">
+                <CheckIcon style={{ width: 12, height: 12 }} />
+                {selectedPhotoIds.size} of {activePhotos.length} Selected
               </span>
-            )}
-          </div>
-          <div className="photostrip-actions">
-            <button
-              type="button"
-              className="photostrip-btn-link"
-              onClick={(e) => {
-                e.stopPropagation();
-                setViewerIndex(0);
-                setIsViewerOpen(true);
-              }}
-              onTouchEnd={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setViewerIndex(0);
-                setIsViewerOpen(true);
-              }}
-              title="Open photo viewer"
-            >
-              <EyeIcon style={{ width: 13, height: 13 }} />
-              View
-            </button>
+              <span className="photostrip-select-instruction">
+                {selectedPhotoIds.size === 0
+                  ? 'Tap photos to select'
+                  : `${selectedPhotoIds.size} photo${selectedPhotoIds.size > 1 ? 's' : ''} selected`}
+              </span>
+            </div>
 
-            <button
-              type="button"
-              className="photostrip-btn-link"
-              onClick={(e) => { e.stopPropagation(); handleBatchDownload('all'); }}
-              onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('all'); }}
-              title="Download all photos as ZIP"
-            >
-              <DownloadIcon style={{ width: 13, height: 13 }} />
-              All ({activePhotos.length})
-            </button>
+            <div className="photostrip-actions">
+              <button
+                type="button"
+                className="photostrip-btn-link"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (selectedPhotoIds.size === activePhotos.length) {
+                    setSelectedPhotoIds(new Set());
+                  } else {
+                    setSelectedPhotoIds(new Set(activePhotos.map((p) => p.id)));
+                  }
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (selectedPhotoIds.size === activePhotos.length) {
+                    setSelectedPhotoIds(new Set());
+                  } else {
+                    setSelectedPhotoIds(new Set(activePhotos.map((p) => p.id)));
+                  }
+                }}
+                title={selectedPhotoIds.size === activePhotos.length ? 'Deselect all photos' : 'Select all photos'}
+              >
+                {selectedPhotoIds.size === activePhotos.length ? 'Deselect All' : 'Select All'}
+              </button>
 
-            {defectCount > 0 && (
+              <button
+                type="button"
+                className="photostrip-btn-primary"
+                disabled={selectedPhotoIds.size === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (selectedPhotoIds.size > 0) {
+                    setMoveModalPhotos(activePhotos.filter((p) => selectedPhotoIds.has(p.id)));
+                  }
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (selectedPhotoIds.size > 0) {
+                    setMoveModalPhotos(activePhotos.filter((p) => selectedPhotoIds.has(p.id)));
+                  }
+                }}
+                title={selectedPhotoIds.size === 0 ? 'Select photos to move' : 'Move selected photos'}
+              >
+                <CompassIcon style={{ width: 13, height: 13 }} />
+                <span>Move {selectedPhotoIds.size > 0 ? `(${selectedPhotoIds.size})` : ''}</span>
+              </button>
+
               <button
                 type="button"
                 className="photostrip-btn-link defect-btn"
-                onClick={(e) => { e.stopPropagation(); handleBatchDownload('defect'); }}
-                onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('defect'); }}
-                title="Download defect photos as ZIP"
+                disabled={selectedPhotoIds.size === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleBatchSetDefect(true);
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (selectedPhotoIds.size > 0) void handleBatchSetDefect(true);
+                }}
+                title="Mark selected photos as Defect"
               >
-                <WarningIcon style={{ width: 13, height: 13 }} />
-                Defect ({defectCount})
+                <WarningIcon style={{ width: 12, height: 12 }} />
+                <span>Defect</span>
               </button>
-            )}
+
+              <button
+                type="button"
+                className="photostrip-btn-link normal-btn"
+                disabled={selectedPhotoIds.size === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleBatchSetDefect(false);
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (selectedPhotoIds.size > 0) void handleBatchSetDefect(false);
+                }}
+                title="Mark selected photos as Normal"
+              >
+                <CheckCircleIcon style={{ width: 12, height: 12 }} />
+                <span>Normal</span>
+              </button>
+
+              <button
+                type="button"
+                className="photostrip-btn-link delete-btn"
+                disabled={selectedPhotoIds.size === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleBatchDelete();
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (selectedPhotoIds.size > 0) void handleBatchDelete();
+                }}
+                title="Delete selected photos"
+              >
+                <TrashIcon style={{ width: 12, height: 12 }} />
+                <span>Delete</span>
+              </button>
+
+              <button
+                type="button"
+                className="photostrip-btn-link"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSelectMode(false);
+                  setSelectedPhotoIds(new Set());
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setIsSelectMode(false);
+                  setSelectedPhotoIds(new Set());
+                }}
+                title="Cancel selection mode"
+              >
+                <XIcon style={{ width: 12, height: 12 }} />
+                <span>Done</span>
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="photostrip-header">
+            <div className="photostrip-count">
+              <span>{activePhotos.length} Photo{activePhotos.length > 1 ? 's' : ''}</span>
+              {defectCount > 0 && (
+                <span className="photostrip-defect-pill">
+                  {defectCount} Defect{defectCount > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+
+            <div className="photostrip-actions">
+              <button
+                type="button"
+                className="photostrip-btn-link"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewerIndex(0);
+                  setIsViewerOpen(true);
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setViewerIndex(0);
+                  setIsViewerOpen(true);
+                }}
+                title="Open photo viewer"
+              >
+                <EyeIcon style={{ width: 13, height: 13 }} />
+                View
+              </button>
+
+              <button
+                type="button"
+                className="photostrip-btn-link"
+                onClick={(e) => { e.stopPropagation(); handleBatchDownload('all'); }}
+                onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('all'); }}
+                title="Download all photos as ZIP"
+              >
+                <DownloadIcon style={{ width: 13, height: 13 }} />
+                All ({activePhotos.length})
+              </button>
+
+              {defectCount > 0 && (
+                <button
+                  type="button"
+                  className="photostrip-btn-link defect-btn"
+                  onClick={(e) => { e.stopPropagation(); handleBatchDownload('defect'); }}
+                  onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('defect'); }}
+                  title="Download defect photos as ZIP"
+                >
+                  <WarningIcon style={{ width: 13, height: 13 }} />
+                  Defect ({defectCount})
+                </button>
+              )}
+
+              {!locked && (
+                <button
+                  type="button"
+                  className="photostrip-btn-link select-btn"
+                  onClick={(e) => { e.stopPropagation(); setIsSelectMode(true); }}
+                  onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); setIsSelectMode(true); }}
+                  title="Select multiple photos to move"
+                >
+                  <CheckCircleIcon style={{ width: 13, height: 13 }} />
+                  Select
+                </button>
+              )}
+            </div>
+          </div>
+        )
       )}
 
       {/* ── Thumbnails Row ── */}
       <div className="thumb-row">
-        {activePhotos.map((p, idx) => (
-          <div
-            key={p.id}
-            className={`thumb${p.isDefect ? ' defect' : ''}${!locked ? ' draggable' : ''}`}
-            draggable={!locked}
-            onDragStart={(e) => {
-              if (locked) return;
-              startPhotoDrag({
-                photoId: p.id,
-                fromTarget: target,
-                fromSectionId: inspectionSectionId,
-                fromResponseId: responseId,
-                isDefect: p.isDefect,
-                photoUrl: urls[p.id],
-              });
-              e.dataTransfer.setData('text/plain', p.id);
-              e.dataTransfer.setData(
-                'application/json',
-                JSON.stringify({
-                  type: 'ozellar-photo',
+        {activePhotos.map((p, idx) => {
+          const isSelected = selectedPhotoIds.has(p.id);
+          return (
+            <div
+              key={p.id}
+              className={`thumb${p.isDefect ? ' defect' : ''}${!locked && !isSelectMode ? ' draggable' : ''}${isSelectMode ? ' select-mode' : ''}${isSelected ? ' selected' : ''}`}
+              draggable={!locked && !isSelectMode}
+              onDragStart={(e) => {
+                if (locked || isSelectMode) return;
+                startPhotoDrag({
                   photoId: p.id,
                   fromTarget: target,
-                  fromInspectionSectionId: inspectionSectionId,
+                  fromSectionId: inspectionSectionId,
                   fromResponseId: responseId,
-                })
-              );
-              e.dataTransfer.effectAllowed = 'copyMove';
-            }}
-            onDragEnd={() => {
-              endPhotoDrag();
-            }}
-            onClick={(e) => handleThumbnailClick(idx, p, e.currentTarget)}
-            onDoubleClick={(e) => handleDoubleClick(e, p, e.currentTarget)}
-            onTouchStart={(e) => handleTouchStart(p, e.currentTarget, e)}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onContextMenu={(e) => handleContextMenu(e, p, e.currentTarget)}
-            style={{ cursor: !locked ? 'grab' : 'pointer' }}
-            title={
-              target === 'section'
-                ? 'Click to view, double-click or hold for options (normal/defect, move section)'
-                : 'Click to view, double-click or hold for options'
-            }
-          >
-            {/* Drag grip icon */}
-            {!locked && (
-              <span
-                className="thumb-drag-indicator"
-                title="Drag to question"
-                onTouchStart={(e) => handleTouchDragInitiate(e, p)}
-              >
-                <GripVerticalIcon width={12} height={12} />
-              </span>
-            )}
+                  isDefect: p.isDefect,
+                  photoUrl: urls[p.id],
+                });
+                e.dataTransfer.setData('text/plain', p.id);
+                e.dataTransfer.setData(
+                  'application/json',
+                  JSON.stringify({
+                    type: 'ozellar-photo',
+                    photoId: p.id,
+                    fromTarget: target,
+                    fromInspectionSectionId: inspectionSectionId,
+                    fromResponseId: responseId,
+                  })
+                );
+                e.dataTransfer.effectAllowed = 'copyMove';
+              }}
+              onDragEnd={() => {
+                endPhotoDrag();
+              }}
+              onClick={(e) => handleThumbnailClick(idx, p, e.currentTarget)}
+              onDoubleClick={(e) => handleDoubleClick(e, p, e.currentTarget)}
+              onTouchStart={(e) => handleTouchStart(p, e.currentTarget, e)}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              onContextMenu={(e) => handleContextMenu(e, p, e.currentTarget)}
+              style={{ cursor: isSelectMode ? 'pointer' : !locked ? 'grab' : 'pointer' }}
+              title={
+                isSelectMode
+                  ? isSelected
+                    ? 'Selected - click to deselect'
+                    : 'Click to select photo'
+                  : target === 'section'
+                  ? 'Click to view, double-click or hold for options (normal/defect, move section)'
+                  : 'Click to view, double-click or hold for options'
+              }
+            >
+              {/* Selection Checkbox Badge when in Select Mode */}
+              {isSelectMode && (
+                <div
+                  className={`thumb-select-badge ${isSelected ? 'checked' : ''}`}
+                  title={isSelected ? 'Photo selected' : 'Click to select'}
+                >
+                  {isSelected && <CheckIcon style={{ width: 9, height: 9, strokeWidth: 3 }} />}
+                </div>
+              )}
 
-            {/* Quick options button (Double-click or hold) */}
-            {!locked && (
-              <button
-                type="button"
-                className="thumb-more-btn"
-                title="Options (Double-click or hold)"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (clickTimeoutRef.current) {
-                    clearTimeout(clickTimeoutRef.current);
-                    clickTimeoutRef.current = null;
-                  }
-                  setTooltipTarget({ photo: p, anchorEl: e.currentTarget.parentElement as HTMLElement });
-                }}
-                aria-label="Photo options"
-              >
-                <MoreHorizontalIcon width={13} height={13} />
-              </button>
-            )}
+              {/* Translucent overlay when selected */}
+              {isSelectMode && isSelected && (
+                <div className="thumb-selected-overlay" />
+              )}
 
-            {/* Quick assign button on Section photos */}
-            {!locked && target === 'section' && availableQuestions && availableQuestions.length > 0 && (
-              <button
-                type="button"
-                className="thumb-assign-btn"
-                title="Assign to question"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setAssignModalPhoto(p);
-                }}
-                aria-label="Assign to question"
-              >
-                <ArrowRightCircleIcon width={13} height={13} />
-              </button>
-            )}
+              {/* Drag grip icon */}
+              {!locked && !isSelectMode && (
+                <span
+                  className="thumb-drag-indicator"
+                  title="Drag to question"
+                  onTouchStart={(e) => handleTouchDragInitiate(e, p)}
+                >
+                  <GripVerticalIcon width={12} height={12} />
+                </span>
+              )}
 
-            {urls[p.id] ? (
-              <img
-                src={urls[p.id]}
-                alt=""
-                onError={() => {
-                  setUrls((u) => {
-                    const { [p.id]: _gone, ...rest } = u;
-                    return rest;
-                  });
-                  scheduleRetry(p.id);
-                }}
-              />
-            ) : (
-              <div className="thumb-loading-placeholder" title="Photo loading or stored offline">
-                <CameraIcon style={{ width: 20, height: 20, opacity: 0.5 }} />
-              </div>
-            )}
-            {!locked && (
-              <button
-                type="button"
-                className="del"
-                aria-label="Remove photo"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void localDelete('photos', p.id);
-                }}
-              >
-                <XIcon />
-              </button>
-            )}
-          </div>
-        ))}
+              {/* Quick options button (Double-click or hold) */}
+              {!locked && !isSelectMode && (
+                <button
+                  type="button"
+                  className="thumb-more-btn"
+                  title="Options (Double-click or hold)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (clickTimeoutRef.current) {
+                      clearTimeout(clickTimeoutRef.current);
+                      clickTimeoutRef.current = null;
+                    }
+                    setTooltipTarget({ photo: p, anchorEl: e.currentTarget.parentElement as HTMLElement });
+                  }}
+                  aria-label="Photo options"
+                >
+                  <MoreHorizontalIcon width={13} height={13} />
+                </button>
+              )}
+
+              {/* Quick assign button on Section photos */}
+              {!locked && !isSelectMode && target === 'section' && availableQuestions && availableQuestions.length > 0 && (
+                <button
+                  type="button"
+                  className="thumb-assign-btn"
+                  title="Assign to question"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAssignModalPhoto(p);
+                  }}
+                  aria-label="Assign to question"
+                >
+                  <ArrowRightCircleIcon width={13} height={13} />
+                </button>
+              )}
+
+              {urls[p.id] ? (
+                <img
+                  src={urls[p.id]}
+                  alt=""
+                  onError={() => {
+                    setUrls((u) => {
+                      const { [p.id]: _gone, ...rest } = u;
+                      return rest;
+                    });
+                    scheduleRetry(p.id);
+                  }}
+                />
+              ) : (
+                <div className="thumb-loading-placeholder" title="Photo loading or stored offline">
+                  <CameraIcon style={{ width: 20, height: 20, opacity: 0.5 }} />
+                </div>
+              )}
+
+              {!locked && !isSelectMode && (
+                <button
+                  type="button"
+                  className="del"
+                  aria-label="Remove photo"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void localDelete('photos', p.id);
+                  }}
+                >
+                  <XIcon />
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* ── Take / Upload Controls ── */}
@@ -766,7 +999,7 @@ export function PhotoStrip({
           allSections={allSections}
           availableQuestions={availableQuestions}
           onToggleDefect={handleToggleDefect}
-          onOpenMoveModal={(p) => setMoveModalPhoto(p)}
+          onOpenMoveModal={(p) => setMoveModalPhotos([p])}
           onOpenAssignModal={availableQuestions && availableQuestions.length > 0 ? (p) => setAssignModalPhoto(p) : undefined}
           onDeletePhoto={async (photoId) => {
             await localDelete('photos', photoId);
@@ -776,22 +1009,48 @@ export function PhotoStrip({
       )}
 
       {/* ── Move Photo to Any Section / Question Modal ── */}
-      {moveModalPhoto && allSections && (
+      {moveModalPhotos && moveModalPhotos.length > 0 && allSections && (
         <MovePhotoModal
-          isOpen={!!moveModalPhoto}
-          photo={moveModalPhoto}
-          photoUrl={urls[moveModalPhoto.id]}
+          isOpen={true}
+          photos={moveModalPhotos}
+          photoUrls={moveModalPhotos.map(p => urls[p.id] || '')}
           currentSectionId={inspectionSectionId}
           sections={allSections}
           onMoveToSection={async (targetSecId) => {
-            await handleMoveToSection(moveModalPhoto.id, targetSecId);
-            setMoveModalPhoto(null);
+            const targetSectionPhotos = await db.photos
+              .where('inspectionId')
+              .equals(inspectionId)
+              .filter((p) => p.target === 'section' && p.inspectionSectionId === targetSecId && !p.deletedAt)
+              .toArray();
+            let basePos = targetSectionPhotos.length;
+            for (const photo of moveModalPhotos) {
+              await handleMoveToSection(photo.id, targetSecId, basePos++);
+            }
+            setMoveModalPhotos(null);
+            setSelectedPhotoIds(new Set());
           }}
           onMoveToQuestion={async (targetQId, targetSecId) => {
-            await handleAssignToQuestion(moveModalPhoto.id, targetQId, targetSecId);
-            setMoveModalPhoto(null);
+            const existing = await db.responses
+              .where('inspectionId')
+              .equals(inspectionId)
+              .filter((r) => r.inspectionQuestionId === targetQId)
+              .first();
+            let basePos = 0;
+            if (existing) {
+              const qPhotos = await db.photos
+                .where('inspectionId')
+                .equals(inspectionId)
+                .filter((p) => p.target === 'question' && p.responseId === existing.id && !p.deletedAt)
+                .toArray();
+              basePos = qPhotos.length;
+            }
+            for (const photo of moveModalPhotos) {
+              await handleAssignToQuestion(photo.id, targetQId, targetSecId, basePos++);
+            }
+            setMoveModalPhotos(null);
+            setSelectedPhotoIds(new Set());
           }}
-          onClose={() => setMoveModalPhoto(null)}
+          onClose={() => setMoveModalPhotos(null)}
         />
       )}
     </div>
