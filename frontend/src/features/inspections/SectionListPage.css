@@ -646,4 +646,118 @@
   }
 }
 
+/* ── Appbar Delete Button (Admin Only) ── */
+.appbar-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 13px;
+  background: #ffffff;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(220, 38, 38, 0.08);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-left: auto;
+}
+
+.appbar-delete-btn:hover {
+  background: #fef2f2;
+  border-color: #f87171;
+  color: #b91c1c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(220, 38, 38, 0.15);
+}
+
+.appbar-delete-btn:active {
+  background: #fee2e2;
+  transform: translateY(0);
+}
+
+@media (max-width: 480px) {
+  .appbar-delete-btn {
+    height: 32px;
+    padding: 0 10px;
+  }
+  .appbar-delete-text {
+    display: none;
+  }
+}
+
+/* ── Admin Inspection Danger Card ── */
+.admin-inspection-danger-card {
+  margin: 32px 16px 20px;
+  padding: 16px 20px;
+  background: #ffffff;
+  border: 1px dashed #fca5a5;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 1px 3px rgba(220, 38, 38, 0.04);
+}
+
+.aidc-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.aidc-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #991b1b;
+}
+
+.aidc-sub {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.aidc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8.5px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.aidc-btn:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(220, 38, 38, 0.25);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+  .admin-inspection-danger-card {
+    margin: 24px 12px 16px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+  .aidc-btn {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+
 

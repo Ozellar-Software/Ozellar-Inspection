@@ -7,9 +7,10 @@ import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, CameraIcon, PlusIcon, XIcon, DownloadIcon, WarningIcon } from '../../icons';
+import { BackIcon, CameraIcon, PlusIcon, XIcon, DownloadIcon, WarningIcon, TrashIcon } from '../../icons';
 import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
+import { DeleteInspectionModal } from './DeleteInspectionModal';
 import './SectionListPage.css';
 
 // ─── Zone colour pills ────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ export function SectionListPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   useEffect(() => {
     if (inspectionId) {
@@ -131,6 +133,7 @@ export function SectionListPage() {
   const photoPct = displaySections.length ? Math.round((donePhotoSecs / displaySections.length) * 100) : 0;
 
   const canAddSection = Boolean(me.data && can(me.data, 'inspection.addSection', { inspection: displayInspection }) && isEditable(displayInspection.status));
+  const canDelete = Boolean(me.data && can(me.data, 'inspection.delete', { inspection: displayInspection }));
 
   async function handleDownloadInspectionPhotos(filter: 'all' | 'defect') {
     try {
@@ -184,6 +187,17 @@ export function SectionListPage() {
           <h1>{displayInspection.vesselName || 'Inspection'}</h1>
           <div className="sub">{STATUS_LABELS[displayInspection.status]}</div>
         </div>
+        {canDelete && (
+          <button
+            type="button"
+            className="appbar-delete-btn"
+            onClick={() => setShowDeleteModal(true)}
+            title="Delete this inspection (Admin only)"
+          >
+            <TrashIcon width={15} height={15} />
+            <span className="appbar-delete-text">Delete</span>
+          </button>
+        )}
       </div>
 
       <div className="page-wrap section-list-wrap" style={{ paddingTop: 20 }}>
@@ -501,6 +515,23 @@ export function SectionListPage() {
           })
         )}
 
+        {canDelete && (
+          <div className="admin-inspection-danger-card">
+            <div className="aidc-text">
+              <span className="aidc-title">Admin Management</span>
+              <span className="aidc-sub">Permanently delete this entire inspection and all its associated checklist data.</span>
+            </div>
+            <button
+              type="button"
+              className="aidc-btn"
+              onClick={() => setShowDeleteModal(true)}
+            >
+              <TrashIcon width={14} height={14} />
+              <span>Delete Inspection</span>
+            </button>
+          </div>
+        )}
+
         <div style={{ height: 24 }} />
       </div>
 
@@ -587,6 +618,17 @@ export function SectionListPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {canDelete && (
+        <DeleteInspectionModal
+          inspection={displayInspection}
+          isOpen={showDeleteModal}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => {
+            nav('/');
+          }}
+        />
       )}
     </>
   );

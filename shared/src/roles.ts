@@ -51,6 +51,7 @@ export function can(
     case 'checklist.manage':
     case 'inspection.addSection':
     case 'approval.reopen':
+    case 'inspection.delete':
       return isAdmin;
 
     case 'vessels.view':
@@ -67,8 +68,7 @@ export function can(
     case 'inspection.export':
       return !!ctx.inspection && canSeeVessel(user, ctx.inspection.vesselId);
 
-    case 'inspection.edit':
-    case 'inspection.delete': {
+    case 'inspection.edit': {
       const insp = ctx.inspection;
       if (!insp) return false;
       if (r === 'director') return false;                 // Directors are always view-only

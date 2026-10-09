@@ -3,14 +3,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { STATUS_LABELS, type InspectionStatus, type User } from '@ozellar/shared';
+import { STATUS_LABELS, type Inspection, type InspectionStatus, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { getCachedUser, setCachedUser } from '../../auth/session';
 import { useCurrentUser } from '../../auth/useCurrentUser';
 import { db } from '../../offline/db';
 import { onSyncStatus, syncNow, type SyncStatus } from '../../offline/sync';
 import { useLightMode } from './useLightMode';
-import { PlusIcon, SearchIcon, XIcon, CameraIcon, MenuIcon, CheckIcon, WifiIcon, WarningIcon } from '../../icons';
+import { PlusIcon, SearchIcon, XIcon, CameraIcon, MenuIcon, CheckIcon, WifiIcon, WarningIcon, TrashIcon } from '../../icons';
+import { DeleteInspectionModal } from '../inspections/DeleteInspectionModal';
 
 // ---------------------------------------------------------------------------
 export function HomePage() {
@@ -22,9 +23,11 @@ export function HomePage() {
   const [vesselFilterOpen, setVesselFilterOpen] = useState(false);
   const [light, setLight] = useLightMode();
   const [sync, setSync] = useState<SyncStatus | null>(null);
+  const [inspectionToDelete, setInspectionToDelete] = useState<Inspection | null>(null);
   useEffect(() => { const off = onSyncStatus(setSync); return () => { off(); }; }, []);
 
   const me = useCurrentUser();
+  const isAdmin = me.data?.role === 'admin';
   const inbox = useQuery({
     queryKey: ['inbox', me.data?.id, me.data?.role],
     queryFn: async () => {
@@ -593,6 +596,20 @@ export function HomePage() {
                   <span className={`status-chip ${CHIP_CLASS[status]}`}>
                     {STATUS_LABELS[status]}
                   </span>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="vessel-row-delete-btn"
+                      title="Delete Inspection (Admin only)"
+                      aria-label="Delete Inspection"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInspectionToDelete(i as any);
+                      }}
+                    >
+                      <TrashIcon width={14} height={14} />
+                    </button>
+                  )}
                 </div>
 
                 {/* Arrow */}
@@ -603,6 +620,17 @@ export function HomePage() {
             );
           })}
         </div>
+      )}
+
+      {isAdmin && (
+        <DeleteInspectionModal
+          inspection={inspectionToDelete}
+          isOpen={Boolean(inspectionToDelete)}
+          onClose={() => setInspectionToDelete(null)}
+          onDeleted={() => {
+            setInspectionToDelete(null);
+          }}
+        />
       )}
 
     </div>

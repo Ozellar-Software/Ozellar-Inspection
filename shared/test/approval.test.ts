@@ -100,6 +100,14 @@ describe('permissions', () => {
     }
     expect(can(vm, 'inspection.edit', { inspection: insp('returned') })).toBe(true);
   });
+  it('only Admin can delete inspections, including completed ones', () => {
+    expect(can(admin, 'inspection.delete', { inspection: insp('in_progress') })).toBe(true);
+    expect(can(admin, 'inspection.delete', { inspection: insp('approved') })).toBe(true);
+    expect(can(admin, 'inspection.delete')).toBe(true);
+    expect(can(vm, 'inspection.delete', { inspection: insp('in_progress') })).toBe(false);
+    expect(can(tm, 'inspection.delete', { inspection: insp('in_progress') })).toBe(false);
+    expect(can(dir, 'inspection.delete', { inspection: insp('in_progress') })).toBe(false);
+  });
   it('managers limited to their vessels; only Admin manages', () => {
     expect(can(tmOther, 'inspection.view', { inspection: insp('in_progress') })).toBe(false);
     expect(can(vm, 'inspection.create', { vesselId: V })).toBe(true);
