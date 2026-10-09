@@ -34,6 +34,23 @@
   overflow: hidden;
   box-shadow: 0 1px 4px rgba(11, 33, 56, 0.06);
   transition: all 0.15s ease;
+  position: relative;
+}
+
+.section-photos-drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(240, 253, 250, 0.94);
+  border: 2px dashed #0d9488;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #0f766e;
+  z-index: 30;
+  pointer-events: none;
 }
 
 .section-photos-card.drag-over {

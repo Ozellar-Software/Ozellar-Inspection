@@ -536,6 +536,16 @@
   background: #0369a1;
 }
 
+.ccm-done-btn {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+}
+
 /* ══════════════════════════════════════════════════════════
    MOBILE RESPONSIVE: CAMERA PORTION BIG, REMAINING SMALL
    ══════════════════════════════════════════════════════════ */
@@ -637,10 +647,10 @@
     height: 16px;
   }
 
-  /* ── SMALL REMAINING PORTION 1: Compact Shutter & Mode Bar ── */
+  /* ── Compact Shutter & Mode Bar ── */
   .ccm-shutter-bar {
     flex-shrink: 0;
-    padding: 6px 12px 8px;
+    padding: 6px 12px max(10px, env(safe-area-inset-bottom));
     background: rgba(15, 23, 42, 0.94);
     backdrop-filter: blur(8px);
     gap: 4px;
@@ -673,11 +683,11 @@
     color: #94a3b8;
   }
 
-  /* ── SMALL REMAINING PORTION 2: Mini Snapped Filmstrip ── */
+  /* ── Mini Snapped Filmstrip ── */
   .ccm-filmstrip-section {
     flex-shrink: 0;
-    padding: 6px 10px;
-    max-height: 82px;
+    padding: 6px 10px max(10px, env(safe-area-inset-bottom));
+    max-height: 86px;
     background: #1e293b;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     gap: 4px;
@@ -729,35 +739,6 @@
     height: 20px;
     min-width: 20px;
     border-radius: 3px;
-  }
-
-  /* ── SMALL REMAINING PORTION 3: Compact Footer Bar ── */
-  .ccm-footer {
-    flex-shrink: 0;
-    padding: 8px 12px;
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
-    background: #0f172a;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .ccm-footer button.btn-outline {
-    flex: 1;
-    min-height: 40px;
-    font-size: 13px;
-    font-weight: 600;
-    justify-content: center;
-  }
-
-  .ccm-footer button.btn-primary {
-    flex: 2;
-    min-height: 40px;
-    font-size: 13px;
-    font-weight: 700;
-    justify-content: center;
   }
 }
 

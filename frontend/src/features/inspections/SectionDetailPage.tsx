@@ -6,12 +6,12 @@ import { can, isEditable, type Photo, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
-import { prefetchInspectionPhotos } from '../../offline/photoQueue';
+import { addPhoto, prefetchInspectionPhotos } from '../../offline/photoQueue';
 import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon } from '../../icons';
 import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
-import { endPhotoDrag } from './photoDragService';
+import { endPhotoDrag, showDragNotification } from './photoDragService';
 import './SectionDetailPage.css';
 
 import { useCurrentUser } from '../../auth/useCurrentUser';
@@ -21,6 +21,7 @@ export function SectionDetailPage() {
   const { id: inspectionId, sectionId } = useParams<{ id: string; sectionId: string }>();
   const me = useCurrentUser();
   const [completing, setCompleting] = useState(false);
+  const [isDragOverSection, setIsDragOverSection] = useState(false);
 
   useEffect(() => {
     if (inspectionId) {
@@ -199,43 +200,108 @@ export function SectionDetailPage() {
 
         {/* Section photos card */}
         <div
-          className="section-photos-card"
+          className={`section-photos-card${isDragOverSection ? ' drag-over' : ''}`}
           data-section-photos-drop="true"
           data-section-id={sectionId}
+          onDragEnter={(e) => {
+            if (!locked) {
+              e.preventDefault();
+              setIsDragOverSection(true);
+            }
+          }}
           onDragOver={(e) => {
             if (!locked) {
               e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
+              e.dataTransfer.dropEffect = 'copyMove' as any;
+              setIsDragOverSection(true);
             }
+          }}
+          onDragLeave={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+            setIsDragOverSection(false);
           }}
           onDrop={async (e) => {
             if (locked) return;
             e.preventDefault();
-            let photoId = '';
+            setIsDragOverSection(false);
+            endPhotoDrag();
+
+            // 1. Move multiple or single existing photos into this section
+            let photoIds: string[] = [];
             try {
               const json = e.dataTransfer.getData('application/json');
               if (json) {
                 const parsed = JSON.parse(json);
-                if (parsed.photoId) photoId = parsed.photoId;
+                if (parsed.photoIds && Array.isArray(parsed.photoIds)) {
+                  photoIds = parsed.photoIds;
+                } else if (parsed.photoId) {
+                  photoIds = [parsed.photoId];
+                }
               }
             } catch {}
-            if (!photoId) photoId = e.dataTransfer.getData('text/plain');
-            if (photoId) {
-              const existing = await db.photos.get(photoId);
-              if (existing && !(existing.target === 'section' && existing.inspectionSectionId === sectionId)) {
-                await localWrite('photos', photoId, {
-                  ...existing,
-                  target: 'section',
-                  inspectionSectionId: sectionId,
-                  responseId: null,
-                  findingId: null,
-                  position: sectionPhotos.length,
-                });
+            if (!photoIds.length) {
+              const textId = e.dataTransfer.getData('text/plain');
+              if (textId) photoIds = [textId];
+            }
+
+            if (photoIds.length > 0) {
+              let pos = sectionPhotos.length;
+              let movedCount = 0;
+              for (const pId of photoIds) {
+                const existing = await db.photos.get(pId);
+                if (existing && !(existing.target === 'section' && existing.inspectionSectionId === sectionId)) {
+                  await localWrite('photos', pId, {
+                    ...existing,
+                    target: 'section',
+                    inspectionSectionId: sectionId,
+                    responseId: null,
+                    findingId: null,
+                    position: pos++,
+                  });
+                  movedCount++;
+                }
+              }
+              if (movedCount > 0) {
+                showDragNotification(
+                  `${movedCount} photo${movedCount > 1 ? 's' : ''} moved to section photos`,
+                  'success'
+                );
+              } else {
+                showDragNotification('Photo is already in section photos', 'warning');
+              }
+              return;
+            }
+
+            // 2. Direct drop of multiple image files from computer / desktop
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+              if (files.length > 0) {
+                let pos = sectionPhotos.length;
+                for (const file of files) {
+                  await addPhoto({
+                    file,
+                    target: 'section',
+                    inspectionId: inspectionId!,
+                    inspectionSectionId: sectionId,
+                    position: pos++,
+                    isDefect: false,
+                  });
+                }
+                showDragNotification(
+                  `${files.length} photo${files.length > 1 ? 's' : ''} added to section photos!`,
+                  'success'
+                );
               }
             }
-            endPhotoDrag();
           }}
         >
+          {isDragOverSection && (
+            <div className="section-photos-drop-overlay">
+              <CameraIcon width={32} height={32} />
+              <div style={{ fontWeight: 700, fontSize: 15 }}>Drop images to add to section photos</div>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>Release to add multiple photos</div>
+            </div>
+          )}
           <div className="section-photos-header">
             <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CameraIcon width={18} height={18} /></span>
             <div>

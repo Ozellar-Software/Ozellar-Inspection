@@ -49,7 +49,6 @@ export function can(
     case 'users.manage':
     case 'vessels.manage':
     case 'checklist.manage':
-    case 'inspection.addSection':
     case 'approval.reopen':
     case 'inspection.delete':
       return isAdmin;
@@ -67,6 +66,16 @@ export function can(
     case 'inspection.view':
     case 'inspection.export':
       return !!ctx.inspection && canSeeVessel(user, ctx.inspection.vesselId);
+
+    case 'inspection.addSection': {
+      if (r === 'director') return false;
+      const insp = ctx.inspection;
+      if (insp) {
+        if (!isEditable(insp.status)) return false;
+        return isAdmin || (isManager && canSeeVessel(user, insp.vesselId));
+      }
+      return isAdmin || isManager;
+    }
 
     case 'inspection.edit': {
       const insp = ctx.inspection;

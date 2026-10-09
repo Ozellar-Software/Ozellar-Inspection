@@ -114,6 +114,12 @@ describe('permissions', () => {
     expect(can(vm, 'inspection.create', { vesselId: 'other' })).toBe(false);
     expect(can(tm, 'checklist.manage')).toBe(false);
     expect(can(admin, 'inspection.addSection')).toBe(true);
+    expect(can(admin, 'inspection.addSection', { inspection: insp('in_progress') })).toBe(true);
+    expect(can(vm, 'inspection.addSection', { inspection: insp('in_progress') })).toBe(true);
+    expect(can(tm, 'inspection.addSection', { inspection: insp('in_progress') })).toBe(true);
+    expect(can(tmOther, 'inspection.addSection', { inspection: insp('in_progress') })).toBe(false);
+    expect(can(dir, 'inspection.addSection', { inspection: insp('in_progress') })).toBe(false);
+    expect(can(vm, 'inspection.addSection', { inspection: insp('approved') })).toBe(false);
     expect(can(dir, 'vessels.view')).toBe(true);
     expect(can(dir, 'inspection.importBackup')).toBe(false);
   });

@@ -7,10 +7,12 @@ import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, CameraIcon, PlusIcon, XIcon, DownloadIcon, WarningIcon, TrashIcon } from '../../icons';
+import { BackIcon, CameraIcon, PlusIcon, XIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon } from '../../icons';
 import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
 import { DeleteInspectionModal } from './DeleteInspectionModal';
+import { loadReportData } from '../report/reportData';
+import { generateInspectionPdf } from '../report/pdf';
 import './SectionListPage.css';
 
 // ─── Zone colour pills ────────────────────────────────────────────────────
@@ -47,6 +49,7 @@ export function SectionListPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   useEffect(() => {
@@ -149,6 +152,34 @@ export function SectionListPage() {
     } finally {
       setIsDownloadingZip(false);
       setDownloadProgress(null);
+    }
+  }
+
+  async function handleDownloadPhotoReportPdf() {
+    if (!inspectionId) return;
+    setIsExportingPdf(true);
+    try {
+      const rep = await loadReportData(inspectionId);
+      if (!rep) {
+        alert('Could not load inspection data for report');
+        return;
+      }
+      const blob = await generateInspectionPdf({
+        ...rep,
+        reportType: 'photo_only',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const slug = (displayInspection?.vesselName || 'inspection').replace(/[^a-z0-9]+/gi, '-');
+      a.download = `${slug}-photo-section-report.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Failed to generate photo report PDF');
+    } finally {
+      setIsExportingPdf(false);
     }
   }
 
@@ -309,6 +340,16 @@ export function SectionListPage() {
               <button
                 type="button"
                 className="btn btn-outline btn-sm"
+                onClick={() => void handleDownloadPhotoReportPdf()}
+                disabled={isExportingPdf}
+                title="Download Photo Report as PDF"
+              >
+                <PdfIcon style={{ width: 14, height: 14 }} />
+                {isExportingPdf ? 'Exporting PDF…' : 'Photo Report (PDF)'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
                 onClick={() => handleDownloadInspectionPhotos('all')}
                 disabled={isDownloadingZip}
                 title="Download all photos across all sections as ZIP"
@@ -344,31 +385,75 @@ export function SectionListPage() {
           const canSubmit = me.data ? can(me.data, 'inspection.submit', { inspection: displayInspection }) : false;
           if (canSubmit) {
             return (
-              <div className="section-pad fab-new">
-                <button
-                  className="btn btn-primary btn-block"
-                  style={{ borderRadius: 12, minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-                  onClick={() => nav(`/inspections/${inspectionId}/report`)}
-                >
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-                  </svg>
-                  Submit for Approval
-                </button>
+              <div className="section-pad fab-new" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {light ? (
+                  <>
+                    <button
+                      className="btn btn-primary btn-block"
+                      style={{
+                        borderRadius: 12, minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        background: 'linear-gradient(135deg, #0f766e 0%, #0d9488 100%)', border: 'none',
+                      }}
+                      onClick={() => nav(`/inspections/${inspectionId}/report?mode=photo`)}
+                    >
+                      <CameraIcon width={18} height={18} />
+                      Submit Photo Section Report
+                    </button>
+                    <button
+                      className="btn btn-outline btn-block"
+                      style={{ borderRadius: 12, minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13 }}
+                      onClick={() => nav(`/inspections/${inspectionId}/report?mode=full`)}
+                    >
+                      Full Checklist Report
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="btn btn-primary btn-block"
+                      style={{ borderRadius: 12, minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                      onClick={() => nav(`/inspections/${inspectionId}/report?mode=full`)}
+                    >
+                      <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                      </svg>
+                      Submit for Approval
+                    </button>
+                    <button
+                      className="btn btn-outline btn-block"
+                      style={{
+                        borderRadius: 12, minHeight: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        borderColor: '#0d9488', color: '#0d9488', fontSize: 13.5, fontWeight: 600,
+                      }}
+                      onClick={() => nav(`/inspections/${inspectionId}/report?mode=photo`)}
+                    >
+                      <CameraIcon width={16} height={16} />
+                      Submit Photo Section Report
+                    </button>
+                  </>
+                )}
               </div>
             );
           }
           return (
-            <div className="section-pad fab-new">
+            <div className="section-pad fab-new" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <button
-                className="btn btn-outline btn-block"
-                style={{ borderRadius: 12, minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-                onClick={() => nav(`/inspections/${inspectionId}/report`)}
+                className="btn btn-primary btn-block"
+                style={{ borderRadius: 12, minHeight: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                onClick={() => nav(`/inspections/${inspectionId}/report?mode=full`)}
               >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
                 </svg>
-                {displayInspection.status === 'pending_tm' || displayInspection.status === 'pending_director' ? 'Review Inspection' : 'View Report'}
+                {displayInspection.status === 'pending_tm' || displayInspection.status === 'pending_director' ? 'Review Inspection' : 'Full Report'}
+              </button>
+              <button
+                className="btn btn-outline btn-block"
+                style={{ borderRadius: 12, minHeight: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderColor: '#0d9488', color: '#0d9488' }}
+                onClick={() => nav(`/inspections/${inspectionId}/report?mode=photo`)}
+              >
+                <CameraIcon width={16} height={16} />
+                Photo Report
               </button>
             </div>
           );

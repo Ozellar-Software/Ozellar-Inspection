@@ -1,6 +1,7 @@
-﻿import { jsPDF } from 'jspdf';
+import { jsPDF } from 'jspdf';
 import { STATUS_LABELS, type ApprovalEvent, type VesselParticularKey } from '@ozellar/shared';
 import { photoSrc } from '../../offline/photoQueue';
+import { db } from '../../offline/db';
 import brandLogoSrc from '../../assets/ozellar-marine-global-logo.gif';
 import { PARTICULAR_LABELS, PARTICULAR_GROUPS } from '../vessels/particulars';
 import type { ReportData, SectionReport, Observation } from './reportData';
@@ -255,8 +256,9 @@ class Doc {
 // ---------------------------------------------------------------------------
 // Main PDF Export Function
 // ---------------------------------------------------------------------------
-export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
+export async function generateInspectionPdf(data: ReportData & { reportType?: 'full' | 'photo_only' }): Promise<Blob> {
   const { inspection, vessel, sections = [], observations = [], stats, approvalHistory = [] } = data;
+  const isPhotoOnly = data.reportType === 'photo_only';
   const doc = new Doc();
 
   const svgRingData = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg width="400" height="400" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ozellar-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f1592a" /><stop offset="100%" stopColor="#e04e22" /></linearGradient></defs><circle cx="50" cy="50" r="36" fill="none" stroke="url(#ozellar-grad)" strokeWidth="20" /></svg>');
@@ -292,11 +294,11 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
 
   doc.pdf.setFont('helvetica', 'bold').setFontSize(13);
   doc.setTextColor(NAVY);
-  doc.pdf.text('VESSEL INSPECTION REPORT', titleX, 11.5);
+  doc.pdf.text(isPhotoOnly ? 'VESSEL PHOTO INSPECTION REPORT' : 'VESSEL INSPECTION REPORT', titleX, 11.5);
 
   doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
   doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text('OFFICIAL STATUTORY & TECHNICAL AUDIT RECORD', titleX, 16);
+  doc.pdf.text(isPhotoOnly ? 'PHOTOGRAPHIC SURVEY & CONDITION AUDIT RECORD' : 'OFFICIAL STATUTORY & TECHNICAL AUDIT RECORD', titleX, 16);
 
   // Top Right Audit Grade Pill
   const auditPillW = 40;
@@ -359,7 +361,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   // Left Column
   const col1X = MARGIN_LEFT + 8;
   let rowY = detailsY + 18;
-  doc.kvLine('Survey Type', INSPECTION_TYPE_LABELS[inspection.inspectionType] || inspection.inspectionType, col1X, rowY, 36);
+  doc.kvLine('Survey Type', isPhotoOnly ? 'Photographic Condition Survey' : (INSPECTION_TYPE_LABELS[inspection.inspectionType] || inspection.inspectionType), col1X, rowY, 36);
   rowY += 7.5;
   doc.kvLine('Port / Location', inspection.port || '-', col1X, rowY, 36);
   rowY += 7.5;
@@ -374,7 +376,14 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   rowY += 7.5;
   doc.kvLine('Company', inspection.company || 'Ozellar Marine', col2X, rowY, 36);
   rowY += 7.5;
-  doc.kvLine('Checklist Scope', `${sections.length} Maritime Sections`, col2X, rowY, 36);
+  const photoSectionsOnly = sections.filter((s) => !!s.section.photoOnly);
+  const photoSecsCount = photoSectionsOnly.length;
+  const photoSecPhotoCount = stats?.photoSectionPhotosCount ?? photoSectionsOnly.flatMap((s) => s.sectionPhotoIds).length;
+  const photoSecDefectCount = stats?.photoSectionDefectCount ?? 0;
+  const photoSecNormalCount = Math.max(photoSecPhotoCount - photoSecDefectCount, 0);
+  const photoSecObsCount = stats?.photoSectionExtraFindings ?? 0;
+
+  doc.kvLine('Checklist Scope', isPhotoOnly ? `${photoSecsCount} Photo Sections` : `${sections.length} Maritime Sections`, col2X, rowY, 36);
   rowY += 7.5;
   doc.kvLine('Report Ref', `VIR-${inspection.id.slice(0, 8).toUpperCase()}`, col2X, rowY, 36);
 
@@ -383,7 +392,15 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   const kpiH = 26;
   const kpiW = (CONTENT_W - 3 * 4) / 4; // 4 cards with 4mm gap
 
-  const kpis = [
+  const defectPhotoCount = stats?.defectPhotoCount || 0;
+  const normalPhotoCount = Math.max(photoCount - defectPhotoCount, 0);
+
+  const kpis = isPhotoOnly ? [
+    { label: 'Photos Audited', val: `${photoSecPhotoCount}`, sub: `${photoSecNormalCount} Normal Photos`, color: TEAL },
+    { label: 'Photo Sections', val: `${photoSecsCount}`, sub: 'Sections Surveyed', color: NAVY },
+    { label: 'Defect Photos', val: `${photoSecDefectCount}`, sub: photoSecDefectCount > 0 ? 'Deficiencies Flagged' : 'Zero Defect Photos', color: (photoSecDefectCount > 0 ? [239, 68, 68] : [16, 185, 129]) as [number, number, number] },
+    { label: 'Observations', val: `${photoSecObsCount}`, sub: photoSecObsCount > 0 ? 'Findings Logged' : 'No Extra Findings', color: [30, 122, 75] as [number, number, number] },
+  ] : [
     { label: 'Total Audited', val: `${totalQuestions}`, sub: 'Checklist Items', color: NAVY },
     { label: 'Compliance', val: `${compliancePct}%`, sub: `${satisfactory} Satisfactory`, color: [16, 185, 129] as [number, number, number] },
     { label: 'Observations', val: `${obsCount}`, sub: obsCount > 0 ? 'Deficiencies Found' : 'Zero Deficiencies', color: (obsCount > 0 ? [239, 68, 68] : [16, 185, 129]) as [number, number, number] },
@@ -532,11 +549,121 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PAGES 3+: SECTION EVALUATIONS & CHECKLIST DETAILS
+  // PAGES 3+: SECTION EVALUATIONS & CHECKLIST DETAILS / PHOTO SECTIONS
   // ═══════════════════════════════════════════════════════════════════════════
-  for (let sIdx = 0; sIdx < sections.length; sIdx++) {
-    const s = sections[sIdx];
-    if (s.section.photoOnly) continue;
+  const displaySections = isPhotoOnly
+    ? photoSectionsOnly
+    : sections;
+
+  if (isPhotoOnly && displaySections.length === 0) {
+    doc.newPage();
+    doc.sectionHeader('Photo Sections', 'Visual Survey', '0 Photo Sections');
+    doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, 14, SLATE_BG, BORDER, 2);
+    doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text('No dedicated photo sections recorded for this inspection.', MARGIN_LEFT + 8, doc.y + 8.5);
+    doc.y += 18;
+  }
+
+  for (let sIdx = 0; sIdx < displaySections.length; sIdx++) {
+    const s = displaySections[sIdx];
+    const isPhotoSection = !!s.section.photoOnly;
+
+    if (isPhotoSection) {
+      doc.newPage();
+      doc.sectionHeader(
+        `Section ${sIdx + 1}: ${s.section.name}`,
+        s.section.zone || 'General',
+        `${s.sectionPhotoIds.length} Photographs Captured`
+      );
+
+      // Section Level Photos
+      if (s.sectionPhotoIds.length > 0) {
+        doc.ensure(30);
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+        doc.setTextColor(TEXT_MUTED);
+        doc.pdf.text('SECTION PHOTOGRAPHS & VISUAL EVIDENCE', MARGIN_LEFT, doc.y + 4);
+        doc.y += 8;
+
+        const pW = (CONTENT_W - 6) / 2;
+        const pH = 56;
+        for (let pIdx = 0; pIdx < s.sectionPhotoIds.length; pIdx += 2) {
+          doc.ensure(pH + 14);
+          const id1 = s.sectionPhotoIds[pIdx];
+          const id2 = s.sectionPhotoIds[pIdx + 1];
+
+          const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
+            loadImage(id1),
+            id2 ? loadImage(id2) : Promise.resolve(null),
+            db.photos.get(id1).catch(() => null),
+            id2 ? db.photos.get(id2).catch(() => null) : Promise.resolve(null),
+          ]);
+
+          if (img1) {
+            const px1 = MARGIN_LEFT;
+            doc.roundedBox(px1, doc.y, pW, pH, SLATE_BG, BORDER, 2);
+            const sc = Math.min((pW - 4) / img1.w, (pH - 12) / img1.h);
+            const iw = img1.w * sc, ih = img1.h * sc;
+            doc.pdf.addImage(img1.dataUrl, 'JPEG', px1 + (pW - iw) / 2, doc.y + (pH - 12 - ih) / 2 + 2, iw, ih);
+
+            const isDef = !!photoDoc1?.isDefect;
+            doc.setFill(isDef ? [254, 242, 242] : [240, 253, 244]);
+            doc.pdf.rect(px1 + 1, doc.y + pH - 9, pW - 2, 8, 'F');
+            doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
+            doc.setTextColor(isDef ? [185, 28, 28] : [21, 128, 61]);
+            doc.pdf.text(isDef ? `! DEFECT #${pIdx + 1}` : `[+] PHOTO #${pIdx + 1}`, px1 + 4, doc.y + pH - 3.5);
+          }
+          if (img2) {
+            const px2 = MARGIN_LEFT + pW + 6;
+            doc.roundedBox(px2, doc.y, pW, pH, SLATE_BG, BORDER, 2);
+            const sc = Math.min((pW - 4) / img2.w, (pH - 12) / img2.h);
+            const iw = img2.w * sc, ih = img2.h * sc;
+            doc.pdf.addImage(img2.dataUrl, 'JPEG', px2 + (pW - iw) / 2, doc.y + (pH - 12 - ih) / 2 + 2, iw, ih);
+
+            const isDef = !!photoDoc2?.isDefect;
+            doc.setFill(isDef ? [254, 242, 242] : [240, 253, 244]);
+            doc.pdf.rect(px2 + 1, doc.y + pH - 9, pW - 2, 8, 'F');
+            doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
+            doc.setTextColor(isDef ? [185, 28, 28] : [21, 128, 61]);
+            doc.pdf.text(isDef ? `! DEFECT #${pIdx + 2}` : `[+] PHOTO #${pIdx + 2}`, px2 + 4, doc.y + pH - 3.5);
+          }
+          doc.y += pH + 8;
+        }
+      } else {
+        doc.ensure(20);
+        doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, 14, SLATE_BG, BORDER, 2);
+        doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
+        doc.setTextColor(TEXT_MUTED);
+        doc.pdf.text('No photographs recorded for this section.', MARGIN_LEFT + 8, doc.y + 8.5);
+        doc.y += 18;
+      }
+
+      // Section Findings if any
+      if (s.findings.length > 0) {
+        doc.ensure(24);
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+        doc.setTextColor(TEXT_MUTED);
+        doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
+        doc.y += 8;
+
+        for (const fRow of s.findings) {
+          doc.ensure(22);
+          const cardY = doc.y;
+          doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, 18, WHITE, BORDER, 2);
+          doc.setFill([239, 68, 68]);
+          doc.pdf.rect(MARGIN_LEFT, cardY, 2.5, 18, 'F');
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
+          doc.setTextColor([185, 28, 28]);
+          doc.pdf.text('! OBSERVATION', MARGIN_LEFT + 8, cardY + 6);
+          doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
+          doc.setTextColor(TEXT_DARK);
+          doc.pdf.text(doc.pdf.splitTextToSize(fRow.finding.text || 'Observation logged', CONTENT_W - 16) as string[], MARGIN_LEFT + 8, cardY + 11.5);
+          doc.y += 22;
+        }
+      }
+
+      continue;
+    }
 
     doc.newPage();
     doc.sectionHeader(
@@ -747,9 +874,14 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
   // ═══════════════════════════════════════════════════════════════════════════
   // DEFICIENCY SUMMARY TABLE (If Observations Exist)
   // ═══════════════════════════════════════════════════════════════════════════
-  if (observations.length > 0) {
+  const photoSectionIdSet = new Set(photoSectionsOnly.map((s) => s.section.id));
+  const displayObservations = isPhotoOnly
+    ? observations.filter((obs) => photoSectionIdSet.has(obs.sectionId))
+    : observations;
+
+  if (displayObservations.length > 0) {
     doc.newPage();
-    doc.sectionHeader('Deficiency Action Log & Remediation Plan', 'Action List', `${observations.length} Observations`);
+    doc.sectionHeader('Deficiency Action Log & Remediation Plan', 'Action List', `${displayObservations.length} Observations`);
 
     // Table Header
     doc.ensure(12);
@@ -764,7 +896,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
     doc.pdf.text('CORRECTIVE ACTION REQUIRED', MARGIN_LEFT + 124, doc.y + 5.2);
     doc.y += thH;
 
-    observations.forEach((obs, idx) => {
+    displayObservations.forEach((obs, idx) => {
       const descLines = doc.pdf.splitTextToSize(obs.text || obs.remarks || '-', 56) as string[];
       const caLines = doc.pdf.splitTextToSize(obs.correctiveAction || 'Immediate remediation required', 52) as string[];
       const rH = Math.max(descLines.length, caLines.length) * 4.2 + 6;
@@ -925,7 +1057,7 @@ export async function generateInspectionPdf(data: ReportData): Promise<Blob> {
 
       doc.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
       doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text(' |  VESSEL INSPECTION REPORT', rhLogoX + rtitleW, 11.5);
+      doc.pdf.text(isPhotoOnly ? ' |  VESSEL PHOTO REPORT' : ' |  VESSEL INSPECTION REPORT', rhLogoX + rtitleW, 11.5);
 
       // Right Header
       const rightHead = `${inspection.vesselName || 'VESSEL'}${inspection.imo ? '  |  IMO ' + inspection.imo : ''}`;

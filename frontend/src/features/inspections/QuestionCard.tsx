@@ -168,18 +168,23 @@ export function QuestionCard({
     setIsSameQuestionDrag(false);
     endPhotoDrag();
 
-    let photoId: string | null = null;
+    let photoIds: string[] = [];
     let fromResponseId: string | null = null;
     try {
       const json = e.dataTransfer.getData('application/json');
       if (json) {
         const parsed = JSON.parse(json);
-        if (parsed.photoId) photoId = parsed.photoId;
+        if (parsed.photoIds && Array.isArray(parsed.photoIds)) {
+          photoIds = parsed.photoIds;
+        } else if (parsed.photoId) {
+          photoIds = [parsed.photoId];
+        }
         if (parsed.fromResponseId) fromResponseId = parsed.fromResponseId;
       }
     } catch {}
-    if (!photoId) {
-      photoId = e.dataTransfer.getData('text/plain') || null;
+    if (!photoIds.length) {
+      const textId = e.dataTransfer.getData('text/plain');
+      if (textId) photoIds = [textId];
     }
 
     // Prevent dropping into the same question
@@ -193,18 +198,9 @@ export function QuestionCard({
       return;
     }
 
-    // 1. Move/assign existing photo (from Section Photos or another question)
-    if (photoId) {
+    // 1. Move/assign existing photos (from Section Photos or another question)
+    if (photoIds.length > 0) {
       try {
-        const existingPhoto = await db.photos.get(photoId);
-        if (existingPhoto?.target === 'question' && existingPhoto?.responseId === response?.id) {
-          showDragNotification(`Photo is already attached to ${question.ref || 'this question'}`, 'warning');
-          setDragFeedback(`Photo is already attached to ${question.ref || 'this question'}`);
-          setDragFeedbackType('warning');
-          setTimeout(() => setDragFeedback(null), 2500);
-          return;
-        }
-
         let respId = response?.id;
         if (!respId) {
           respId = await saveResponse(inspectionId, question.id, {
@@ -213,21 +209,38 @@ export function QuestionCard({
           });
         }
 
-        if (existingPhoto) {
-          await localWrite('photos', photoId, {
-            ...existingPhoto,
-            target: 'question',
-            responseId: respId,
-            inspectionSectionId: null,
-            position: photos.length,
-          });
-          showDragNotification(`Photo assigned to ${question.ref || 'question'}`, 'success');
-          setDragFeedback(`Photo assigned to ${question.ref || 'question'}!`);
+        let pos = photos.length;
+        let assignedCount = 0;
+        for (const pId of photoIds) {
+          const existingPhoto = await db.photos.get(pId);
+          if (existingPhoto?.target === 'question' && existingPhoto?.responseId === respId) {
+            continue;
+          }
+          if (existingPhoto) {
+            await localWrite('photos', pId, {
+              ...existingPhoto,
+              target: 'question',
+              responseId: respId,
+              inspectionSectionId: null,
+              position: pos++,
+            });
+            assignedCount++;
+          }
+        }
+
+        if (assignedCount > 0) {
+          const msg = assignedCount > 1
+            ? `${assignedCount} photos assigned to ${question.ref || 'question'}`
+            : `Photo assigned to ${question.ref || 'question'}`;
+          showDragNotification(msg, 'success');
+          setDragFeedback(`${msg}!`);
           setDragFeedbackType('success');
           setTimeout(() => setDragFeedback(null), 2500);
+        } else {
+          showDragNotification(`Already attached to ${question.ref || 'this question'}`, 'warning');
         }
       } catch (err) {
-        console.error('Failed to assign photo to question', err);
+        console.error('Failed to assign photo(s) to question', err);
       }
       return;
     }

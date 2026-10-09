@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { can, isEditable, ROLE_LABELS, STATUS_LABELS, type ApprovalEvent, type InspectionStatus, type User } from '@ozellar/shared';
 import { api, ApiError } from '../../api/client';
@@ -185,6 +185,10 @@ export function ReportPage() {
     },
   });
 
+  const [searchParams] = useSearchParams();
+  const initialMode = searchParams.get('mode') === 'photo' ? 'photo' : 'full';
+  const [reportMode, setReportMode] = useState<'full' | 'photo'>(initialMode);
+
   const [summary, setSummary] = useState('');
   const [conclusion, setConclusion] = useState('');
   const [seeded, setSeeded] = useState(false);
@@ -221,12 +225,18 @@ export function ReportPage() {
     observations: 0,
     na: 0,
     pending: 0,
-    extraFindings: 0
+    extraFindings: 0,
+    photoSectionCount: 0,
+    defectPhotoCount: 0,
+    photoSectionPhotosCount: 0,
+    photoSectionDefectCount: 0,
+    photoSectionExtraFindings: 0,
   };
 
-  async function onExportPdf() {
+  async function onExportPdf(overrideMode?: 'full' | 'photo') {
     if (!canExport) return;
     setExporting(true); setError(null);
+    const mode = overrideMode || reportMode;
     try {
       let exportData = report;
       if (!exportData && isMock) {
@@ -240,11 +250,13 @@ export function ReportPage() {
       const blob = await generateInspectionPdf({
         ...exportData!,
         approvalHistory: history.data?.history,
+        reportType: mode === 'photo' ? 'photo_only' : 'full',
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${(dispInspection.vesselName || 'inspection').replace(/[^a-z0-9]+/gi, '-')}-report.pdf`;
+      const slug = (dispInspection.vesselName || 'inspection').replace(/[^a-z0-9]+/gi, '-');
+      a.download = mode === 'photo' ? `${slug}-photo-section-report.pdf` : `${slug}-report.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
@@ -443,8 +455,13 @@ export function ReportPage() {
   }
 
   async function onSubmit() {
-    if (stats.pending > 0) {
+    if (reportMode === 'full' && stats.pending > 0) {
       setError(`All checklist questions must be answered (Yes / No / N/A) before submitting for approval (${stats.pending} remaining).`);
+      return;
+    }
+    const photoCountInSecs = stats.photoSectionPhotosCount ?? stats.photoCount;
+    if (reportMode === 'photo' && photoCountInSecs === 0) {
+      setError('Please add at least one photo in photo sections before submitting a Photo Section Report.');
       return;
     }
     if (!summary.trim() || !conclusion.trim()) {
@@ -457,7 +474,7 @@ export function ReportPage() {
     }
     await saveSummaryConclusion();
     if (navigator.onLine) await syncNow();
-    await act('submit', { approverId, comment });
+    await act('submit', { approverId, comment, photoOnly: reportMode === 'photo' });
   }
 
   async function onApprove() {
@@ -524,6 +541,47 @@ export function ReportPage() {
             <WarningIcon width={16} height={16} style={{ flexShrink: 0 }} /> {error}
           </div>
         )}
+
+        {/* ── Report Type Switcher ── */}
+        <div className="report-mode-toggle-card">
+          <div className="report-mode-toggle-header">
+            <div className="report-mode-toggle-top-row">
+              <div className="report-mode-toggle-title">
+                <span>Select Report Type</span>
+              </div>
+              <span className={`report-mode-toggle-badge ${reportMode === 'photo' ? 'photo' : 'full'}`}>
+                {reportMode === 'photo' ? 'Photo Sections' : 'Full Checklist'}
+              </span>
+            </div>
+            <div className="report-mode-toggle-desc">
+              {reportMode === 'photo'
+                ? 'Photo Section Report: Focuses exclusively on photo sections, summary, and conclusion. Standard checklist questions are omitted.'
+                : 'Full Checklist Report: Comprehensive report including all sections, questions, photos, and observations.'}
+            </div>
+          </div>
+          <div className="report-mode-pills" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={reportMode === 'full'}
+              className={`report-mode-pill ${reportMode === 'full' ? 'active' : ''}`}
+              onClick={() => setReportMode('full')}
+            >
+              <ListIcon color={reportMode === 'full' ? 'var(--accent)' : '#64748b'} />
+              <span>Full Checklist Report</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={reportMode === 'photo'}
+              className={`report-mode-pill ${reportMode === 'photo' ? 'active photo-mode' : ''}`}
+              onClick={() => setReportMode('photo')}
+            >
+              <CameraIcon color={reportMode === 'photo' ? '#ffffff' : '#64748b'} />
+              <span>Photo Section Report</span>
+            </button>
+          </div>
+        </div>
 
         {/* ── Workflow Stepper ── */}
         <div className="stepper-card">
@@ -621,48 +679,94 @@ export function ReportPage() {
 
         {/* ── Premium stat tiles grid ── */}
         <div className="report-stats-section">
-          <div className="stats-grid-top">
-            <StatTile value={stats.totalQuestions} label="Total"
-              icon={<ListIcon color="var(--accent)" />}
-              accentBg="var(--accent-tint)" accentText="var(--accent)" />
-            <StatTile value={stats.satisfactory} label="Satisfactory"
-              icon={<CheckCircleIcon color="var(--ok)" />}
-              accentBg="var(--ok-tint)" accentText="var(--ok)" />
-            <StatTile value={stats.observations} label="Observations"
-              icon={<AlertIcon color="var(--bad)" />}
-              accentBg="var(--bad-tint)" accentText="var(--bad)" />
-            <StatTile value={stats.na} label="N/A"
-              icon={<MinusCircleIcon color="var(--na)" />}
-              accentBg="var(--na-tint)" accentText="var(--na)" />
-          </div>
-          <div className="stats-grid-bottom">
-            <StatTile value={stats.pending} label="Pending"
-              icon={<ClockIcon color="var(--warn)" />}
-              accentBg="var(--warn-tint)" accentText="var(--warn)" />
-            <StatTile value={stats.photoCount} label="Photos"
-              icon={<CameraIcon color="#1F5C99" />}
-              accentBg="#E6F0FA" accentText="#1F5C99" />
-            <StatTile value={stats.extraFindings} label="Extra Findings"
-              icon={<ListIcon color="var(--accent-dark)" />}
-              accentBg="var(--accent-tint)" accentText="var(--accent-dark)" />
-          </div>
+          {reportMode === 'photo' ? (
+            <>
+              <div className="stats-grid-top">
+                <StatTile value={stats.photoSectionPhotosCount ?? 0} label="Total Photos"
+                  icon={<CameraIcon color="#1F5C99" />}
+                  accentBg="#E6F0FA" accentText="#1F5C99" />
+                <StatTile value={stats.photoSectionCount ?? 0} label="Photo Sections"
+                  icon={<ListIcon color="var(--accent)" />}
+                  accentBg="var(--accent-tint)" accentText="var(--accent)" />
+                <StatTile value={Math.max((stats.photoSectionPhotosCount ?? 0) - (stats.photoSectionDefectCount ?? 0), 0)} label="Normal Photos"
+                  icon={<CheckCircleIcon color="var(--ok)" />}
+                  accentBg="var(--ok-tint)" accentText="var(--ok)" />
+                <StatTile value={stats.photoSectionDefectCount ?? 0} label="Defects Flagged"
+                  icon={<AlertIcon color={stats.photoSectionDefectCount ? "var(--bad)" : "var(--muted)"} />}
+                  accentBg={stats.photoSectionDefectCount ? "var(--bad-tint)" : "var(--na-tint)"}
+                  accentText={stats.photoSectionDefectCount ? "var(--bad)" : "var(--muted)"} />
+              </div>
+              <div className="stats-grid-bottom" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                <StatTile value={stats.photoSectionExtraFindings ?? 0} label="Extra Observations"
+                  icon={<ListIcon color="var(--accent-dark)" />}
+                  accentBg="var(--accent-tint)" accentText="var(--accent-dark)" />
+                <StatTile value={STATUS_LABELS[dispInspection.status as import('@ozellar/shared').InspectionStatus] || dispInspection.status} label="Inspection State"
+                  icon={<CheckCircleIcon color="var(--ok)" />}
+                  accentBg="var(--ok-tint)" accentText="var(--ink)" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="stats-grid-top">
+                <StatTile value={stats.totalQuestions} label="Total"
+                  icon={<ListIcon color="var(--accent)" />}
+                  accentBg="var(--accent-tint)" accentText="var(--accent)" />
+                <StatTile value={stats.satisfactory} label="Satisfactory"
+                  icon={<CheckCircleIcon color="var(--ok)" />}
+                  accentBg="var(--ok-tint)" accentText="var(--ok)" />
+                <StatTile value={stats.observations} label="Observations"
+                  icon={<AlertIcon color="var(--bad)" />}
+                  accentBg="var(--bad-tint)" accentText="var(--bad)" />
+                <StatTile value={stats.na} label="N/A"
+                  icon={<MinusCircleIcon color="var(--na)" />}
+                  accentBg="var(--na-tint)" accentText="var(--na)" />
+              </div>
+              <div className="stats-grid-bottom">
+                <StatTile value={stats.pending} label="Pending"
+                  icon={<ClockIcon color="var(--warn)" />}
+                  accentBg="var(--warn-tint)" accentText="var(--warn)" />
+                <StatTile value={stats.photoCount} label="Photos"
+                  icon={<CameraIcon color="#1F5C99" />}
+                  accentBg="#E6F0FA" accentText="#1F5C99" />
+                <StatTile value={stats.extraFindings} label="Extra Findings"
+                  icon={<ListIcon color="var(--accent-dark)" />}
+                  accentBg="var(--accent-tint)" accentText="var(--accent-dark)" />
+              </div>
+            </>
+          )}
 
-          {/* ── Export PDF button ── */}
-          <button
-            type="button"
-            disabled={exporting || !canExport}
-            onClick={() => void onExportPdf()}
-            className="report-download-official-btn"
-          >
-            {exporting ? (
-              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/>
-              </svg>
-            ) : (
+          {/* ── Export PDF buttons ── */}
+          <div className="report-pdf-download-actions">
+            <button
+              type="button"
+              disabled={exporting || !canExport}
+              onClick={() => void onExportPdf(reportMode)}
+              className={`report-download-official-btn ${reportMode === 'photo' ? 'btn-photo-pdf' : ''}`}
+            >
+              {exporting ? (
+                <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/>
+                </svg>
+              ) : (
+                <PdfIcon />
+              )}
+              <span>
+                {exporting
+                  ? (reportMode === 'photo' ? 'Generating Photo Section PDF…' : 'Preparing Official PDF Report…')
+                  : (reportMode === 'photo' ? 'Download Photo Section Report (PDF)' : 'Download Official PDF Report')}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              disabled={exporting || !canExport}
+              onClick={() => void onExportPdf(reportMode === 'photo' ? 'full' : 'photo')}
+              className="report-download-alt-btn"
+            >
               <PdfIcon />
-            )}
-            <span>{exporting ? 'Preparing Official PDF Report…' : 'Download Official PDF Report'}</span>
-          </button>
+              <span>{reportMode === 'photo' ? 'Download Full Checklist Report (PDF)' : 'Download Photo Section Report (PDF)'}</span>
+            </button>
+          </div>
         </div>
 
         {/* ── Summary & Conclusion textareas ── */}
@@ -700,18 +804,26 @@ export function ReportPage() {
         {canSubmit && (
           <div className="premium-report-card">
             <div style={{ fontWeight: 800, fontSize: 16, color: '#0f172a', marginBottom: 4, letterSpacing: '-0.3px' }}>
-              {me.data.role === 'vesselManager'
-                ? 'Submit to Technical Manager'
-                : me.data.role === 'techManager'
-                ? 'Submit to Director for Sign-off'
-                : 'Submit for Approval'}
+              {reportMode === 'photo'
+                ? (me.data.role === 'vesselManager'
+                    ? 'Submit Photo Section Report to Technical Manager'
+                    : me.data.role === 'techManager'
+                    ? 'Submit Photo Section Report to Director'
+                    : 'Submit Photo Section Report for Approval')
+                : (me.data.role === 'vesselManager'
+                    ? 'Submit to Technical Manager'
+                    : me.data.role === 'techManager'
+                    ? 'Submit to Director for Sign-off'
+                    : 'Submit for Approval')}
             </div>
             <div style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
-              {me.data.role === 'vesselManager'
-                ? 'Select an assigned Technical Manager to review your findings and photos.'
-                : me.data.role === 'techManager'
-                ? 'As Technical Manager, your inspection is submitted directly to the Director for final executive sign-off.'
-                : 'Select an approver to review this inspection.'}
+              {reportMode === 'photo'
+                ? 'Photo Section Submission: Only photo sections, summary, and conclusion will be submitted for technical sign-off. Standard checklist questions are bypassed.'
+                : (me.data.role === 'vesselManager'
+                    ? 'Select an assigned Technical Manager to review your findings and photos.'
+                    : me.data.role === 'techManager'
+                    ? 'As Technical Manager, your inspection is submitted directly to the Director for final executive sign-off.'
+                    : 'Select an approver to review this inspection.')}
             </div>
 
             {/* Validation alerts */}
@@ -725,7 +837,17 @@ export function ReportPage() {
                 <span>Summary and Conclusion must be filled before submitting.</span>
               </div>
             )}
-            {stats.pending > 0 && (
+            {reportMode === 'photo' && (stats.photoSectionPhotosCount ?? stats.photoCount) === 0 && (
+              <div style={{
+                background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
+                padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#b45309',
+                display: 'flex', alignItems: 'center', gap: 8
+              }}>
+                <WarningIcon width={16} height={16} style={{ flexShrink: 0 }} />
+                <span>At least one photo must be captured in photo sections before submitting.</span>
+              </div>
+            )}
+            {reportMode === 'full' && stats.pending > 0 && (
               <div style={{
                 background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
                 padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#b45309',
@@ -784,14 +906,15 @@ export function ReportPage() {
               onBlur={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
             />
             {(() => {
-              const canClickSubmit = !busy && summary.trim() && conclusion.trim() && approverId && stats.pending === 0;
+              const photoSecCount = stats.photoSectionPhotosCount ?? stats.photoCount;
+              const canClickSubmit = !busy && summary.trim() && conclusion.trim() && approverId && (reportMode === 'photo' ? photoSecCount > 0 : stats.pending === 0);
               return (
                 <button
                   disabled={!canClickSubmit}
                   onClick={() => void onSubmit()}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    background: !canClickSubmit ? '#94a3b8' : '#0f172a',
+                    background: !canClickSubmit ? '#94a3b8' : (reportMode === 'photo' ? 'linear-gradient(135deg, #0f766e 0%, #0d9488 100%)' : '#0f172a'),
                     color: '#fff', border: 'none',
                     borderRadius: 12, padding: '13px 20px',
                     fontWeight: 700, fontSize: 14.5,
@@ -801,10 +924,15 @@ export function ReportPage() {
                   }}
                 >
                   {busy ? 'Sending…'
-                    : stats.pending > 0 ? `Answer All Questions First (${stats.pending} remaining)`
-                    : me.data.role === 'vesselManager' ? 'Submit to Technical Manager'
-                    : me.data.role === 'techManager' ? 'Submit to Director'
-                    : 'Submit for Approval'}
+                    : reportMode === 'photo'
+                    ? (photoSecCount === 0 ? 'Capture Photos in Photo Sections First'
+                      : me.data.role === 'vesselManager' ? 'Submit Photo Report to Technical Manager'
+                      : me.data.role === 'techManager' ? 'Submit Photo Report to Director'
+                      : 'Submit Photo Section Report')
+                    : (stats.pending > 0 ? `Answer All Questions First (${stats.pending} remaining)`
+                      : me.data.role === 'vesselManager' ? 'Submit to Technical Manager'
+                      : me.data.role === 'techManager' ? 'Submit to Director'
+                      : 'Submit for Approval')}
                 </button>
               );
             })()}

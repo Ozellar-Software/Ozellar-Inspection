@@ -17,7 +17,7 @@ export function isEditable(status: InspectionStatus): boolean {
 }
 
 export type Command =
-  | { type: 'submit'; approverId: string; comment?: string }
+  | { type: 'submit'; approverId: string; comment?: string; photoOnly?: boolean }
   | { type: 'approve'; nextApproverId?: string; comment?: string }
   | { type: 'reject'; comment: string }
   | { type: 'reopen' };

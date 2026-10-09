@@ -70,38 +70,28 @@ export function HomePage() {
     refetchInterval: navigator.onLine ? 30000 : false,
   });
 
-  const homeData = useLiveQuery(async () => {
-    const [inspections, allSections, allQuestions, allResponses, allPhotos] = await Promise.all([
-      db.inspections.orderBy('updatedAt').reverse().toArray(),
-      db.inspectionSections.toArray(),
-      db.inspectionQuestions.toArray(),
-      db.responses.toArray(),
-      db.photos.toArray(),
-    ]);
-    return { inspections, allSections, allQuestions, allResponses, allPhotos };
-  }, []);
+  const inspections = useLiveQuery(
+    () => db.inspections.orderBy('updatedAt').reverse().toArray(),
+    []
+  );
 
-  const isLoading = homeData === undefined;
-  const inspections = homeData?.inspections ?? [];
-  const allSections = homeData?.allSections ?? [];
-  const allQuestions = homeData?.allQuestions ?? [];
-  const allResponses = homeData?.allResponses ?? [];
-  const allPhotos = homeData?.allPhotos ?? [];
+  const isLoading = inspections === undefined;
 
   // Auto-sync if local database is empty on load and device is online
   useEffect(() => {
-    if (homeData && homeData.inspections.length === 0 && navigator.onLine) {
+    if (inspections && inspections.length === 0 && navigator.onLine) {
       void syncNow();
     }
-  }, [homeData]);
+  }, [inspections]);
 
   // TM and VM should only see inspections for their assigned vessels
   const visibleInspections = useMemo(() => {
+    const inspList = inspections ?? [];
     const role = me.data?.role;
-    if (role === 'admin' || role === 'director' || !me.data) return inspections;
+    if (role === 'admin' || role === 'director' || !me.data) return inspList;
     const vesselIds = (me.data.vesselIds ?? []).map((id) => id.toLowerCase().trim());
-    if (vesselIds.length === 0) return inspections;
-    return inspections.filter((i) => i.vesselId && vesselIds.includes(i.vesselId.toLowerCase().trim()));
+    if (vesselIds.length === 0) return inspList;
+    return inspList.filter((i) => i.vesselId && vesselIds.includes(i.vesselId.toLowerCase().trim()));
   }, [inspections, me.data]);
 
   const uniqueVessels = useMemo(() => {
@@ -118,148 +108,6 @@ export function HomePage() {
       return i.vesselName.toLowerCase().includes(q.trim().toLowerCase());
     }),
     [visibleInspections, q, statusFilter, vesselFilter]);
-
-  const inspectionProgress = useMemo(() => {
-    // 1. Group questions by inspectionSectionId
-    const questionsBySection = new Map<string, typeof allQuestions>();
-    for (const q of allQuestions) {
-      if (q.deletedAt) continue;
-      const arr = questionsBySection.get(q.inspectionSectionId);
-      if (arr) arr.push(q);
-      else questionsBySection.set(q.inspectionSectionId, [q]);
-    }
-
-    // 2. Index evaluated responses: `${inspectionId}:${inspectionQuestionId}`
-    const evaluatedResponses = new Set<string>();
-    for (const r of allResponses) {
-      if (r.deletedAt) continue;
-      if (r.answer != null || r.applicable === false) {
-        evaluatedResponses.add(`${r.inspectionId}:${r.inspectionQuestionId}`);
-      }
-    }
-
-    // 3. Group sections by inspectionId
-    const sectionsByInspection = new Map<string, typeof allSections>();
-    for (const s of allSections) {
-      if (s.deletedAt) continue;
-      const arr = sectionsByInspection.get(s.inspectionId);
-      if (arr) arr.push(s);
-      else sectionsByInspection.set(s.inspectionId, [s]);
-    }
-
-    // 4. Calculate progress for each visible inspection
-    const map = new Map<string, { doneSections: number; totalSections: number; pct: number }>();
-
-    for (const insp of visibleInspections) {
-      const isCompleteStatus =
-        insp.status === 'pending_tm' ||
-        insp.status === 'pending_director' ||
-        insp.status === 'approved';
-
-      const secs = sectionsByInspection.get(insp.id) ?? [];
-      const totalSections = secs.length > 0 ? secs.length : 5;
-
-      if (isCompleteStatus) {
-        map.set(insp.id, {
-          doneSections: totalSections,
-          totalSections,
-          pct: 100,
-        });
-        continue;
-      }
-
-      let doneSections = 0;
-      let totalQuestions = 0;
-      let answeredQuestions = 0;
-
-      for (const s of secs) {
-        const qs = questionsBySection.get(s.id) ?? [];
-        if (qs.length === 0) {
-          doneSections++;
-          continue;
-        }
-
-        let sectionAnswered = 0;
-        for (const q of qs) {
-          totalQuestions++;
-          if (evaluatedResponses.has(`${insp.id}:${q.id}`)) {
-            sectionAnswered++;
-            answeredQuestions++;
-          }
-        }
-
-        if (sectionAnswered === qs.length) {
-          doneSections++;
-        }
-      }
-
-      let pct = 0;
-      if (totalQuestions > 0) {
-        pct = Math.round((answeredQuestions / totalQuestions) * 100);
-      } else if (secs.length > 0) {
-        pct = Math.round((doneSections / secs.length) * 100);
-      }
-
-      if (secs.length > 0 && doneSections === secs.length) {
-        pct = 100;
-      }
-
-      map.set(insp.id, {
-        doneSections,
-        totalSections,
-        pct,
-      });
-    }
-
-    return map;
-  }, [allSections, allQuestions, allResponses, visibleInspections]);
-
-  const photoProgress = useMemo(() => {
-    const photosBySection = new Map<string, number>();
-    const photosByInspection = new Map<string, number>();
-
-    for (const p of allPhotos) {
-      if (p.deletedAt) continue;
-      if (p.inspectionId) {
-        photosByInspection.set(p.inspectionId, (photosByInspection.get(p.inspectionId) ?? 0) + 1);
-      }
-      if (p.inspectionSectionId) {
-        photosBySection.set(p.inspectionSectionId, (photosBySection.get(p.inspectionSectionId) ?? 0) + 1);
-      }
-    }
-
-    const map = new Map<string, { donePhotoSections: number; totalPhotoSections: number; totalPhotos: number; pct: number }>();
-
-    for (const insp of visibleInspections) {
-      const isApprovedOrSubmitted =
-        insp.status === 'pending_tm' ||
-        insp.status === 'pending_director' ||
-        insp.status === 'approved';
-
-      const photoSecs = allSections.filter((s) => s.inspectionId === insp.id && s.photoOnly && !s.deletedAt);
-      const totalPhotos = photosByInspection.get(insp.id) ?? 0;
-      const totalPhotoSections = photoSecs.length;
-
-      let donePhotoSections = 0;
-      for (const ps of photoSecs) {
-        const count = photosBySection.get(ps.id) ?? 0;
-        if (count > 0 || isApprovedOrSubmitted) {
-          donePhotoSections++;
-        }
-      }
-
-      const pct = totalPhotoSections > 0 ? Math.round((donePhotoSections / totalPhotoSections) * 100) : 0;
-
-      map.set(insp.id, {
-        donePhotoSections,
-        totalPhotoSections,
-        totalPhotos,
-        pct,
-      });
-    }
-
-    return map;
-  }, [allPhotos, allSections, visibleInspections]);
 
   const syncText = sync?.state === 'syncing' ? 'Syncing…'
     : sync?.state === 'offline' ? `Offline — ${sync.pending} change(s) waiting`
@@ -484,7 +332,6 @@ export function HomePage() {
                 <div className="skeleton-line skeleton-title" />
                 <div className="skeleton-line skeleton-sub" />
               </div>
-              <div className="skeleton-progress" />
               <div className="skeleton-badge" />
             </div>
           ))}
@@ -511,9 +358,6 @@ export function HomePage() {
         <div className="inspection-list-body">
           {list.map((i) => {
             const status = i.status as InspectionStatus;
-            const prog = inspectionProgress.get(i.id) ?? { doneSections: 0, totalSections: 5, pct: 0 };
-            const pProg = photoProgress.get(i.id) ?? { donePhotoSections: 0, totalPhotoSections: 0, totalPhotos: 0, pct: 0 };
-            const pct = prog.pct;
             const accentClass = CARD_ACCENT[status] ?? '';
             return (
               <div
@@ -554,42 +398,6 @@ export function HomePage() {
                     </span>
                   </div>
                 </div>
-
-                {/* Progress */}
-                {light ? (
-                  <div className="vessel-row-progress">
-                    <div className="vessel-progress-top">
-                      <span className="vessel-progress-pct" style={{ color: pProg.totalPhotoSections > 0 ? '#0d9488' : '#64748b', display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <CameraIcon width={15} height={15} />
-                        {pProg.totalPhotoSections > 0 ? `${pProg.pct}%` : '0%'}
-                      </span>
-                      <span className="vessel-progress-label">
-                        {pProg.totalPhotoSections > 0
-                          ? `${pProg.donePhotoSections}/${pProg.totalPhotoSections} photo sections`
-                          : (pProg.totalPhotos > 0 ? `${pProg.totalPhotos} photo(s)` : '0 photo sections')}
-                      </span>
-                    </div>
-                    <div className="vessel-progress-track" style={{ background: '#e6f4f5' }}>
-                      <div
-                        className="vessel-progress-fill"
-                        style={{
-                          width: `${pProg.totalPhotoSections > 0 ? pProg.pct : 0}%`,
-                          background: 'linear-gradient(90deg, #0A828A 0%, #10b981 100%)',
-                        }}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="vessel-row-progress">
-                    <div className="vessel-progress-top">
-                      <span className="vessel-progress-pct">{pct}%</span>
-                      <span className="vessel-progress-label">{prog.doneSections}/{prog.totalSections} sections</span>
-                    </div>
-                    <div className="vessel-progress-track">
-                      <div className="vessel-progress-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                )}
 
                 {/* Status */}
                 <div className="vessel-row-status">

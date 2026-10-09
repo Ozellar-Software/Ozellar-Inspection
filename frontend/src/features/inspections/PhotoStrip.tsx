@@ -314,7 +314,8 @@ export function PhotoStrip({
   };
 
   const handleTouchStart = (photo: SyncedPhoto, el: HTMLElement, e: React.TouchEvent) => {
-    if (locked || isSelectMode) return;
+    if (locked) return;
+    if (isSelectMode && !selectedPhotoIds.has(photo.id)) return;
     if (e.touches.length > 1) return;
 
     const t = e.touches[0];
@@ -325,6 +326,11 @@ export function PhotoStrip({
 
     if (longPressTimeoutRef.current) clearTimeout(longPressTimeoutRef.current);
 
+    const isSelected = selectedPhotoIds.has(photo.id);
+    const photoIds = (isSelected && selectedPhotoIds.size > 1)
+      ? Array.from(selectedPhotoIds)
+      : [photo.id];
+
     // 280ms hold threshold to activate mobile drag & drop!
     longPressTimeoutRef.current = window.setTimeout(() => {
       isLongPressTriggeredRef.current = true;
@@ -333,6 +339,8 @@ export function PhotoStrip({
         startCoord,
         {
           photoId: photo.id,
+          photoIds,
+          count: photoIds.length,
           fromTarget: target,
           fromSectionId: inspectionSectionId,
           fromResponseId: responseId,
@@ -340,11 +348,19 @@ export function PhotoStrip({
           photoUrl: urls[photo.id],
         },
         {
-          onDropToQuestion: async (photoId, questionId, targetSecId) => {
-            await handleAssignToQuestion(photoId, questionId, targetSecId);
+          onDropToQuestion: async (photoId, questionId, targetSecId, droppedIds) => {
+            const idsToMove = (droppedIds && droppedIds.length > 0) ? droppedIds : [photoId];
+            for (const id of idsToMove) {
+              await handleAssignToQuestion(id, questionId, targetSecId);
+            }
+            setSelectedPhotoIds(new Set());
           },
-          onDropToSection: async (photoId, targetSecId) => {
-            await handleMoveToSection(photoId, targetSecId || inspectionSectionId || '');
+          onDropToSection: async (photoId, targetSecId, droppedIds) => {
+            const idsToMove = (droppedIds && droppedIds.length > 0) ? droppedIds : [photoId];
+            for (const id of idsToMove) {
+              await handleMoveToSection(id, targetSecId || inspectionSectionId || '');
+            }
+            setSelectedPhotoIds(new Set());
           },
           onSameQuestionAttempt: () => {
             showDragNotification('Photo is already attached to this question', 'warning');
@@ -411,10 +427,17 @@ export function PhotoStrip({
     e.stopPropagation();
     const t = e.touches[0];
     const startCoord = { clientX: t.clientX, clientY: t.clientY };
+    const isSelected = selectedPhotoIds.has(photo.id);
+    const photoIds = (isSelected && selectedPhotoIds.size > 1)
+      ? Array.from(selectedPhotoIds)
+      : [photo.id];
+
     startTouchPhotoDrag(
       startCoord,
       {
         photoId: photo.id,
+        photoIds,
+        count: photoIds.length,
         fromTarget: target,
         fromSectionId: inspectionSectionId,
         fromResponseId: responseId,
@@ -422,11 +445,19 @@ export function PhotoStrip({
         photoUrl: urls[photo.id],
       },
       {
-        onDropToQuestion: async (photoId, questionId, targetSecId) => {
-          await handleAssignToQuestion(photoId, questionId, targetSecId);
+        onDropToQuestion: async (photoId, questionId, targetSecId, droppedIds) => {
+          const idsToMove = (droppedIds && droppedIds.length > 0) ? droppedIds : [photoId];
+          for (const id of idsToMove) {
+            await handleAssignToQuestion(id, questionId, targetSecId);
+          }
+          setSelectedPhotoIds(new Set());
         },
-        onDropToSection: async (photoId, targetSecId) => {
-          await handleMoveToSection(photoId, targetSecId || inspectionSectionId || '');
+        onDropToSection: async (photoId, targetSecId, droppedIds) => {
+          const idsToMove = (droppedIds && droppedIds.length > 0) ? droppedIds : [photoId];
+          for (const id of idsToMove) {
+            await handleMoveToSection(id, targetSecId || inspectionSectionId || '');
+          }
+          setSelectedPhotoIds(new Set());
         },
         onSameQuestionAttempt: () => {
           showDragNotification('Photo is already attached to this question', 'warning');
@@ -444,47 +475,78 @@ export function PhotoStrip({
     endPhotoDrag();
     if (locked) return;
 
-    // Check if an existing photo was dropped (e.g. from question back to section)
-    let photoId = '';
+    // Check if existing photos were dropped (e.g. from question back to section)
+    let photoIds: string[] = [];
     try {
       const json = e.dataTransfer.getData('application/json');
       if (json) {
         const parsed = JSON.parse(json);
-        if (parsed.photoId) photoId = parsed.photoId;
+        if (parsed.photoIds && Array.isArray(parsed.photoIds)) {
+          photoIds = parsed.photoIds;
+        } else if (parsed.photoId) {
+          photoIds = [parsed.photoId];
+        }
       }
     } catch {}
-    if (!photoId) {
-      photoId = e.dataTransfer.getData('text/plain');
+    if (!photoIds.length) {
+      const singleId = e.dataTransfer.getData('text/plain');
+      if (singleId) photoIds = [singleId];
     }
 
-    if (photoId) {
-      const existingPhoto = await db.photos.get(photoId);
-      if (existingPhoto) {
-        // Prevent drop into same section
-        if (target === 'section' && existingPhoto.target === 'section' && existingPhoto.inspectionSectionId === inspectionSectionId) {
-          showDragNotification('Photo is already in section photos', 'warning');
-          return;
-        }
-        // Prevent drop into same question
-        if (target === 'question' && existingPhoto.target === 'question' && existingPhoto.responseId === responseId) {
-          showDragNotification('Photo is already attached to this question', 'warning');
-          return;
-        }
+    if (photoIds.length > 0) {
+      let pos = photos.length;
+      let movedCount = 0;
+      for (const id of photoIds) {
+        const existingPhoto = await db.photos.get(id);
+        if (existingPhoto) {
+          // Prevent drop into same section
+          if (target === 'section' && existingPhoto.target === 'section' && existingPhoto.inspectionSectionId === inspectionSectionId) {
+            continue;
+          }
+          // Prevent drop into same question
+          if (target === 'question' && existingPhoto.target === 'question' && existingPhoto.responseId === responseId) {
+            continue;
+          }
 
-        await localWrite('photos', photoId, {
-          ...existingPhoto,
-          target,
-          inspectionSectionId: target === 'section' ? inspectionSectionId : null,
-          responseId: target === 'question' ? responseId : null,
-          findingId: target === 'finding' ? findingId : null,
-          position: photos.length,
-        });
+          await localWrite('photos', id, {
+            ...existingPhoto,
+            target,
+            inspectionSectionId: target === 'section' ? inspectionSectionId : null,
+            responseId: target === 'question' ? responseId : null,
+            findingId: target === 'finding' ? findingId : null,
+            position: pos++,
+          });
+          movedCount++;
+        }
+      }
+      setSelectedPhotoIds(new Set());
+      if (movedCount > 0) {
+        showDragNotification(`${movedCount} photo${movedCount > 1 ? 's' : ''} moved to ${target === 'section' ? 'section photos' : 'question'}`, 'success');
+      } else {
+        showDragNotification(target === 'section' ? 'Photos are already in section photos' : 'Photos already attached', 'warning');
       }
       return;
     }
 
+    // Direct drop of image files from computer / desktop
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFilesChosen(e.dataTransfer.files);
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+      if (files.length > 0) {
+        let pos = photos.length;
+        for (const file of files) {
+          await addPhoto({
+            file,
+            target,
+            inspectionId,
+            inspectionSectionId,
+            responseId,
+            findingId,
+            position: pos++,
+            isDefect: false,
+          });
+        }
+        showDragNotification(`${files.length} photo${files.length > 1 ? 's' : ''} added!`, 'success');
+      }
     }
   };
 
@@ -503,10 +565,11 @@ export function PhotoStrip({
   };
 
   // Save handler for CameraCaptureModal
-  const handleSavePhotosFromCamera = async (newPhotos: { file: File; isDefect: boolean }[]) => {
+  const handleSavePhotosFromCamera = async (newPhotos: { file: File; isDefect: boolean }[]): Promise<string[]> => {
     let position = photos.length;
+    const addedIds: string[] = [];
     for (const item of newPhotos) {
-      await addPhoto({
+      const id = await addPhoto({
         file: item.file,
         target,
         inspectionId,
@@ -516,7 +579,9 @@ export function PhotoStrip({
         position: position++,
         isDefect: item.isDefect,
       });
+      addedIds.push(id);
     }
+    return addedIds;
   };
 
   return (
@@ -750,12 +815,17 @@ export function PhotoStrip({
           return (
             <div
               key={p.id}
-              className={`thumb${p.isDefect ? ' defect' : ''}${!locked && !isSelectMode ? ' draggable' : ''}${isSelectMode ? ' select-mode' : ''}${isSelected ? ' selected' : ''}`}
-              draggable={!locked && !isSelectMode}
+              className={`thumb${p.isDefect ? ' defect' : ''}${!locked ? ' draggable' : ''}${isSelectMode ? ' select-mode' : ''}${isSelected ? ' selected' : ''}`}
+              draggable={!locked}
               onDragStart={(e) => {
-                if (locked || isSelectMode) return;
+                if (locked) return;
+                const photoIds = (isSelected && selectedPhotoIds.size > 1)
+                  ? Array.from(selectedPhotoIds)
+                  : [p.id];
                 startPhotoDrag({
                   photoId: p.id,
+                  photoIds,
+                  count: photoIds.length,
                   fromTarget: target,
                   fromSectionId: inspectionSectionId,
                   fromResponseId: responseId,
@@ -768,6 +838,8 @@ export function PhotoStrip({
                   JSON.stringify({
                     type: 'ozellar-photo',
                     photoId: p.id,
+                    photoIds,
+                    count: photoIds.length,
                     fromTarget: target,
                     fromInspectionSectionId: inspectionSectionId,
                     fromResponseId: responseId,
@@ -811,10 +883,10 @@ export function PhotoStrip({
               )}
 
               {/* Drag grip icon */}
-              {!locked && !isSelectMode && (
+              {!locked && (!isSelectMode || isSelected) && (
                 <span
-                  className="thumb-drag-indicator"
-                  title="Drag to question"
+                  className={`thumb-drag-indicator${isSelectMode && isSelected ? ' in-select-mode' : ''}`}
+                  title={isSelected && selectedPhotoIds.size > 1 ? `Drag ${selectedPhotoIds.size} photos` : "Drag to question"}
                   onTouchStart={(e) => handleTouchDragInitiate(e, p)}
                 >
                   <GripVerticalIcon width={12} height={12} />

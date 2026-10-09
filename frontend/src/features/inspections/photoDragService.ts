@@ -10,6 +10,8 @@
 
 export interface DraggedPhotoInfo {
   photoId: string;
+  photoIds?: string[];
+  count?: number;
   photoUrl?: string;
   fromTarget: string;
   fromSectionId?: string;
@@ -220,8 +222,8 @@ export function isPhotoFromQuestion(responseId?: string | null): boolean {
 
 // ── Mobile Touch Drag Support ──
 export interface TouchDragHandlers {
-  onDropToQuestion: (photoId: string, questionId: string, sectionId?: string) => Promise<void> | void;
-  onDropToSection?: (photoId: string, sectionId: string) => Promise<void> | void;
+  onDropToQuestion: (photoId: string, questionId: string, sectionId?: string, photoIds?: string[]) => Promise<void> | void;
+  onDropToSection?: (photoId: string, sectionId: string, photoIds?: string[]) => Promise<void> | void;
   onSameQuestionAttempt?: () => void;
   onSameSectionAttempt?: () => void;
   onReleaseWithoutDrag?: () => void;
@@ -233,6 +235,10 @@ let currentHoveredSectionCard: HTMLElement | null = null;
 
 function updateHoveredTargets(clientX: number, clientY: number) {
   if (!activeDraggedPhoto) return;
+
+  const count = (activeDraggedPhoto.photoIds && activeDraggedPhoto.photoIds.length > 1)
+    ? activeDraggedPhoto.photoIds.length
+    : 1;
 
   const elUnder = document.elementFromPoint(clientX, clientY);
   const card = elUnder?.closest('[data-question-card-id]') as HTMLElement | null;
@@ -259,7 +265,7 @@ function updateHoveredTargets(clientX: number, clientY: number) {
         if (activeGhostElement) {
           activeGhostElement.classList.remove('same-question');
           const b = activeGhostElement.querySelector('.touch-drag-ghost-badge');
-          if (b) b.textContent = 'Drop here';
+          if (b) b.textContent = count > 1 ? `Assign ${count} Photos` : 'Drop here';
         }
       }
     }
@@ -287,7 +293,7 @@ function updateHoveredTargets(clientX: number, clientY: number) {
         if (activeGhostElement) {
           activeGhostElement.classList.remove('same-question');
           const b = activeGhostElement.querySelector('.touch-drag-ghost-badge');
-          if (b) b.textContent = 'To Section';
+          if (b) b.textContent = count > 1 ? `To Section (${count})` : 'To Section';
         }
       }
     }
@@ -296,7 +302,11 @@ function updateHoveredTargets(clientX: number, clientY: number) {
   if (!currentHoveredCard && !currentHoveredSectionCard && activeGhostElement) {
     activeGhostElement.classList.remove('same-question');
     const b = activeGhostElement.querySelector('.touch-drag-ghost-badge');
-    if (b) b.textContent = activeDraggedPhoto.isDefect ? 'Defect' : 'Photo';
+    if (b) {
+      b.textContent = count > 1
+        ? `${count} Photos`
+        : (activeDraggedPhoto.isDefect ? 'Defect' : 'Photo');
+    }
   }
 }
 
@@ -318,6 +328,8 @@ export function startTouchPhotoDrag(
     sourceElement.classList.add('is-held-drag');
   }
 
+  const count = (info.photoIds && info.photoIds.length > 1) ? info.photoIds.length : 1;
+
   // Create floating ghost element
   const ghost = document.createElement('div');
   ghost.className = `touch-drag-ghost${info.isDefect ? ' is-defect' : ''}`;
@@ -338,7 +350,7 @@ export function startTouchPhotoDrag(
 
   const badge = document.createElement('div');
   badge.className = 'touch-drag-ghost-badge';
-  badge.innerText = info.isDefect ? 'Defect' : 'Photo';
+  badge.innerText = count > 1 ? `${count} Photos` : (info.isDefect ? 'Defect' : 'Photo');
   ghost.appendChild(badge);
 
   document.body.appendChild(ghost);
@@ -430,8 +442,9 @@ export function startTouchPhotoDrag(
           if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
         } catch {}
         try {
-          await handlers.onDropToQuestion(info.photoId, qId, info.fromSectionId);
-          showDragNotification('Photo assigned to question', 'success');
+          await handlers.onDropToQuestion(info.photoId, qId, info.fromSectionId, info.photoIds);
+          const c = info.photoIds?.length || 1;
+          showDragNotification(c > 1 ? `${c} photos assigned to question` : 'Photo assigned to question', 'success');
         } catch (err) {
           console.error('Failed to drop photo via touch drag', err);
         }
@@ -457,8 +470,9 @@ export function startTouchPhotoDrag(
           if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
         } catch {}
         try {
-          await handlers.onDropToSection(info.photoId, targetSecId);
-          showDragNotification('Photo moved to section photos', 'success');
+          await handlers.onDropToSection(info.photoId, targetSecId, info.photoIds);
+          const c = info.photoIds?.length || 1;
+          showDragNotification(c > 1 ? `${c} photos moved to section photos` : 'Photo moved to section photos', 'success');
         } catch (err) {
           console.error('Failed to drop photo to section via touch drag', err);
         }

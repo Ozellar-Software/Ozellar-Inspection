@@ -31,6 +31,11 @@ export interface ReportStats {
   pending: number;
   photoCount: number;
   extraFindings: number;
+  photoSectionCount?: number;
+  defectPhotoCount?: number;
+  photoSectionPhotosCount?: number;
+  photoSectionDefectCount?: number;
+  photoSectionExtraFindings?: number;
 }
 
 export interface Observation {
@@ -73,7 +78,28 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
     else if (p.target === 'section' && p.inspectionSectionId) (photosBySection.get(p.inspectionSectionId) ?? photosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
   }
 
-  const stats: ReportStats = { totalQuestions: 0, satisfactory: 0, observations: 0, na: 0, pending: 0, photoCount: photos.length, extraFindings: findings.length };
+  const defectPhotoCount = photos.filter((p) => p.isDefect).length;
+  const photoSectionIdSet = new Set(allSections.filter((s) => s.photoOnly).map((s) => s.id));
+  const photoSectionCount = photoSectionIdSet.size;
+  const photoSectionPhotos = photos.filter((p) => p.inspectionSectionId && photoSectionIdSet.has(p.inspectionSectionId));
+  const photoSectionPhotosCount = photoSectionPhotos.length;
+  const photoSectionDefectCount = photoSectionPhotos.filter((p) => p.isDefect).length;
+  const photoSectionExtraFindings = findings.filter((f) => photoSectionIdSet.has(f.inspectionSectionId)).length;
+
+  const stats: ReportStats = {
+    totalQuestions: 0,
+    satisfactory: 0,
+    observations: 0,
+    na: 0,
+    pending: 0,
+    photoCount: photos.length,
+    extraFindings: findings.length,
+    photoSectionCount,
+    defectPhotoCount,
+    photoSectionPhotosCount,
+    photoSectionDefectCount,
+    photoSectionExtraFindings,
+  };
   const observations: Observation[] = [];
   const sections: SectionReport[] = [];
 

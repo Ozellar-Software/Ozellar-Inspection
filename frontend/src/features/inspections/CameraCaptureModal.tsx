@@ -6,6 +6,8 @@ import {
   WarningIcon,
   TrashIcon,
 } from '../../icons';
+import { db } from '../../offline/db';
+import { localWrite, localDelete } from '../../offline/outbox';
 import './CameraCaptureModal.css';
 
 export interface CapturedPhoto {
@@ -18,7 +20,7 @@ export interface CapturedPhoto {
 export interface CameraCaptureModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSavePhotos: (photos: { file: File; isDefect: boolean }[]) => Promise<void>;
+  onSavePhotos: (photos: { file: File; isDefect: boolean }[]) => Promise<string[] | void>;
   title?: string;
 }
 
@@ -181,7 +183,7 @@ export function CameraCaptureModal({
 
   if (!isOpen) return null;
 
-  // Snap photo from active video stream using selected captureMode (Normal or Defect)
+  // Snap photo from active video stream using selected captureMode (Normal or Defect) - stored immediately!
   const handleSnap = () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
@@ -204,51 +206,89 @@ export function CameraCaptureModal({
     const isDefectPhoto = captureMode === 'defect';
 
     canvas.toBlob(
-      (blob) => {
+      async (blob) => {
         if (!blob) return;
-        const photoId = crypto.randomUUID();
         const file = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
-        const newPhoto: CapturedPhoto = {
-          id: photoId,
-          file,
-          previewUrl: URL.createObjectURL(blob),
-          isDefect: isDefectPhoto,
-        };
-        setCapturedPhotos((prev) => [...prev, newPhoto]);
+        const previewUrl = URL.createObjectURL(blob);
+
+        // Store photo immediately!
+        setIsSaving(true);
+        try {
+          const ids = await onSavePhotos([{ file, isDefect: isDefectPhoto }]);
+          const photoId = (ids && ids[0]) || crypto.randomUUID();
+          const newPhoto: CapturedPhoto = {
+            id: photoId,
+            file,
+            previewUrl: URL.createObjectURL(blob),
+            isDefect: isDefectPhoto,
+          };
+          setCapturedPhotos((prev) => [...prev, newPhoto]);
+        } catch (err: any) {
+          console.error('Failed to store captured photo:', err);
+          alert(`Failed to save photo: ${err.message || 'Unknown error'}`);
+        } finally {
+          setIsSaving(false);
+        }
       },
       'image/jpeg',
       0.92
     );
   };
 
-  // Add photos from native file input (fallback or mobile)
-  const handleFallbackFiles = (files: FileList | null) => {
+  // Add photos from native file input (fallback or mobile) - stored immediately!
+  const handleFallbackFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     const list = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (!list.length) return;
     const isDefectPhoto = captureMode === 'defect';
-    const newPhotos: CapturedPhoto[] = list.map((file) => ({
-      id: crypto.randomUUID(),
-      file,
-      previewUrl: URL.createObjectURL(file),
-      isDefect: isDefectPhoto,
-    }));
-    setCapturedPhotos((prev) => [...prev, ...newPhotos]);
+    setIsSaving(true);
+    try {
+      const ids = await onSavePhotos(list.map((file) => ({ file, isDefect: isDefectPhoto })));
+      const newPhotos: CapturedPhoto[] = list.map((file, idx) => ({
+        id: (ids && ids[idx]) || crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+        isDefect: isDefectPhoto,
+      }));
+      setCapturedPhotos((prev) => [...prev, ...newPhotos]);
+    } catch (err: any) {
+      console.error('Failed to store fallback captured photos:', err);
+      alert(`Failed to save photos: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  // Toggle defect on captured photo
-  const toggleDefect = (id: string) => {
+  // Toggle defect on captured photo (updates DB directly)
+  const toggleDefect = async (id: string) => {
+    const target = capturedPhotos.find((p) => p.id === id);
+    if (!target) return;
+    const nextDefect = !target.isDefect;
     setCapturedPhotos((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, isDefect: !p.isDefect } : p))
+      prev.map((p) => (p.id === id ? { ...p, isDefect: nextDefect } : p))
     );
+    try {
+      const existing = await db.photos.get(id);
+      if (existing) {
+        await localWrite('photos', id, { ...existing, isDefect: nextDefect });
+      }
+    } catch (err) {
+      console.error('Failed to update photo defect status:', err);
+    }
   };
 
-  // Remove photo from filmstrip
-  const removePhoto = (id: string) => {
+  // Remove photo from filmstrip & delete from DB
+  const removePhoto = async (id: string) => {
     setCapturedPhotos((prev) => {
       const target = prev.find((p) => p.id === id);
       if (target) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((p) => p.id !== id);
     });
+    try {
+      await localDelete('photos', id);
+    } catch (err) {
+      console.error('Failed to delete photo:', err);
+    }
   };
 
   // Switch camera between front and back
@@ -256,25 +296,6 @@ export function CameraCaptureModal({
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
     startCamera(nextMode);
-  };
-
-  // Save all captured photos
-  const handleSave = async () => {
-    if (capturedPhotos.length === 0 || isSaving) return;
-    setIsSaving(true);
-    try {
-      await onSavePhotos(
-        capturedPhotos.map((p) => ({ file: p.file, isDefect: p.isDefect }))
-      );
-      stopStream();
-      capturedPhotos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
-      setCapturedPhotos([]);
-      onClose();
-    } catch (err: any) {
-      alert(`Failed to save photos: ${err.message || 'Unknown error'}`);
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   const defectCount = capturedPhotos.filter((p) => p.isDefect).length;
@@ -411,7 +432,7 @@ export function CameraCaptureModal({
               </div>
 
               <span className="ccm-shutter-hint">
-                Mode: <b className={captureMode === 'defect' ? 'ccm-hint-defect' : 'ccm-hint-normal'}>{captureMode.toUpperCase()}</b> • Tap shutter to snap
+                Mode: <b className={captureMode === 'defect' ? 'ccm-hint-defect' : 'ccm-hint-normal'}>{captureMode.toUpperCase()}</b> • Tap shutter to snap & store image directly
               </span>
             </div>
           )}
@@ -422,7 +443,7 @@ export function CameraCaptureModal({
           <div className="ccm-filmstrip-section">
             <div className="ccm-filmstrip-header">
               <span className="ccm-filmstrip-title">
-                Captured ({capturedPhotos.length})
+                Captured & Stored ({capturedPhotos.length})
               </span>
               <span className="ccm-filmstrip-summary">
                 {defectCount > 0 ? (
@@ -475,30 +496,6 @@ export function CameraCaptureModal({
             </div>
           </div>
         )}
-
-        {/* ── Modal Footer ── */}
-        <div className="ccm-footer">
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={handleClose}
-            disabled={isSaving}
-          >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={capturedPhotos.length === 0 || isSaving}
-            style={{ minWidth: 160 }}
-          >
-            {isSaving
-              ? 'Saving Photos...'
-              : `Save & Add ${capturedPhotos.length} Photo${capturedPhotos.length === 1 ? '' : 's'}`}
-          </button>
-        </div>
       </div>
     </div>
   );

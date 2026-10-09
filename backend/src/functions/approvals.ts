@@ -37,7 +37,7 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
     if (!insp) throw fail('NOT_FOUND', 'Inspection not found');
     if (!canSeeVessel(actor, insp.vessel_id)) throw fail('FORBIDDEN', 'Not your vessel');
 
-    if (cmd.type === 'submit') {
+    if (cmd.type === 'submit' && !cmd.photoOnly) {
       const pendingRes = await c.query(
         `select count(*) as count
            from inspection_questions iq
@@ -137,7 +137,7 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
   return { status: r.status, approval: r.approval };
 }
 
-export const approvalSubmitHandler = handler((req) => run(req, (b) => ({ type: 'submit', approverId: b.approverId, comment: b.comment }), 'approverId'));
+export const approvalSubmitHandler = handler((req) => run(req, (b) => ({ type: 'submit', approverId: b.approverId, comment: b.comment, photoOnly: !!b.photoOnly }), 'approverId'));
 app.http('approval-submit', {
   route: 'inspections/{id}/submit', methods: ['POST', 'OPTIONS'], authLevel: 'anonymous',
   handler: approvalSubmitHandler,

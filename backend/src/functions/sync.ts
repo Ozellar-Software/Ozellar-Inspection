@@ -270,8 +270,8 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
       throw fail(insp.status === 'in_progress' || insp.status === 'returned' ? 'FORBIDDEN' : 'LOCKED',
         insp.status === 'approved' ? 'This inspection has already been approved — changes are locked' : 'This inspection is waiting for approval');
     }
-    if (m.entity === 'inspectionSections' && d.isCustom === true && !can(user, 'inspection.addSection'))
-      throw fail('FORBIDDEN', 'Only an Admin can add sections');
+    if (m.entity === 'inspectionSections' && d.isCustom === true && !can(user, 'inspection.addSection', { inspection: insp }))
+      throw fail('FORBIDDEN', 'You do not have permission to add sections');
   }
 
   // --- delete ---
