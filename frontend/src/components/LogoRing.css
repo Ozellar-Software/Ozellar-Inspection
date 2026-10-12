@@ -1,0 +1,64 @@
+/* Brand container */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  letter-spacing: -0.015em;
+  text-decoration: none;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+}
+
+/* Ring icon wrapper box */
+.logo-ring {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border: 1px solid rgba(241, 89, 42, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(241, 89, 42, 0.12), 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Hover lift & glow effect */
+.brand:hover .logo-ring {
+  transform: scale(1.06) translateY(-2px);
+  box-shadow: 0 12px 28px rgba(241, 89, 42, 0.22), 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: rgba(241, 89, 42, 0.3);
+}
+
+/* Typography */
+.brand-text {
+  font-weight: 800;
+  color: #123c3a;
+  display: inline-flex;
+  align-items: center;
+}
+
+.brand-light {
+  font-weight: 400;
+  color: #64748b;
+  margin-left: 2px;
+}
+
+/* Dark Mode support (optional) */
+@media (prefers-color-scheme: dark) {
+  .logo-ring {
+    background: #18181b;
+    border-color: rgba(241, 89, 42, 0.25);
+    box-shadow: 0 8px 24px rgba(241, 89, 42, 0.18), 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+  .brand:hover .logo-ring {
+    box-shadow: 0 12px 28px rgba(241, 89, 42, 0.3), 0 4px 12px rgba(0, 0, 0, 0.6);
+  }
+  .brand-text {
+    color: #fafafa;
+  }
+  .brand-light {
+    color: #a1a1aa;
+  }
+}

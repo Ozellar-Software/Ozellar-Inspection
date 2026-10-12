@@ -52,6 +52,7 @@ export function PhotoStrip({
   title,
   allSections,
   availableQuestions,
+  showDownloadRow,
 }: {
   photos: SyncedPhoto[];
   target: PhotoTarget;
@@ -63,6 +64,7 @@ export function PhotoStrip({
   title?: string;
   allSections?: InspectionSection[];
   availableQuestions?: QuestionSummary[];
+  showDownloadRow?: boolean;
 }) {
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [assignModalPhoto, setAssignModalPhoto] = useState<SyncedPhoto | null>(null);
@@ -70,6 +72,9 @@ export function PhotoStrip({
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   const [tooltipTarget, setTooltipTarget] = useState<{ photo: SyncedPhoto; anchorEl: HTMLElement } | null>(null);
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+
+  const shouldShowDownloadRow = showDownloadRow ?? (target === 'section');
 
   // Gesture refs for single-click (lightbox) vs double-click & long-press (tooltip options)
   const clickTimeoutRef = useRef<number | null>(null);
@@ -550,10 +555,13 @@ export function PhotoStrip({
     }
   };
 
-  // Batch download helper directly from strip
-  const handleBatchDownload = async (filter: 'all' | 'defect') => {
+  // Batch download helper directly from strip (downloads into normal and defect folders)
+  const handleBatchDownload = async (filter: 'all' | 'defect' = 'all') => {
+    if (isDownloadingZip || activePhotos.length === 0) return;
     try {
-      const zipName = `${title || 'photos'}_${filter === 'defect' ? 'defects' : 'all'}`;
+      setIsDownloadingZip(true);
+      const safeTitle = (title || 'section_photos').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+      const zipName = `${safeTitle}_photos`;
       await downloadPhotosAsZip(activePhotos, {
         zipFilename: zipName,
         filter,
@@ -561,6 +569,8 @@ export function PhotoStrip({
       });
     } catch (err: any) {
       alert(err.message || 'Failed to download zip');
+    } finally {
+      setIsDownloadingZip(false);
     }
   };
 
@@ -767,28 +777,32 @@ export function PhotoStrip({
                 View
               </button>
 
-              <button
-                type="button"
-                className="photostrip-btn-link"
-                onClick={(e) => { e.stopPropagation(); handleBatchDownload('all'); }}
-                onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('all'); }}
-                title="Download all photos as ZIP"
-              >
-                <DownloadIcon style={{ width: 13, height: 13 }} />
-                All ({activePhotos.length})
-              </button>
+              {!shouldShowDownloadRow && (
+                <>
+                  <button
+                    type="button"
+                    className="photostrip-btn-link"
+                    onClick={(e) => { e.stopPropagation(); handleBatchDownload('all'); }}
+                    onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('all'); }}
+                    title="Download all photos as ZIP"
+                  >
+                    <DownloadIcon style={{ width: 13, height: 13 }} />
+                    All ({activePhotos.length})
+                  </button>
 
-              {defectCount > 0 && (
-                <button
-                  type="button"
-                  className="photostrip-btn-link defect-btn"
-                  onClick={(e) => { e.stopPropagation(); handleBatchDownload('defect'); }}
-                  onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('defect'); }}
-                  title="Download defect photos as ZIP"
-                >
-                  <WarningIcon style={{ width: 13, height: 13 }} />
-                  Defect ({defectCount})
-                </button>
+                  {defectCount > 0 && (
+                    <button
+                      type="button"
+                      className="photostrip-btn-link defect-btn"
+                      onClick={(e) => { e.stopPropagation(); handleBatchDownload('defect'); }}
+                      onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); handleBatchDownload('defect'); }}
+                      title="Download defect photos as ZIP"
+                    >
+                      <WarningIcon style={{ width: 13, height: 13 }} />
+                      Defect ({defectCount})
+                    </button>
+                  )}
+                </>
               )}
 
               {!locked && (
@@ -999,6 +1013,34 @@ export function PhotoStrip({
           >
             <UploadIcon />
             Upload photos
+          </button>
+        </div>
+      )}
+
+      {/* ── Full-Row Download ZIP Button below Take & Upload photo row ── */}
+      {shouldShowDownloadRow && activePhotos.length > 0 && (
+        <div className="photostrip-download-row">
+          <button
+            type="button"
+            className="photostrip-download-all-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleBatchDownload('all');
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              void handleBatchDownload('all');
+            }}
+            disabled={isDownloadingZip}
+            title="Download all photos as ZIP (organized into normal and defect folders)"
+          >
+            <DownloadIcon style={{ width: 16, height: 16 }} />
+            <span>
+              {isDownloadingZip
+                ? 'Preparing ZIP (normal & defect folders)…'
+                : `Download All Photos (${activePhotos.length})`}
+            </span>
           </button>
         </div>
       )}

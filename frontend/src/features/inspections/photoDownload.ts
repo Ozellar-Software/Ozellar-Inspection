@@ -36,8 +36,11 @@ export async function downloadSinglePhoto(
   }
   const blob = await res.blob();
   const safePrefix = sanitizeFilename(prefix);
-  const tag = photo.isDefect ? 'DEFECT' : 'NORMAL';
-  const filename = `${safePrefix}_${tag}_${photo.id.slice(0, 8)}.jpg`;
+  const tag = photo.isDefect ? 'defect' : 'normal';
+  let ext = 'jpg';
+  if (blob.type === 'image/png') ext = 'png';
+  else if (blob.type === 'image/webp') ext = 'webp';
+  const filename = `${tag}_${safePrefix}_${photo.id.slice(0, 8)}.${ext}`;
 
   downloadBlob(blob, filename);
 }
@@ -152,7 +155,7 @@ async function resolvePhotosContext(
   return result;
 }
 
-/** Batch downloads photos as a .zip archive, organized into folders by section. */
+/** Batch downloads photos as a .zip archive, organized into 2 folders: normal and defect, with filenames starting with defect or normal. */
 export async function downloadPhotosAsZip(
   photos: PhotoItem[],
   options: ZipDownloadOptions
@@ -181,26 +184,53 @@ export async function downloadPhotosAsZip(
   let completed = 0;
   let successCount = 0;
 
+  // Explicitly create normal and defect folders in zip archive
+  zip.folder('normal');
+  zip.folder('defect');
+
+  // Pre-calculate sequential numbering within normal and defect folders
+  const normalPhotos = targetPhotos.filter((p) => !p.isDefect);
+  const defectPhotos = targetPhotos.filter((p) => !!p.isDefect);
+  const photoIndexMap = new Map<string, { folder: 'normal' | 'defect'; indexStr: string }>();
+
+  normalPhotos.forEach((p, idx) => {
+    photoIndexMap.set(p.id, {
+      folder: 'normal',
+      indexStr: String(idx + 1).padStart(3, '0'),
+    });
+  });
+
+  defectPhotos.forEach((p, idx) => {
+    photoIndexMap.set(p.id, {
+      folder: 'defect',
+      indexStr: String(idx + 1).padStart(3, '0'),
+    });
+  });
+
   // Process downloads in concurrent batches of 4
   const BATCH_SIZE = 4;
   for (let i = 0; i < targetPhotos.length; i += BATCH_SIZE) {
     const batch = targetPhotos.slice(i, i + BATCH_SIZE);
     await Promise.all(
-      batch.map(async (photo, bIdx) => {
-        const globalIdx = i + bIdx + 1;
-        const indexStr = String(globalIdx).padStart(3, '0');
-        const tag = photo.isDefect ? 'DEFECT' : 'NORMAL';
+      batch.map(async (photo) => {
+        const info = photoIndexMap.get(photo.id) || {
+          folder: (photo.isDefect ? 'defect' : 'normal') as 'normal' | 'defect',
+          indexStr: '001',
+        };
+        const folder = info.folder;
+        const prefix = info.folder; // 'normal' or 'defect'
+        const indexStr = info.indexStr;
 
         const meta = contextMap.get(photo.id) || {
           sectionName: options.defaultSectionName || 'General',
           itemLabel: 'photo',
         };
 
-        const safeFolder = sanitizeFilename(meta.sectionName);
-        const safeLabel = sanitizeFilename(meta.itemLabel);
-
-        // Organized by section folder inside ZIP: [Section_Name]/[Index]_[Label]_[TAG]_[id].jpg
-        const fileName = `${safeFolder}/${indexStr}_${safeLabel}_${tag}_${photo.id.slice(0, 8)}.jpg`;
+        const safeSection = sanitizeFilename(meta.sectionName);
+        const safeLabel = sanitizeFilename(meta.itemLabel || 'photo');
+        const labelPart = safeSection && safeSection !== 'General' && safeSection !== safeLabel
+          ? `${safeSection}_${safeLabel}`
+          : safeLabel;
 
         try {
           const u = urlMap[photo.id] || (await photoSrc(photo.id));
@@ -208,6 +238,13 @@ export async function downloadPhotosAsZip(
             const resp = await fetch(u);
             if (resp.ok) {
               const blob = await resp.blob();
+              let ext = 'jpg';
+              if (blob.type === 'image/png') ext = 'png';
+              else if (blob.type === 'image/webp') ext = 'webp';
+
+              // Name starts with defect or normal and placed in corresponding folder:
+              // e.g. normal/normal_001_Section_Photo_abc12345.jpg or defect/defect_001_Section_Photo_abc12345.jpg
+              const fileName = `${folder}/${prefix}_${indexStr}_${labelPart}_${photo.id.slice(0, 8)}.${ext}`;
               zip.file(fileName, blob);
               successCount++;
             }
@@ -219,7 +256,7 @@ export async function downloadPhotosAsZip(
           options.onProgress?.(
             completed,
             total,
-            `Downloading photo ${completed} of ${total} (${safeFolder})...`
+            `Downloading photo ${completed} of ${total} (${folder})...`
           );
         }
       })
@@ -230,7 +267,7 @@ export async function downloadPhotosAsZip(
     throw new Error('Unable to retrieve any photo files. Please ensure you are online.');
   }
 
-  options.onProgress?.(total, total, 'Compiling ZIP archive with section folders...');
+  options.onProgress?.(total, total, 'Compiling ZIP archive with normal and defect folders...');
   const zipBlob = await zip.generateAsync({
     type: 'blob',
     compression: 'DEFLATE',

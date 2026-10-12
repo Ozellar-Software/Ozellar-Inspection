@@ -7,7 +7,19 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',               // shows "New version available — tap to update"
-      includeAssets: ['favicon.svg', 'favicon.ico', 'icon-128.png', 'icon-192.png', 'icon-512.png'],
+      includeAssets: [
+        'favicon.svg',
+        'favicon.ico',
+        'icon-16.png',
+        'icon-32.png',
+        'icon-48.png',
+        'icon-128.png',
+        'icon-192.png',
+        'icon-512.png',
+        'apple-touch-icon.png',
+        'icon-maskable-192.png',
+        'icon-maskable-512.png',
+      ],
       manifest: {
         name: 'Ozellar Vessel Inspection',
         short_name: 'Ozellar',
@@ -18,8 +30,11 @@ export default defineConfig({
         background_color: '#F4F6F7',
         theme_color: '#0B2138',
         icons: [
-          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'apple-touch-icon.png', sizes: '180x180', type: 'image/png', purpose: 'any' },
         ],
       },
       workbox: {
