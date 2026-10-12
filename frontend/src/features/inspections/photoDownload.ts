@@ -188,9 +188,12 @@ export async function downloadPhotosAsZip(
   let completed = 0;
   let successCount = 0;
 
-  // Explicitly create normal and defect folders in zip archive
-  zip.folder('normal');
-  zip.folder('defect');
+  // Only organize into separate subfolders if downloading all photos together
+  const isMultiFolder = !options.filter || options.filter === 'all';
+  if (isMultiFolder) {
+    zip.folder('normal');
+    zip.folder('defect');
+  }
 
   // Pre-calculate sequential numbering within normal and defect folders
   const normalPhotos = targetPhotos.filter((p) => !p.isDefect);
@@ -246,9 +249,11 @@ export async function downloadPhotosAsZip(
               if (blob.type === 'image/png') ext = 'png';
               else if (blob.type === 'image/webp') ext = 'webp';
 
-              // Name starts with defect or normal and placed in corresponding folder:
-              // e.g. normal/normal_001_Section_Photo_abc12345.jpg or defect/defect_001_Section_Photo_abc12345.jpg
-              const fileName = `${folder}/${prefix}_${indexStr}_${labelPart}_${photo.id.slice(0, 8)}.${ext}`;
+              // If normal or defect photo only: directly in zip root (no subfolder).
+              // If all photos: organized into normal/ and defect/ folders.
+              // In all cases, filename starts with defect or normal.
+              const fileBaseName = `${prefix}_${indexStr}_${labelPart}_${photo.id.slice(0, 8)}.${ext}`;
+              const fileName = isMultiFolder ? `${folder}/${fileBaseName}` : fileBaseName;
               zip.file(fileName, blob);
               successCount++;
             }
