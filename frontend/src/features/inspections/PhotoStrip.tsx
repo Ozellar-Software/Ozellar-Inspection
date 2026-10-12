@@ -24,6 +24,7 @@ import { CameraCaptureModal } from './CameraCaptureModal';
 import { AssignPhotoModal } from './AssignPhotoModal';
 import { PhotoTooltipMenu } from './PhotoTooltipMenu';
 import { MovePhotoModal } from './MovePhotoModal';
+import { PhotoDownloadModal, type DownloadFilterOption } from './PhotoDownloadModal';
 import { downloadPhotosAsZip } from './photoDownload';
 import { startPhotoDrag, endPhotoDrag, startTouchPhotoDrag, showDragNotification } from './photoDragService';
 import './PhotoStrip.css';
@@ -73,6 +74,7 @@ export function PhotoStrip({
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   const [tooltipTarget, setTooltipTarget] = useState<{ photo: SyncedPhoto; anchorEl: HTMLElement } | null>(null);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
 
   const shouldShowDownloadRow = showDownloadRow ?? (target === 'section');
 
@@ -556,12 +558,13 @@ export function PhotoStrip({
   };
 
   // Batch download helper directly from strip (downloads into normal and defect folders)
-  const handleBatchDownload = async (filter: 'all' | 'defect' = 'all') => {
+  const handleBatchDownload = async (filter: DownloadFilterOption = 'all') => {
     if (isDownloadingZip || activePhotos.length === 0) return;
     try {
       setIsDownloadingZip(true);
       const safeTitle = (title || 'section_photos').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
-      const zipName = `${safeTitle}_photos`;
+      const suffix = filter === 'defect' ? 'defect' : filter === 'normal' ? 'normal' : 'all';
+      const zipName = `${safeTitle}_${suffix}_photos`;
       await downloadPhotosAsZip(activePhotos, {
         zipFilename: zipName,
         filter,
@@ -1025,24 +1028,41 @@ export function PhotoStrip({
             className="photostrip-download-all-btn"
             onClick={(e) => {
               e.stopPropagation();
-              void handleBatchDownload('all');
+              if (!isDownloadingZip) setIsDownloadModalOpen(true);
             }}
             onTouchEnd={(e) => {
               e.stopPropagation();
               e.preventDefault();
-              void handleBatchDownload('all');
+              if (!isDownloadingZip) setIsDownloadModalOpen(true);
             }}
             disabled={isDownloadingZip}
-            title="Download all photos as ZIP (organized into normal and defect folders)"
+            title="Download photos as ZIP (choose Defect, Normal, or All)"
           >
             <DownloadIcon style={{ width: 16, height: 16 }} />
             <span>
               {isDownloadingZip
-                ? 'Preparing ZIP (normal & defect folders)…'
-                : `Download All Photos (${activePhotos.length})`}
+                ? 'Preparing ZIP archive…'
+                : `Download Photos (${activePhotos.length})`}
             </span>
           </button>
         </div>
+      )}
+
+      {/* ── Photo Download Options Modal (Defect, Normal, All) ── */}
+      {isDownloadModalOpen && (
+        <PhotoDownloadModal
+          isOpen={isDownloadModalOpen}
+          totalCount={activePhotos.length}
+          defectCount={defectCount}
+          normalCount={activePhotos.length - defectCount}
+          sectionTitle={title}
+          isDownloading={isDownloadingZip}
+          onSelect={(option) => {
+            setIsDownloadModalOpen(false);
+            void handleBatchDownload(option);
+          }}
+          onClose={() => setIsDownloadModalOpen(false)}
+        />
       )}
 
       {/* ── Fullscreen Lightbox / Image Viewer Modal ── */}

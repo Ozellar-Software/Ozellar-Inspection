@@ -1,0 +1,467 @@
+/* ── Photo Download Options Modal ── */
+
+.pdm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: pdmFadeIn 0.2s ease-out;
+}
+
+@keyframes pdmFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.pdm-dialog {
+  background: #ffffff;
+  width: 100%;
+  max-width: 480px;
+  border-radius: 16px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25), 0 4px 12px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  overflow: hidden;
+  animation: pdmSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes pdmSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Mobile pull drag indicator (hidden on desktop) */
+.pdm-drag-handle-wrap {
+  display: none;
+  width: 100%;
+  justify-content: center;
+  padding: 10px 0 2px;
+  background: #f8fafc;
+}
+
+.pdm-drag-handle {
+  width: 38px;
+  height: 4px;
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+/* Header */
+.pdm-header {
+  padding: 20px 22px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid #f1f5f9;
+  background: #f8fafc;
+  gap: 12px;
+}
+
+.pdm-title {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+}
+
+.pdm-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.pdm-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  margin-top: -2px;
+  margin-right: -4px;
+  flex-shrink: 0;
+}
+
+.pdm-close-btn:hover:not(:disabled) {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.pdm-close-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Options List */
+.pdm-options-list {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pdm-option-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s ease;
+  width: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pdm-option-card:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.pdm-option-card:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.pdm-option-card:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  background: #f8fafc;
+  border-color: #f1f5f9;
+}
+
+/* 1. All Option Styling (First) */
+.pdm-option-all {
+  border-color: #cbd5e1;
+}
+
+.pdm-option-all:hover:not(:disabled) {
+  border-color: #0d9488;
+  background: #f0fdfa;
+}
+
+.pdm-icon-all {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+/* 2. Defect Option Styling */
+.pdm-option-defect:hover:not(:disabled) {
+  border-color: #f87171;
+  background: #fef2f2;
+}
+
+.pdm-icon-defect {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* 3. Normal Option Styling */
+.pdm-option-normal:hover:not(:disabled) {
+  border-color: #34d399;
+  background: #f0fdf4;
+}
+
+.pdm-icon-normal {
+  background: #dcfce7;
+  color: #059669;
+}
+
+/* Option Icon */
+.pdm-option-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.pdm-option-card:hover:not(:disabled) .pdm-option-icon {
+  transform: scale(1.05);
+}
+
+/* Option Body */
+.pdm-option-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.pdm-option-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  gap: 8px;
+}
+
+.pdm-option-label {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.pdm-option-desc {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+/* Count Badges */
+.pdm-badge {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  letter-spacing: -0.2px;
+  flex-shrink: 0;
+}
+
+.pdm-badge-all {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.pdm-badge-defect {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pdm-badge-normal {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.pdm-badge-empty {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+/* Footer */
+.pdm-footer {
+  padding: 12px 20px 18px;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #f1f5f9;
+  background: #f8fafc;
+}
+
+.pdm-cancel-btn {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pdm-cancel-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.pdm-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Media Queries: Responsive Design for Tablet, Mobile, and Small Screens
+   ========================================================================== */
+
+/* ── Tablet & Medium Devices (<= 768px) ── */
+@media (max-width: 768px) {
+  .pdm-dialog {
+    max-width: 440px;
+  }
+
+  .pdm-title {
+    font-size: 16px;
+  }
+
+  .pdm-subtitle {
+    font-size: 12.5px;
+  }
+}
+
+/* ── Mobile Devices & Bottom-Sheet Behavior (<= 640px) ── */
+@media (max-width: 640px) {
+  .pdm-backdrop {
+    align-items: flex-end;
+    padding: 0;
+    background: rgba(15, 23, 42, 0.72);
+  }
+
+  .pdm-dialog {
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+    max-height: 92vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    animation: pdmSlideUpMobile 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.3);
+  }
+
+  @keyframes pdmSlideUpMobile {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Show mobile drag indicator */
+  .pdm-drag-handle-wrap {
+    display: flex;
+  }
+
+  .pdm-header {
+    padding: 12px 18px 12px;
+  }
+
+  .pdm-title {
+    font-size: 16px;
+  }
+
+  .pdm-subtitle {
+    font-size: 12px;
+  }
+
+  .pdm-options-list {
+    padding: 14px 16px;
+    gap: 10px;
+  }
+
+  .pdm-option-card {
+    padding: 12px 14px;
+    min-height: 52px;
+    border-radius: 12px;
+  }
+
+  .pdm-option-card:active:not(:disabled) {
+    transform: scale(0.985);
+    background: #f1f5f9;
+  }
+
+  .pdm-option-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .pdm-option-label {
+    font-size: 14px;
+  }
+
+  .pdm-option-desc {
+    font-size: 11.5px;
+  }
+
+  .pdm-badge {
+    font-size: 11px;
+    padding: 2px 7px;
+  }
+
+  .pdm-footer {
+    padding: 12px 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+  }
+
+  .pdm-cancel-btn {
+    width: 100%;
+    min-height: 44px;
+    font-size: 14px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .pdm-cancel-btn:active:not(:disabled) {
+    background: #e2e8f0;
+  }
+}
+
+/* ── Small Mobile Phones (<= 380px) ── */
+@media (max-width: 380px) {
+  .pdm-header {
+    padding: 10px 14px 10px;
+  }
+
+  .pdm-title {
+    font-size: 15px;
+  }
+
+  .pdm-subtitle {
+    font-size: 11.5px;
+  }
+
+  .pdm-options-list {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .pdm-option-card {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .pdm-option-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .pdm-option-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .pdm-option-label {
+    font-size: 13.5px;
+  }
+
+  .pdm-option-desc {
+    font-size: 11px;
+    line-height: 1.25;
+  }
+}
+
+/* ── Reduced Motion Preference ── */
+@media (prefers-reduced-motion: reduce) {
+  .pdm-backdrop,
+  .pdm-dialog {
+    animation: none !important;
+  }
+
+  .pdm-option-card {
+    transition: none !important;
+  }
+}

@@ -799,5 +799,28 @@
   flex-shrink: 0;
 }
 
+/* ── Responsive Media Queries for Full-Row Download Button ── */
+@media (max-width: 640px) {
+  .photostrip-download-row {
+    margin-top: 8px;
+  }
+
+  .photostrip-download-all-btn {
+    min-height: 44px;
+    font-size: 13px;
+    padding: 9px 12px;
+    border-radius: 9px;
+  }
+}
+
+@media (max-width: 380px) {
+  .photostrip-download-all-btn {
+    font-size: 12px;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+}
+
+
 
 

@@ -47,7 +47,7 @@ export async function downloadSinglePhoto(
 
 export interface ZipDownloadOptions {
   zipFilename: string;
-  filter?: 'all' | 'defect';
+  filter?: 'all' | 'defect' | 'normal';
   defaultSectionName?: string;
   onProgress?: (current: number, total: number, message: string) => void;
 }
@@ -162,12 +162,16 @@ export async function downloadPhotosAsZip(
 ): Promise<{ success: boolean; count: number }> {
   const targetPhotos = options.filter === 'defect'
     ? photos.filter((p) => !!p.isDefect)
+    : options.filter === 'normal'
+    ? photos.filter((p) => !p.isDefect)
     : photos;
 
   if (targetPhotos.length === 0) {
     throw new Error(
       options.filter === 'defect'
         ? 'No defect photos found to download.'
+        : options.filter === 'normal'
+        ? 'No normal photos found to download.'
         : 'No photos available to download.'
     );
   }
