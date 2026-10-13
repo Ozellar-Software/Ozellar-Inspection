@@ -45,19 +45,26 @@ export async function ensureSchema(): Promise<void> {
       let client: pg.PoolClient | null = null;
       try {
         client = await origConnect();
-        await client.query(`
-          create sequence if not exists sync_seq;
-          alter table if exists users add column if not exists password_hash text;
-          alter table if exists template_sections add column if not exists photo_only boolean not null default false;
-          alter table if exists template_sections add column if not exists vessel_types text[] not null default '{}'::text[];
-          alter table if exists inspection_sections add column if not exists photo_only boolean not null default false;
-          alter table if exists inspection_sections add column if not exists is_custom boolean not null default false;
-          alter table if exists inspection_sections add column if not exists vessel_types text[] not null default '{}'::text[];
-          alter table if exists approval_events add column if not exists row_version bigint not null default nextval('sync_seq');
-        `);
+        const statements = [
+          `create sequence if not exists sync_seq;`,
+          `alter table if exists users add column if not exists password_hash text;`,
+          `alter table if exists template_sections add column if not exists photo_only boolean not null default false;`,
+          `alter table if exists template_sections add column if not exists vessel_types text[] not null default '{}'::text[];`,
+          `alter table if exists inspection_sections add column if not exists photo_only boolean not null default false;`,
+          `alter table if exists inspection_sections add column if not exists is_custom boolean not null default false;`,
+          `alter table if exists inspection_sections add column if not exists vessel_types text[] not null default '{}'::text[];`,
+          `alter table if exists approval_events add column if not exists row_version bigint not null default nextval('sync_seq');`,
+        ];
+        for (const sql of statements) {
+          try {
+            await client.query(sql);
+          } catch (stmtErr) {
+            console.warn('[DB Auto-migration statement notice]:', sql.trim(), (stmtErr as Error)?.message);
+          }
+        }
         schemaEnsured = true;
       } catch (err) {
-        console.error('[DB] Schema auto-migration notice:', err);
+        console.error('[DB] Schema auto-migration connect notice:', err);
       } finally {
         if (client) client.release();
         schemaPromise = null;

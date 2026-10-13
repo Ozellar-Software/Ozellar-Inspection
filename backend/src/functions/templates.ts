@@ -126,7 +126,7 @@ export const templateSectionsApplyDefaultHandler = handler(async (req) => {
         }
         const nextTypes = [...curTypes, vesselType];
         const updSec = (await c.query(
-          `update template_sections set vessel_types = $2 where id = $1 returning *`,
+          `update template_sections set vessel_types = $2::text[] where id = $1 returning *`,
           [existing.id, nextTypes]
         )).rows[0];
         existing.vessel_types = nextTypes;
@@ -139,7 +139,7 @@ export const templateSectionsApplyDefaultHandler = handler(async (req) => {
 
       const insSec = (await c.query(
         `insert into template_sections (id, sr, zone, name, position, photo_only, vessel_types)
-         values (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+         values (gen_random_uuid(), $1, $2, $3, $4, $5, $6::text[])
          returning *`,
         [nextSr++, ds.zone ?? '', ds.name, nextPos++, !!ds.photo_only, [vesselType]]
       )).rows[0];
@@ -157,11 +157,12 @@ export const templateSectionsApplyDefaultHandler = handler(async (req) => {
         [ds.id]
       );
       for (const q of qsRes.rows) {
+        const qidVal = Number.isInteger(Number(q.qid)) ? Number(q.qid) : (q.position ?? 1);
         const insQ = (await c.query(
           `insert into template_questions (id, section_id, qid, ref, text, position)
            values (gen_random_uuid(), $1, $2, $3, $4, $5)
            returning *`,
-          [insSec.id, q.qid, q.ref ?? '', q.text, q.position]
+          [insSec.id, qidVal, q.ref ?? '', q.text, q.position]
         )).rows[0];
         createdQuestions.push(camel(insQ));
       }

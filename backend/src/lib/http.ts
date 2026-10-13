@@ -40,7 +40,8 @@ export function handler(
           ? mapDomainError(e as { code: string; message: string })
           : null;
       if (!err) ctx.error('Unhandled error', e);
-      const out = err ?? new HttpError(500, 'INTERNAL', 'Something went wrong');
+      const errorMsg = e instanceof Error ? e.message : String(e ?? 'Something went wrong');
+      const out = err ?? new HttpError(500, 'INTERNAL', errorMsg);
       return { status: out.status, jsonBody: { error: { code: out.code, message: out.message } }, headers: cors };
     } finally {
       ctx.log(`${req.method} ${new URL(req.url).pathname} ${Date.now() - started}ms`);
