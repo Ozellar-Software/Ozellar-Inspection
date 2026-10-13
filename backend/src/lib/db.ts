@@ -28,6 +28,59 @@ export const pool = new pg.Pool({
 
 export type Tx = pg.PoolClient;
 
+const origConnect = pool.connect.bind(pool);
+const origQuery = pool.query.bind(pool);
+
+let schemaEnsured = false;
+let schemaPromise: Promise<void> | null = null;
+
+/**
+ * Automatically applies non-destructive, idempotent column and sequence migrations
+ * so existing databases self-heal upon service startup without requiring manual psql intervention.
+ */
+export async function ensureSchema(): Promise<void> {
+  if (schemaEnsured) return;
+  if (!schemaPromise) {
+    schemaPromise = (async () => {
+      let client: pg.PoolClient | null = null;
+      try {
+        client = await origConnect();
+        await client.query(`
+          create sequence if not exists sync_seq;
+          alter table if exists users add column if not exists password_hash text;
+          alter table if exists template_sections add column if not exists photo_only boolean not null default false;
+          alter table if exists template_sections add column if not exists vessel_types text[] not null default '{}'::text[];
+          alter table if exists inspection_sections add column if not exists photo_only boolean not null default false;
+          alter table if exists inspection_sections add column if not exists is_custom boolean not null default false;
+          alter table if exists inspection_sections add column if not exists vessel_types text[] not null default '{}'::text[];
+          alter table if exists approval_events add column if not exists row_version bigint not null default nextval('sync_seq');
+        `);
+        schemaEnsured = true;
+      } catch (err) {
+        console.error('[DB] Schema auto-migration notice:', err);
+      } finally {
+        if (client) client.release();
+        schemaPromise = null;
+      }
+    })();
+  }
+  return schemaPromise;
+}
+
+// Hook connect and query so schema is verified before handling requests
+(pool as any).connect = async function (...args: any[]) {
+  await ensureSchema();
+  return (origConnect as any)(...args);
+};
+
+(pool as any).query = async function (...args: any[]) {
+  await ensureSchema();
+  return (origQuery as any)(...args);
+};
+
+// Kick off schema check in background on module load
+void ensureSchema().catch(() => {});
+
 /** Run fn inside a transaction. */
 export async function tx<T>(fn: (c: Tx) => Promise<T>): Promise<T> {
   const client = await pool.connect();

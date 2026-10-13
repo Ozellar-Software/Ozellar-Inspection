@@ -81,6 +81,7 @@ create table if not exists template_sections (
   updated_at  timestamptz not null default now(),
   row_version bigint not null default nextval('sync_seq')
 );
+alter table template_sections add column if not exists vessel_types text[] not null default '{}'::text[];
 create table if not exists template_questions (
   id          uuid primary key default gen_random_uuid(),
   section_id  uuid not null references template_sections(id) on delete cascade,
@@ -140,6 +141,7 @@ create table if not exists inspection_sections (
   deleted_at      timestamptz,
   row_version     bigint not null default nextval('sync_seq')
 );
+alter table inspection_sections add column if not exists vessel_types text[] not null default '{}'::text[];
 create index if not exists insp_sections_insp_idx on inspection_sections (inspection_id);
 
 create table if not exists inspection_questions (
