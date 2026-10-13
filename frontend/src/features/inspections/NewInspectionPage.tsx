@@ -38,7 +38,33 @@ export function NewInspectionPage() {
     }
   }, [me.data, nav]);
 
-  const vessels = useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [];
+  useQuery({
+    queryKey: ['remote-vessels-new-inspection'],
+    enabled: navigator.onLine,
+    queryFn: async () => {
+      try {
+        const remote = await api<any[]>('/vessels');
+        if (Array.isArray(remote) && remote.length > 0) {
+          const pendingVesselIds = new Set(
+            (await db.outbox.where('entity').equals('vessels').toArray()).map((m) => m.entityId),
+          );
+          const toPut = remote.filter((v) => !pendingVesselIds.has(v.id));
+          if (toPut.length > 0) {
+            await db.vessels.bulkPut(toPut as any);
+          }
+        }
+        return remote;
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 60_000,
+  });
+
+  const vessels = (useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [])
+    .filter((v) => !(v as any).deletedAt);
+  const templateSections = useLiveQuery(() => db.templateSections.orderBy('position').toArray(), []) ?? [];
+
   // TM and VM can only create inspections for their assigned vessels
   const displayVessels = (me.data?.role === 'admin' || me.data?.role === 'director' || !me.data)
     ? vessels
@@ -57,6 +83,19 @@ export function NewInspectionPage() {
   const [error, setError] = useState<string | null>(null);
 
   const vessel = displayVessels.find((v) => v.id === vesselId);
+
+  function getSectionCountForVesselType(vesselType?: string | null): number {
+    const vt = vesselType?.trim().toLowerCase() ?? '';
+    const matching = templateSections.filter((s) => {
+      if ((s as any).deletedAt) return false;
+      const types: string[] = Array.isArray((s as any).vesselTypes) ? (s as any).vesselTypes : [];
+      if (!vt) return types.length === 0;
+      return types.some((t) => t.trim().toLowerCase() === vt);
+    });
+    return new Set(matching.map((s) => `${String(s.name ?? '').trim().toLowerCase()}::${Boolean(s.photoOnly)}`)).size;
+  }
+
+  const selectedVesselSectionCount = vessel ? getSectionCountForVesselType(vessel.vesselType) : 0;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -107,6 +146,7 @@ export function NewInspectionPage() {
               <div className="ni-vessel-list">
                 {displayVessels.map((v) => {
                   const isSelected = vesselId === v.id;
+                  const secCount = getSectionCountForVesselType(v.vesselType);
                   return (
                     <button
                       key={v.id}
@@ -120,7 +160,7 @@ export function NewInspectionPage() {
                       <div className="ni-vessel-details">
                         <div className="ni-vessel-name">{v.name}</div>
                         <div className="ni-vessel-meta">
-                          {[v.imo && `IMO ${v.imo}`, v.vesselType].filter(Boolean).join(' · ')}
+                          {[v.imo && `IMO ${v.imo}`, v.vesselType, `${secCount} section${secCount === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
                         </div>
                       </div>
                       {isSelected && (
@@ -183,13 +223,41 @@ export function NewInspectionPage() {
             </div>
           </div>
 
-          {/* Selected vessel summary */}
+          {/* Selected vessel summary & checklist status */}
           {vessel && (
-            <div className="ni-summary-banner">
-              <CheckCircleIcon width={22} height={22} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              <div>
-                <div className="ni-summary-title">{vessel.name}</div>
-                <div className="ni-summary-sub">{TYPE_LABELS[inspectionType].label} · {port || 'No port set'} · {startDate}</div>
+            <div className={`ni-summary-banner ${selectedVesselSectionCount === 0 && vessel.vesselType ? 'ni-summary-warn' : ''}`}>
+              {selectedVesselSectionCount === 0 && vessel.vesselType ? (
+                <WarningIcon width={22} height={22} style={{ color: '#b45309', flexShrink: 0 }} />
+              ) : (
+                <CheckCircleIcon width={22} height={22} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              )}
+              <div className="ni-summary-body">
+                <div className="ni-summary-title">
+                  {vessel.name} {vessel.vesselType ? `(${vessel.vesselType})` : ''}
+                </div>
+                <div className="ni-summary-sub">
+                  {TYPE_LABELS[inspectionType].label} · {port || 'No port set'} · {startDate} ·{' '}
+                  <strong>{selectedVesselSectionCount} checklist section{selectedVesselSectionCount === 1 ? '' : 's'}</strong>
+                </div>
+                {selectedVesselSectionCount === 0 && vessel.vesselType && (
+                  <div className="ni-checklist-warn-row">
+                    <span>
+                      No checklist sections are configured for <strong>{vessel.vesselType}</strong> yet.
+                      {me.data?.role === 'admin'
+                        ? ' Open Checklist Templates and click "Default" to load the Universal sections for this vessel type.'
+                        : ' Ask an Admin to configure the checklist sections for this vessel type.'}
+                    </span>
+                    {me.data?.role === 'admin' && (
+                      <button
+                        type="button"
+                        className="ni-configure-checklist-btn"
+                        onClick={() => nav(`/checklist?category=${encodeURIComponent(vessel.vesselType)}`)}
+                      >
+                        Configure {vessel.vesselType} Checklist →
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -198,7 +266,7 @@ export function NewInspectionPage() {
             <button
               className="ni-submit-btn"
               type="submit"
-              disabled={busy || displayVessels.length === 0}
+              disabled={busy || !vesselId || displayVessels.length === 0}
             >
               {busy ? 'Creating inspection…' : 'Start Inspection'}
             </button>

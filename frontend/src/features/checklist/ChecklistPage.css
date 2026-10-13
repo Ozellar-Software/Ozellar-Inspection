@@ -1270,6 +1270,317 @@
   border: 1px solid #99f6e4;
 }
 
+/* ─── Header Default Button & Success Banner ─── */
+.cl-header-default-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1.5px solid #0e7c86;
+  background: #f0fdfa;
+  color: #0e7c86;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.cl-header-default-btn:hover:not(:disabled) {
+  background: #ccfbf1;
+  border-color: #0f766e;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(14, 124, 134, 0.16);
+}
+
+.cl-header-default-btn.applied {
+  border-color: #10b981;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.cl-header-default-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cl-success-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+  background: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  border-radius: 12px;
+  color: #065f46;
+  font-weight: 600;
+  font-size: 13.5px;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.08);
+}
+
+.cl-success-banner-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.cl-success-banner-main svg {
+  flex-shrink: 0;
+  color: #059669;
+}
+
+.cl-success-banner-close {
+  background: transparent;
+  border: none;
+  color: #047857;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cl-success-banner-close:hover {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+/* ─── 1-Click Vessel Type Quick Access Pill Strip ─── */
+.cl-vessel-pill-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.cl-vessel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.cl-vessel-pill svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.cl-vessel-pill:hover {
+  border-color: #94a3b8;
+  background: var(--surface);
+  transform: translateY(-1px);
+}
+
+.cl-vessel-pill.active {
+  background: #f0fdfa;
+  border-color: #0e7c86;
+  color: #0e7c86;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(14, 124, 134, 0.12);
+}
+
+.cl-vessel-pill.active svg {
+  color: #0e7c86;
+}
+
+.cl-vessel-pill-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.07);
+  color: var(--muted);
+}
+
+.cl-vessel-pill.active .cl-vessel-pill-count {
+  background: #0e7c86;
+  color: #ffffff;
+}
+
+.cl-vessel-pill.empty:not(.active) .cl-vessel-pill-count {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+/* ─── Universal Blueprint Subbar & Vessel Category Action Card ─── */
+.cl-universal-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 10px;
+  color: #3730a3;
+}
+
+.cl-universal-subbar .cl-filter-hint {
+  color: #3730a3;
+  font-size: 13px;
+}
+
+.cl-universal-subbar .cl-filter-hint strong {
+  color: #1e1b4b;
+}
+
+.cl-universal-subbar svg {
+  flex-shrink: 0;
+  color: #4338ca;
+}
+
+.cl-vessel-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #f0fdfa 0%, #f8fafc 100%);
+  border: 1px solid #99f6e4;
+  border-radius: 12px;
+}
+
+.cl-vessel-action-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cl-vessel-action-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cl-vessel-action-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0e7c86;
+  flex-shrink: 0;
+}
+
+.cl-vessel-action-title {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.cl-vessel-action-stats {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0e7c86;
+  background: #ccfbf1;
+  padding: 2px 9px;
+  border-radius: 20px;
+}
+
+.cl-vessel-action-desc {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.cl-vessel-action-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.cl-btn-default-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 15px;
+  border-radius: 9px;
+  border: 1.5px solid #0e7c86;
+  background: #0e7c86;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(14, 124, 134, 0.2);
+}
+
+.cl-btn-default-action:hover:not(:disabled) {
+  background: #0f766e;
+  border-color: #0f766e;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(14, 124, 134, 0.28);
+}
+
+.cl-btn-default-action.applied {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #047857;
+  box-shadow: none;
+}
+
+.cl-btn-default-action.applied:hover:not(:disabled) {
+  background: #d1fae5;
+}
+
+.cl-btn-default-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cl-btn-add-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.cl-btn-add-action:hover {
+  border-color: #0e7c86;
+  color: #0e7c86;
+  background: #ffffff;
+}
+
+.cl-empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 560px;
+}
+
 /* ==========================================================================
    Responsive Styles
    ========================================================================== */
@@ -1295,6 +1606,21 @@
 
   .cl-filter-toolbar {
     gap: 10px;
+  }
+
+  .cl-vessel-action-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .cl-vessel-action-btns {
+    width: 100%;
+  }
+
+  .cl-btn-default-action,
+  .cl-btn-add-action {
+    flex: 1;
   }
 }
 
@@ -1971,10 +2297,112 @@
   }
 
   .cl-error-banner,
-  .cl-info-banner {
+  .cl-info-banner,
+  .cl-success-banner {
     padding: 10px 12px !important;
     font-size: 12.5px !important;
     border-radius: 8px !important;
+    gap: 8px !important;
+  }
+
+  .cl-header-default-btn {
+    min-height: 34px !important;
+    height: 34px !important;
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+    border-radius: 8px !important;
+    gap: 5px !important;
+  }
+
+  .cl-header-default-btn svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  /* 1-Click Vessel Pill Strip: Horizontal smooth scroll on mobile */
+  .cl-vessel-pill-strip {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    gap: 6px !important;
+    padding-top: 8px !important;
+    padding-bottom: 2px !important;
+  }
+
+  .cl-vessel-pill-strip::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .cl-vessel-pill {
+    padding: 5px 9px !important;
+    font-size: 11.5px !important;
+    border-radius: 7px !important;
+    gap: 5px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .cl-vessel-pill-count {
+    font-size: 10px !important;
+    padding: 1px 5px !important;
+  }
+
+  /* Universal subbar & Vessel Action Card on Mobile */
+  .cl-universal-subbar {
+    padding: 9px 11px !important;
+    border-radius: 8px !important;
+  }
+
+  .cl-universal-subbar .cl-filter-hint {
+    font-size: 11.5px !important;
+    align-items: flex-start !important;
+  }
+
+  .cl-vessel-action-card {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 11px 12px !important;
+    border-radius: 10px !important;
+  }
+
+  .cl-vessel-action-title {
+    font-size: 13.5px !important;
+  }
+
+  .cl-vessel-action-stats {
+    font-size: 11px !important;
+    padding: 1.5px 7px !important;
+  }
+
+  .cl-vessel-action-desc {
+    font-size: 11.5px !important;
+    line-height: 1.4 !important;
+  }
+
+  .cl-vessel-action-btns {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 7px !important;
+    width: 100% !important;
+  }
+
+  .cl-btn-default-action,
+  .cl-btn-add-action {
+    width: 100% !important;
+    min-height: 36px !important;
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+    border-radius: 8px !important;
+    white-space: normal !important;
+    text-align: center !important;
+    box-sizing: border-box !important;
+  }
+
+  .cl-empty-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
     gap: 8px !important;
   }
 }
@@ -2017,7 +2445,8 @@
     padding: 2px 5px !important;
   }
 
-  .cl-primary-btn {
+  .cl-primary-btn,
+  .cl-header-default-btn {
     padding: 5px 9px !important;
     font-size: 11.5px !important;
     height: 32px !important;

@@ -2,8 +2,9 @@ import type { PullResponse, PushResponse, SyncEntity } from '@ozellar/shared';
 import { api } from '../api/client';
 import { getCachedUser } from '../auth/session';
 import { db, getMeta, setMeta } from './db';
-import { processPhotoQueue, prefetchInspectionPhotos } from './photoQueue';
+import { processPhotoQueue, prefetchInspectionPhotos, evictPhotoCache } from './photoQueue';
 import { processApprovalQueue, hasPendingApproval } from './approvalQueue';
+
 
 type Listener = (s: SyncStatus) => void;
 export interface SyncStatus { state: 'idle' | 'syncing' | 'offline' | 'error'; lastSyncAt: string | null; pending: number; message?: string }
@@ -86,14 +87,25 @@ async function pull(): Promise<void> {
         }
         await table.bulkPut(safeRows);
       } else {
-        await table.bulkPut(rows.filter((r) => !pendingIds.has(r.id)));
+        const rowsToPut = rows.filter((r) => !pendingIds.has(r.id));
+        await table.bulkPut(rowsToPut);
+
+        // Evict photo caches for any server-deleted photos to prevent ghost thumbnails
+        if (entity === 'photos') {
+          const deletedPhotoIds = rowsToPut
+            .filter((r) => !!r.deletedAt)
+            .map((r) => r.id);
+          for (const photoId of deletedPhotoIds) {
+            void evictPhotoCache(photoId);
+          }
+        }
       }
     }
 
     if (res.changes.photos && res.changes.photos.length > 0) {
       const inspIds = new Set<string>();
       for (const p of res.changes.photos) {
-        if (p.inspectionId && typeof p.inspectionId === 'string') inspIds.add(p.inspectionId);
+        if (p.inspectionId && typeof p.inspectionId === 'string' && !p.deletedAt) inspIds.add(p.inspectionId);
       }
       for (const inspId of inspIds) {
         void prefetchInspectionPhotos(inspId);
@@ -102,40 +114,100 @@ async function pull(): Promise<void> {
 
     cursor = res.nextCursor;
     await setMeta(cursorKey, cursor);
-    await setMeta('cursor', cursor);
 
     if (!res.hasMore) {
+      // Reconcile server-deleted or unassigned inspections once full pull finishes
+      if (Array.isArray(res.activeInspectionIds)) {
+        const activeSet = new Set(res.activeInspectionIds);
+        const allLocal = await db.inspections.toArray();
+        const nowIso = new Date().toISOString();
+        for (const loc of allLocal) {
+          if (!loc.deletedAt && !activeSet.has(loc.id) && !pendingIds.has(loc.id)) {
+            await db.inspections.update(loc.id, { deletedAt: nowIso });
+          }
+        }
+      }
       return;
     }
   }
 }
 
 let running: Promise<void> | null = null;
+let rerunRequested = false;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 export function syncNow(): Promise<void> {
-  if (running) return running;
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  if (running) {
+    rerunRequested = true;
+    return running;
+  }
   running = (async () => {
-    if (!navigator.onLine) { emit({ state: 'offline', pending: await db.outbox.count() }); return; }
-    emit({ state: 'syncing' });
+    if (!navigator.onLine) {
+      emit({ state: 'offline', pending: await db.outbox.count() });
+      return;
+    }
+    emit({ state: 'syncing', pending: await db.outbox.count() });
     try {
-      await push();
-      await pull();
-      emit({ state: 'idle', lastSyncAt: new Date().toISOString(), pending: await db.outbox.count() });
-      // Process photo uploads and queued offline approvals in background
+      do {
+        rerunRequested = false;
+        await push();
+        await processApprovalQueue();
+        await pull();
+      } while (rerunRequested && navigator.onLine);
+      emit({ state: 'idle', lastSyncAt: new Date().toISOString(), pending: await db.outbox.count(), message: undefined });
+      // Process photo uploads in background (after photo metadata rows are pushed)
       void processPhotoQueue();
-      void processApprovalQueue();
     } catch (e) {
-      emit({ state: 'error', message: (e as Error).message, pending: await db.outbox.count() });
+      const pending = await db.outbox.count();
+      if (!navigator.onLine) {
+        emit({ state: 'offline', pending });
+      } else {
+        emit({ state: 'error', message: (e as Error).message, pending });
+      }
     }
   })().finally(() => { running = null; });
   return running;
 }
 
-/** Start on app launch: sync now, every 60 s while open, and whenever the connection returns. */
+/** Called after any localWrite / localDelete / createInspection to update pending count and debounce sync. */
+export function scheduleSync(delayMs = 500): void {
+  void db.outbox.count().then((pending) => {
+    if (!navigator.onLine) {
+      emit({ state: 'offline', pending });
+      return;
+    }
+    emit({ pending });
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      void syncNow();
+    }, delayMs);
+  });
+}
+
+/** Start on app launch: sync now, every 60 s while open, and whenever connection state changes. */
 export function startSyncLoop(): () => void {
   void syncNow();
   const t = setInterval(() => void syncNow(), 60_000);
-  const on = () => void syncNow();
-  window.addEventListener('online', on);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') on(); });
-  return () => { clearInterval(t); window.removeEventListener('online', on); };
+  const onOnline = () => void syncNow();
+  const onOffline = () => {
+    void db.outbox.count().then((pending) => emit({ state: 'offline', pending }));
+  };
+  const onVis = () => {
+    if (document.visibilityState === 'visible') void syncNow();
+  };
+  window.addEventListener('online', onOnline);
+  window.addEventListener('offline', onOffline);
+  document.addEventListener('visibilitychange', onVis);
+  return () => {
+    clearInterval(t);
+    window.removeEventListener('online', onOnline);
+    window.removeEventListener('offline', onOffline);
+    document.removeEventListener('visibilitychange', onVis);
+  };
 }
+

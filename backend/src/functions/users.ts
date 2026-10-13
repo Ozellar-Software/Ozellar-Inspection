@@ -34,15 +34,38 @@ async function handleGet(req: any, me: any) {
   }
 
 async function handleUpsert(req: any, me: any) {
-    const b = await jsonBody<{ email: string; name?: string; designation?: string; role: Role; vesselIds?: string[]; isActive?: boolean; password?: string }>(req);
-    const email = (b.email ?? '').trim().toLowerCase();
+    const b = await jsonBody<{ email?: string; name?: string; designation?: string; role?: Role; vesselIds?: string[]; isActive?: boolean; password?: string }>(req);
+    const isEditing = Boolean(req.params.id);
+
+    let existingUser: any = null;
+    if (isEditing) {
+      const existingRes = await pool.query(
+        `select u.*, coalesce(array_agg(uv.vessel_id::text) filter (where uv.vessel_id is not null), '{}') as vessel_ids
+           from users u left join user_vessels uv on uv.user_id = u.id
+          where u.id = $1
+          group by u.id`,
+        [req.params.id]
+      );
+      existingUser = existingRes.rows[0];
+      if (!existingUser) throw fail('NOT_FOUND', 'User not found');
+    }
+
+    const email = (b.email ?? existingUser?.email ?? '').trim().toLowerCase();
     if (!email.includes('@')) throw fail('VALIDATION', 'Enter a valid email');
-    if (!ROLES.includes(b.role)) throw fail('VALIDATION', 'Choose a role');
-    const needsVessels = b.role === 'techManager' || b.role === 'vesselManager';
+    const role: Role = (b.role ?? existingUser?.role) as Role;
+    if (!ROLES.includes(role)) throw fail('VALIDATION', 'Choose a role');
+    const name = b.name !== undefined ? b.name : (existingUser?.name ?? '');
+    const designation = b.designation !== undefined ? b.designation : (existingUser?.designation ?? '');
+    const isActive = b.isActive !== undefined ? b.isActive : (existingUser?.is_active ?? true);
+
+    const needsVessels = role === 'techManager' || role === 'vesselManager';
     // Strip legacy "ves-timestamp" IDs - only allow proper UUIDs
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const safeVesselIds = (b.vesselIds ?? []).filter(id => UUID_RE.test(id));
-    if (needsVessels && !safeVesselIds.length) throw fail('VALIDATION', 'Pick at least one vessel. (Tip: refresh your browser if vessel list looks empty)');
+    const rawVesselIds = b.vesselIds !== undefined ? b.vesselIds : (existingUser?.vessel_ids ?? []);
+    const safeVesselIds = (rawVesselIds ?? []).filter((id: string) => UUID_RE.test(id));
+    if (needsVessels && isActive && !safeVesselIds.length) {
+      throw fail('VALIDATION', 'Pick at least one vessel. (Tip: refresh your browser if vessel list looks empty)');
+    }
 
     let pwdHash: string | null = null;
     if (b.password && b.password.trim()) {
@@ -50,11 +73,6 @@ async function handleUpsert(req: any, me: any) {
       pwdHash = await hashPassword(b.password.trim());
     }
 
-    // Check if it's an existing user by doing a preliminary check, or we can check inside tx.
-    // Actually, we can check if req.params.id is provided, but Upsert checks email conflict.
-    // If we require password for ALL creations, we should do it here or inside the transaction.
-    const isEditing = Boolean(req.params.id);
-    
     const existing = await pool.query('select id from users where lower(email) = $1', [email]);
     if (!isEditing && existing.rows.length > 0) {
       throw fail('CONFLICT', 'A user with this email address already exists.');
@@ -67,31 +85,48 @@ async function handleUpsert(req: any, me: any) {
       throw fail('VALIDATION', 'Enterprise policy requires setting an initial password for all new users.');
     }
 
-    const { row: u, isNew } = await tx(async (c) => {
-      const r = (await c.query(
-        `insert into users (email, name, designation, role, is_active, password_hash)
-         values ($1,$2,$3,$4,coalesce($5,true),$6)
-         on conflict ((lower(email))) do update set
-           name = excluded.name,
-           designation = excluded.designation,
-           role = excluded.role,
-           is_active = excluded.is_active,
-           password_hash = coalesce(excluded.password_hash, users.password_hash)
-         returning *, (xmax = 0) as is_new`,
-        [email, b.name ?? '', b.designation ?? '', b.role, b.isActive ?? true, pwdHash])).rows[0];
+    const { row: u } = await tx(async (c) => {
+      let r;
+      if (isEditing) {
+        r = (await c.query(
+          `update users set
+             email = $2,
+             name = $3,
+             designation = $4,
+             role = $5,
+             is_active = $6,
+             password_hash = coalesce($7, users.password_hash)
+           where id = $1
+           returning *`,
+          [req.params.id, email, name, designation, role, isActive, pwdHash]
+        )).rows[0];
+      } else {
+        r = (await c.query(
+          `insert into users (email, name, designation, role, is_active, password_hash)
+           values ($1,$2,$3,$4,coalesce($5,true),$6)
+           on conflict ((lower(email))) do update set
+             name = excluded.name,
+             designation = excluded.designation,
+             role = excluded.role,
+             is_active = excluded.is_active,
+             password_hash = coalesce(excluded.password_hash, users.password_hash)
+           returning *`,
+          [email, name, designation, role, isActive, pwdHash]
+        )).rows[0];
+      }
       await c.query(`delete from user_vessels where user_id = $1`, [r.id]);
-      if (needsVessels) {
+      if (needsVessels && safeVesselIds.length > 0) {
         await c.query(`insert into user_vessels (user_id, vessel_id) select $1, unnest($2::uuid[])`, [r.id, safeVesselIds]);
       }
       await c.query(
         `insert into audit_log (actor_user_id, entity, entity_id, action, details) values ($1,'user',$2,'upsert',$3)`,
-        [me.id, r.id, JSON.stringify({ role: b.role, vesselIds: safeVesselIds })]);
-      return { row: r, isNew: r.is_new as boolean };
+        [me.id, r.id, JSON.stringify({ role, vesselIds: safeVesselIds, isActive })]);
+      return { row: r };
     });
 
-    const out = { ...u } as Record<string, unknown>;
-    delete out.is_new;
+    const out = { ...u, vessel_ids: needsVessels ? safeVesselIds : [], has_password: Boolean(u.password_hash) } as Record<string, unknown>;
     delete out.password_hash;
+    delete out.entra_oid;
     return camel(out);
   }
 

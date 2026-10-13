@@ -4,6 +4,8 @@ import type {
 } from '@ozellar/shared';
 import { api } from '../api/client';
 import { db } from './db';
+import { nextOutboxTimestamp } from './outbox';
+import { scheduleSync } from './sync';
 
 type Synced<T> = T & { rowVersion?: number; deletedAt?: string | null };
 
@@ -21,35 +23,43 @@ export interface NewInspectionInput {
  */
 export async function createInspection(input: NewInspectionInput): Promise<string> {
   const inspectionId = crypto.randomUUID();
-  const baseTime = Date.now();
-  let seq = 0;
-  const stamp = () => new Date(baseTime + seq++).toISOString(); // strictly increasing so outbox order == dependency order
+  const stamp = () => nextOutboxTimestamp(); // strictly increasing so outbox order == dependency order
 
-  let templateSections = ((await db.templateSections.toArray()) as unknown as TemplateSection[])
-    .filter((s) => !s.deletedAt)
-    .sort((a, b) => a.position - b.position);
-  let templateQuestions = ((await db.templateQuestions.toArray()) as unknown as TemplateQuestion[])
-    .filter((q) => !q.deletedAt);
-
-  // Guarantee master checklist is loaded before creating inspection
-  if (templateSections.length === 0 && navigator.onLine) {
+  // When online, always hydrate the latest master checklist (Universal + Vessel Type sections & questions)
+  if (navigator.onLine) {
     try {
       const [serverSecs, serverQs] = await Promise.all([
         api<TemplateSection[]>('/templates/sections/list'),
         api<TemplateQuestion[]>('/templates/questions/list'),
       ]);
-      if (serverSecs.length) {
-        await db.templateSections.bulkPut(serverSecs as unknown as Record<string, unknown> & { id: string }[]);
-        templateSections = serverSecs.sort((a, b) => a.position - b.position);
+      if (Array.isArray(serverSecs)) {
+        const activeSecIds = new Set(serverSecs.map((s) => s.id));
+        const localSecs = await db.templateSections.toArray();
+        const staleSecIds = localSecs.filter((s) => !activeSecIds.has(s.id)).map((s) => s.id);
+        if (staleSecIds.length) await db.templateSections.bulkDelete(staleSecIds);
+        if (serverSecs.length) {
+          await db.templateSections.bulkPut(serverSecs as unknown as Record<string, unknown> & { id: string }[]);
+        }
       }
-      if (serverQs.length) {
-        await db.templateQuestions.bulkPut(serverQs as unknown as Record<string, unknown> & { id: string }[]);
-        templateQuestions = serverQs;
+      if (Array.isArray(serverQs)) {
+        const activeQIds = new Set(serverQs.map((q) => q.id));
+        const localQs = await db.templateQuestions.toArray();
+        const staleQIds = localQs.filter((q) => !activeQIds.has(q.id)).map((q) => q.id);
+        if (staleQIds.length) await db.templateQuestions.bulkDelete(staleQIds);
+        if (serverQs.length) {
+          await db.templateQuestions.bulkPut(serverQs as unknown as Record<string, unknown> & { id: string }[]);
+        }
       }
     } catch {
-      // offline fallback
+      // offline fallback to local IndexedDB templates below
     }
   }
+
+  const templateSections = ((await db.templateSections.toArray()) as unknown as TemplateSection[])
+    .filter((s) => !s.deletedAt)
+    .sort((a, b) => a.position - b.position);
+  const templateQuestions = ((await db.templateQuestions.toArray()) as unknown as TemplateQuestion[])
+    .filter((q) => !q.deletedAt);
 
   const mutations: (Mutation & { attempts: number })[] = [];
   const sectionRows: Synced<InspectionSection>[] = [];
@@ -63,15 +73,27 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
     completionDate: null, summary: '', conclusion: '', createdBy: null,
   };
 
-  const applicableSections = templateSections.filter((ts) => {
-    const types = Array.isArray(ts.vesselTypes) ? ts.vesselTypes : [];
-    if (types.length === 0) return true;
-    if (input.vesselType) {
+  // Only create sections assigned to this vessel's type.
+  // Universal sections (empty vesselTypes) act as the Default blueprint in Checklist Master.
+  const rawApplicable = templateSections.filter((ts) => {
+    const types = (Array.isArray(ts.vesselTypes) ? ts.vesselTypes : []).map((t) => String(t).trim()).filter(Boolean);
+    if (input.vesselType?.trim()) {
       const target = input.vesselType.trim().toLowerCase();
-      return types.some((t) => t.trim().toLowerCase() === target);
+      return types.some((t) => t.toLowerCase() === target);
     }
-    return true;
+    return types.length === 0;
   });
+
+  // Deduplicate by (name, photoOnly) and always group normal sections first, photo sections last
+  const seenSectionKeys = new Set<string>();
+  const applicableSections = rawApplicable
+    .filter((ts) => {
+      const key = `${ts.name.trim().toLowerCase()}::${Boolean(ts.photoOnly)}`;
+      if (seenSectionKeys.has(key)) return false;
+      seenSectionKeys.add(key);
+      return true;
+    })
+    .sort((a, b) => Number(Boolean(a.photoOnly)) - Number(Boolean(b.photoOnly)) || a.position - b.position);
 
   for (let idx = 0; idx < applicableSections.length; idx++) {
     const ts = applicableSections[idx];
@@ -84,7 +106,7 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
       position: idx,
       photoOnly: ts.photoOnly ?? false,
       isCustom: false,
-      vesselTypes: ts.vesselTypes ?? [],
+      vesselTypes: Array.isArray(ts.vesselTypes) ? ts.vesselTypes : [],
     };
     sectionRows.push({ id: sectionId, ...sectionData });
     mutations.push({ id: crypto.randomUUID(), entity: 'inspectionSections', entityId: sectionId, op: 'upsert', data: sectionData, baseVersion: null, createdAt: stamp(), attempts: 0 });
@@ -105,5 +127,7 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
     await db.outbox.bulkAdd(mutations);
   });
 
+  scheduleSync();
   return inspectionId;
 }
+

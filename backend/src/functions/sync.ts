@@ -4,7 +4,7 @@ import {
   type Inspection, type Mutation, type MutationResult, type PullResponse, type PushRequest, type SyncEntity, type User,
 } from '@ozellar/shared';
 import { requireUser } from '../lib/auth.js';
-import { photoBlobPath } from '../lib/blob.js';
+import { deleteBlob, photoBlobPath } from '../lib/blob.js';
 import { pool, tx, type Tx } from '../lib/db.js';
 import { camel, fail, handler, HttpError, jsonBody, snake } from '../lib/http.js';
 import {
@@ -114,6 +114,7 @@ app.http('sync-pull', {
 
 /** Columns a client may write, per entity (camelCase). Everything else is ignored. */
 const WRITABLE: Partial<Record<SyncEntity, string[]>> = {
+  vessels: ['name', 'imo', 'vesselType', 'particulars', 'photoId'],
   inspections: ['vesselId', 'vesselName', 'imo', 'vesselType', 'inspectionType', 'port', 'startDate', 'completionDate',
     'sailFromDate', 'sailFromPort', 'sailToDate', 'sailToPort', 'remoteFromDate', 'remoteToDate',
     'inspector', 'company', 'summary', 'conclusion', 'coverPhotoId'],
@@ -124,10 +125,11 @@ const WRITABLE: Partial<Record<SyncEntity, string[]>> = {
   photos: ['inspectionId', 'target', 'inspectionSectionId', 'responseId', 'findingId', 'vesselId', 'isDefect', 'position',
     'contentType', 'sizeBytes', 'width', 'height'],
 };
-const SOFT_DELETE: Partial<Record<SyncEntity, true>> = { inspections: true, inspectionSections: true, findings: true, photos: true };
+const SOFT_DELETE: Partial<Record<SyncEntity, true>> = { vessels: true, inspections: true, inspectionSections: true, findings: true, photos: true };
 
 /** Finds the inspection a mutation belongs to (locked FOR UPDATE, so approvals and edits can't interleave). */
 async function owningInspection(c: Tx, m: Mutation): Promise<{ id: string; vesselId: string | null; status: Inspection['status'] } | null> {
+  if (m.entity === 'vessels') return null;
   const d = m.data ?? {};
   let inspectionId: string | null = null;
   if (m.entity === 'inspections') inspectionId = m.entityId;
@@ -254,13 +256,18 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   const insp = await owningInspection(c, m);
 
   // --- permission & lock checks (shared rules) ---
-  if (m.entity === 'inspections' && !insp) {
-    if (m.op === 'delete') throw fail('NOT_FOUND', 'Inspection not found');
+  if (m.entity === 'vessels') {
+    if (!can(user, 'vessels.manage')) throw fail('FORBIDDEN', 'Only an Admin can manage vessels');
+  } else if (m.entity === 'inspections' && !insp) {
+    if (m.op === 'delete') return 0;
     if (!can(user, 'inspection.create', { vesselId: (d.vesselId as string) ?? null })) throw fail('FORBIDDEN', 'You can’t create inspections for this vessel');
   } else if (m.entity === 'photos' && !insp && d.vesselId) {
     if (!can(user, 'vessels.manage')) throw fail('FORBIDDEN', 'Only an Admin can change vessel photos');
   } else {
-    if (!insp) throw fail('NOT_FOUND', 'Inspection not synced yet');
+    if (!insp) {
+      if (m.op === 'delete') return 0;
+      throw fail('NOT_FOUND', 'Inspection not synced yet');
+    }
     const action = m.entity === 'inspections' && m.op === 'delete' ? 'inspection.delete' : 'inspection.edit';
     const isOfflineDataSync = (m.entity === 'responses' || m.entity === 'findings' || m.entity === 'photos' || m.entity === 'inspectionSections');
     const isPendingApproval = (insp.status === 'pending_tm' || insp.status === 'pending_director');
@@ -277,17 +284,36 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   // --- delete ---
   if (m.op === 'delete') {
     if (!SOFT_DELETE[m.entity]) throw fail('VALIDATION', `${m.entity} can’t be deleted`);
-    const r = await c.query(`update ${def.table} set deleted_at = now() where id = $1 returning row_version`, [m.entityId]);
-    if (!r.rows[0]) throw fail('NOT_FOUND', 'Not found');
+    const selectExtra = m.entity === 'photos' ? ', blob_path' : '';
+    const r = await c.query(`update ${def.table} set deleted_at = now() where id = $1 returning row_version${selectExtra}`, [m.entityId]);
+    if (!r.rows[0]) return 0;
+    // Fire-and-forget blob deletion for photos (non-fatal if storage call fails)
+    if (m.entity === 'photos' && r.rows[0].blob_path) {
+      void deleteBlob(r.rows[0].blob_path as string);
+    } else if (m.entity === 'inspections') {
+      const pr = await c.query(`update photos set deleted_at = now() where inspection_id = $1 and deleted_at is null returning blob_path`, [m.entityId]);
+      for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
+    } else if (m.entity === 'inspectionSections') {
+      await c.query(`update findings set deleted_at = now() where inspection_section_id = $1 and deleted_at is null`, [m.entityId]);
+      const pr = await c.query(`update photos set deleted_at = now() where inspection_section_id = $1 and deleted_at is null returning blob_path`, [m.entityId]);
+      for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
+    } else if (m.entity === 'findings') {
+      const pr = await c.query(`update photos set deleted_at = now() where finding_id = $1 and deleted_at is null returning blob_path`, [m.entityId]);
+      for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
+    }
     return Number(r.rows[0].row_version);
   }
 
-  // --- upsert (whitelisted columns only) ---
+    // --- upsert (whitelisted columns only) ---
   const existingRows = (await c.query(`select * from ${def.table} where ${def.idCol} = $1`, [m.entityId])).rows;
   const exists = existingRows.length > 0;
   const cur = existingRows[0] as Record<string, unknown> | undefined;
 
-  const sanitizeVal = (k: string, v: unknown) => (k === 'vesselTypes' ? (Array.isArray(v) ? v : []) : v);
+  const sanitizeVal = (k: string, v: unknown) => {
+    if (k === 'vesselTypes') return Array.isArray(v) ? v : [];
+    if (k === 'particulars') return (typeof v === 'object' && v !== null && !Array.isArray(v)) ? v : {};
+    return v;
+  };
 
   if (exists && cur) {
     let payload = d;

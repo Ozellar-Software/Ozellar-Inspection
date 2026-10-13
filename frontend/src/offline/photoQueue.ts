@@ -4,16 +4,30 @@ import { db } from './db';
 import { localWrite } from './outbox';
 
 export async function compressImage(file: Blob, maxSide = 1600, quality = 0.8): Promise<Blob> {
-  // Use modern createImageBitmap if available
-  let width, height;
-  let drawable: CanvasImageSource;
+  // Use modern createImageBitmap if available, with EXIF orientation preservation
+  let width = 0;
+  let height = 0;
+  let drawable: CanvasImageSource | null = null;
+  let bmp: ImageBitmap | null = null;
   
   if (typeof createImageBitmap !== 'undefined') {
-    const bmp = await createImageBitmap(file);
-    width = bmp.width;
-    height = bmp.height;
-    drawable = bmp;
-  } else {
+    try {
+      bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch {
+      try {
+        bmp = await createImageBitmap(file);
+      } catch {
+        bmp = null;
+      }
+    }
+    if (bmp) {
+      width = bmp.width;
+      height = bmp.height;
+      drawable = bmp;
+    }
+  }
+
+  if (!drawable) {
     // Fallback for older Safari/iOS
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -32,28 +46,35 @@ export async function compressImage(file: Blob, maxSide = 1600, quality = 0.8): 
   const w = Math.round(width * scale);
   const h = Math.round(height * scale);
 
-  // Use OffscreenCanvas if available
-  if (typeof OffscreenCanvas !== 'undefined') {
-    try {
-      const canvas = new OffscreenCanvas(w, h);
-      canvas.getContext('2d')!.drawImage(drawable, 0, 0, w, h);
-      return await canvas.convertToBlob({ type: 'image/jpeg', quality });
-    } catch (e) {
-      // ignore and fallback
+  try {
+    // Use OffscreenCanvas if available
+    if (typeof OffscreenCanvas !== 'undefined') {
+      try {
+        const canvas = new OffscreenCanvas(w, h);
+        canvas.getContext('2d')!.drawImage(drawable, 0, 0, w, h);
+        return await canvas.convertToBlob({ type: 'image/jpeg', quality });
+      } catch (e) {
+        // ignore and fallback
+      }
+    }
+
+    // Fallback standard DOM canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d')!.drawImage(drawable, 0, 0, w, h);
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error('Canvas toBlob failed'));
+      }, 'image/jpeg', quality);
+    });
+  } finally {
+    // Release uncompressed GPU bitmap texture memory immediately to prevent mobile browser memory exhaustion
+    if (bmp) {
+      try { bmp.close(); } catch { /* ignore */ }
     }
   }
-
-  // Fallback standard DOM canvas
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  canvas.getContext('2d')!.drawImage(drawable, 0, 0, w, h);
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((b) => {
-      if (b) resolve(b);
-      else reject(new Error('Canvas toBlob failed'));
-    }, 'image/jpeg', quality);
-  });
 }
 
 /** Add a photo: saved locally at once (visible immediately), metadata queued for sync, image queued for upload. */
@@ -68,6 +89,10 @@ export async function addPhoto(input: {
     photoId, inspectionId: input.inspectionId ?? null, vesselId: input.vesselId ?? null,
     blob, status: 'pending', attempts: 0,
   });
+  // Immediately cache blob URL in memory so thumbnails render instantly without waiting for async DB fetch
+  const objUrl = URL.createObjectURL(blob);
+  blobUrlCache.set(photoId, objUrl);
+
   await localWrite('photos', photoId, {
     inspectionId: input.inspectionId ?? null, vesselId: input.vesselId ?? null, target: input.target,
     inspectionSectionId: input.inspectionSectionId ?? null, responseId: input.responseId ?? null,
@@ -78,37 +103,94 @@ export async function addPhoto(input: {
 }
 
 let photoProcessing: Promise<void> | null = null;
+let rerunPhotoProcessing = false;
 
 /** Upload pending images: get SAS URL → PUT to Blob → commit. Survives restarts; retried on next sync. */
 export function processPhotoQueue(): Promise<void> {
-  if (photoProcessing) return photoProcessing;
+  if (photoProcessing) {
+    rerunPhotoProcessing = true;
+    return photoProcessing;
+  }
   photoProcessing = (async () => {
-    const items = await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').toArray();
-    for (const it of items) {
-      try {
-        if (it.status !== 'uploaded') {
-          await db.photoQueue.update(it.photoId, { status: 'uploading' });
-          const { uploadUrl, headers } = await api<{ uploadUrl: string; headers: Record<string, string> }>(
-            '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } });
-          const put = await fetch(uploadUrl, { method: 'PUT', headers, body: it.blob });
-          if (!put.ok) throw new Error(`Upload failed (${put.status})`);
-          await db.photoQueue.update(it.photoId, { status: 'uploaded' });
+    do {
+      rerunPhotoProcessing = false;
+      const items = await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').toArray();
+      for (const it of items) {
+        // Skip photos that have been soft-deleted — clean them up from queue instead
+        const photoRow = await db.photos.get(it.photoId);
+        if (photoRow?.deletedAt) {
+          await db.photoQueue.delete(it.photoId);
+          continue;
         }
-        await api(`/photos/${it.photoId}/commit`, { method: 'POST', body: {} });
-        await db.photoQueue.update(it.photoId, { status: 'committed' });
-      } catch (e) {
-        await db.photoQueue.update(it.photoId, {
-          status: it.status === 'uploaded' ? 'uploaded' : 'pending', attempts: it.attempts + 1, lastError: (e as Error).message,
-        });
+        if (it.inspectionId) {
+          const insp = await db.inspections.get(it.inspectionId);
+          if (insp?.deletedAt) {
+            await db.photoQueue.delete(it.photoId);
+            continue;
+          }
+        }
+        // Also skip if the photo doesn't exist in db.photos at all yet (not yet synced) — retry later
+        // but if it's been missing for many attempts, clean up
+        if (!photoRow) {
+          if (it.attempts > 8) {
+            await db.photoQueue.delete(it.photoId);
+          }
+          continue;
+        }
+        try {
+          if (it.status !== 'uploaded') {
+            await db.photoQueue.update(it.photoId, { status: 'uploading' });
+            const { uploadUrl, headers } = await api<{ uploadUrl: string; headers: Record<string, string> }>(
+              '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } });
+            const put = await fetch(uploadUrl, { method: 'PUT', headers, body: it.blob });
+            if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+            await db.photoQueue.update(it.photoId, { status: 'uploaded' });
+          }
+          await api(`/photos/${it.photoId}/commit`, { method: 'POST', body: {} });
+          await db.photoQueue.update(it.photoId, { status: 'committed' });
+        } catch (e) {
+          await db.photoQueue.update(it.photoId, {
+            status: it.status === 'uploaded' ? 'uploaded' : 'pending', attempts: it.attempts + 1, lastError: (e as Error).message,
+          });
+        }
       }
-    }
+    } while (rerunPhotoProcessing && navigator.onLine);
   })().finally(() => { photoProcessing = null; });
   return photoProcessing;
 }
 
+
 const photoUrlCache = new Map<string, { url: string; expires: number }>();
 const blobUrlCache = new Map<string, string>();
 const downloadingBlobs = new Set<string>();
+
+/**
+ * Evicts a photo from all caches (in-memory URL caches, IndexedDB photoQueue, CacheStorage).
+ * Must be called whenever a photo is soft-deleted locally or confirmed deleted from server.
+ */
+export async function evictPhotoCache(photoId: string): Promise<void> {
+  // Revoke and remove any in-memory object URL to free memory
+  const objUrl = blobUrlCache.get(photoId);
+  if (objUrl && objUrl.startsWith('blob:')) {
+    try { URL.revokeObjectURL(objUrl); } catch { /* ignore */ }
+  }
+  blobUrlCache.delete(photoId);
+  photoUrlCache.delete(photoId);
+  downloadingBlobs.delete(photoId);
+
+  // Remove from IndexedDB photoQueue (no longer needed to upload)
+  try {
+    await db.photoQueue.delete(photoId);
+  } catch { /* ignore */ }
+
+  // Remove from CacheStorage (service worker cache)
+  if (typeof caches !== 'undefined') {
+    try {
+      const cache = await caches.open(PHOTO_CACHE_NAME);
+      await cache.delete(`/cached-photos/${photoId}`);
+    } catch { /* ignore */ }
+  }
+}
 
 const PHOTO_CACHE_NAME = 'ozellar-photo-cache-v1';
 
@@ -275,6 +357,14 @@ export async function getPhotoUrls(photoIds: string[]): Promise<Record<string, s
       }
     } catch {
       // ignore
+    }
+
+    const swBlob = await getCachedBlobFromServiceWorker(id);
+    if (swBlob) {
+      const obj = URL.createObjectURL(swBlob);
+      blobUrlCache.set(id, obj);
+      result[id] = obj;
+      continue;
     }
 
     const cached = photoUrlCache.get(id);

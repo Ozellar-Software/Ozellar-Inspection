@@ -10,7 +10,11 @@ async function checkEditable(user: User, inspectionId: string | null, vesselId: 
     const i = (await pool.query(`select vessel_id, status from inspections where id = $1 and deleted_at is null`, [inspectionId])).rows[0];
     if (!i) throw fail('NOT_FOUND', 'Inspection not found');
     const insp = { vesselId: i.vessel_id, status: i.status } as Pick<Inspection, 'vesselId' | 'status'>;
-    if (!can(user, 'inspection.edit', { inspection: insp })) throw fail('LOCKED', 'This inspection can’t be changed now');
+    const isPendingApproval = insp.status === 'pending_tm' || insp.status === 'pending_director';
+    const allowPendingPhotoSync = isPendingApproval && user.role !== 'director' && can(user, 'inspection.view', { inspection: insp });
+    if (!can(user, 'inspection.edit', { inspection: insp }) && !allowPendingPhotoSync) {
+      throw fail('LOCKED', 'This inspection can’t be changed now');
+    }
   } else if (vesselId) {
     if (!can(user, 'vessels.manage')) throw fail('FORBIDDEN', 'Only an Admin can change vessel photos');
   } else {

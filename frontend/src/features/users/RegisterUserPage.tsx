@@ -76,9 +76,9 @@ export function RegisterUserPage() {
   const { id } = useParams<{ id: string }>();
   const isEditing = Boolean(id);
   const allVessels = useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [];
-  // Only show valid UUID vessels — filter out corrupted legacy "ves-timestamp" entries
+  // Only show valid UUID vessels that are not soft-deleted
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const vessels = allVessels.filter(v => UUID_RE.test(v.id));
+  const vessels = allVessels.filter(v => UUID_RE.test(v.id) && !(v as any).deletedAt);
 
   const [form, setForm] = useState<FormState>(blankForm);
   const [showPassword, setShowPassword] = useState(false);
@@ -196,25 +196,36 @@ export function RegisterUserPage() {
     setBusy(true);
     setError(null);
     try {
-      const targetId = form.id || crypto.randomUUID();
-      const localUserRecord = {
-        id: targetId,
-        email: payload.email,
-        name: payload.name,
-        designation: payload.designation,
-        role: payload.role,
-        vesselIds: payload.vesselIds,
-        isActive: payload.isActive,
-      };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await db.users.put(localUserRecord as any);
-
       if (navigator.onLine) {
-        if (form.id) {
-          await api(`/users/${form.id}`, { method: 'PUT', body: payload });
-        } else {
-          await api('/users', { method: 'POST', body: payload });
-        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const savedUser: any = form.id
+          ? await api(`/users/${form.id}`, { method: 'PUT', body: payload })
+          : await api('/users', { method: 'POST', body: payload });
+        const targetId = savedUser?.id || form.id || crypto.randomUUID();
+        const localUserRecord = {
+          id: targetId,
+          email: savedUser?.email ?? payload.email,
+          name: savedUser?.name ?? payload.name,
+          designation: savedUser?.designation ?? payload.designation,
+          role: savedUser?.role ?? payload.role,
+          vesselIds: savedUser?.vesselIds ?? payload.vesselIds,
+          isActive: savedUser?.isActive ?? payload.isActive,
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.users.put(localUserRecord as any);
+      } else {
+        const targetId = form.id || crypto.randomUUID();
+        const localUserRecord = {
+          id: targetId,
+          email: payload.email,
+          name: payload.name,
+          designation: payload.designation,
+          role: payload.role,
+          vesselIds: payload.vesselIds,
+          isActive: payload.isActive,
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.users.put(localUserRecord as any);
       }
       qc.invalidateQueries({ queryKey: ['users'] });
       navigate('/users');

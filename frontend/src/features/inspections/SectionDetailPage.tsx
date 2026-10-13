@@ -38,12 +38,15 @@ export function SectionDetailPage() {
   const findings = useLiveQuery(
     () => (sectionId ? db.findings.where('inspectionSectionId').equals(sectionId).toArray() : []), [sectionId])
     ?.filter((f) => !f.deletedAt).sort((a, b) => a.position - b.position) ?? [];
-  const photos = useLiveQuery(
-    () => (inspectionId ? db.photos.where('inspectionId').equals(inspectionId).toArray() : []), [inspectionId]) ?? [];
-  const allSections = useLiveQuery(
+  const photos = (useLiveQuery(
+    () => (inspectionId ? db.photos.where('inspectionId').equals(inspectionId).toArray() : []), [inspectionId]) ?? [])
+    .filter((p) => !p.deletedAt);
+  const allSections = (useLiveQuery(
     () => (inspectionId ? db.inspectionSections.where('inspectionId').equals(inspectionId).sortBy('position') : []),
     [inspectionId]
-  ) ?? [];
+  ) ?? [])
+    .filter((s) => !(s as any).deletedAt)
+    .sort((a, b) => Number(Boolean(a.photoOnly)) - Number(Boolean(b.photoOnly)) || a.position - b.position);
 
   // MOCK FALLBACK
   const isMock = !inspection && inspectionId?.startsWith('mock');

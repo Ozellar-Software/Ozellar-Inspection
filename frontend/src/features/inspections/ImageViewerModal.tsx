@@ -17,6 +17,7 @@ import {
   downloadSinglePhoto,
   downloadPhotosAsZip,
 } from './photoDownload';
+import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
 import './ImageViewerModal.css';
 
 type SyncedPhoto = Photo & { deletedAt?: string | null };
@@ -57,6 +58,8 @@ export function ImageViewerModal({
   const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const activeThumbRef = useRef<HTMLDivElement>(null);
 
   // Sync index when initialIndex or activePhotos change
@@ -211,11 +214,12 @@ export function ImageViewerModal({
   };
 
   // Delete photo
-  const handleDelete = async () => {
+  const executeDelete = async () => {
     if (locked || !currentPhoto) return;
-    if (!window.confirm('Are you sure you want to delete this photo?')) return;
+    setIsDeleting(true);
     try {
       await localDelete('photos', currentPhoto.id);
+      setIsDeleteModalOpen(false);
       if (activePhotos.length <= 1) {
         onClose();
       } else {
@@ -223,6 +227,8 @@ export function ImageViewerModal({
       }
     } catch (err) {
       console.error('Failed to delete photo', err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -423,7 +429,7 @@ export function ImageViewerModal({
             <button
               type="button"
               className="ivm-delete-btn"
-              onClick={handleDelete}
+              onClick={() => setIsDeleteModalOpen(true)}
               aria-label="Delete photo"
               title="Delete this photo"
             >
@@ -487,6 +493,23 @@ export function ImageViewerModal({
             }
           } : undefined}
           onClose={() => setIsMoveModalOpen(false)}
+        />
+      )}
+
+      {/* ── Confirm Delete Photo Modal ── */}
+      {isDeleteModalOpen && currentPhoto && (
+        <ConfirmDeleteModal
+          isOpen={isDeleteModalOpen}
+          title="Delete Photo"
+          description="Are you sure you want to delete this photo?"
+          subdesc="This action cannot be undone and will permanently remove this image from the inspection."
+          previewImageUrl={urls[currentPhoto.id]}
+          confirmText="Delete Photo"
+          loading={isDeleting}
+          onConfirm={executeDelete}
+          onCancel={() => {
+            if (!isDeleting) setIsDeleteModalOpen(false);
+          }}
         />
       )}
     </div>

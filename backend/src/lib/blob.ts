@@ -86,6 +86,17 @@ export async function blobExists(blobPath: string): Promise<boolean> {
   }
 }
 
+/** Deletes a blob from storage (non-fatal: logs on error but does not throw). */
+export async function deleteBlob(blobPath: string): Promise<void> {
+  try {
+    const client = getStorage().service.getContainerClient(container).getBlockBlobClient(blobPath);
+    await client.deleteIfExists();
+  } catch (err) {
+    console.error('[Blob] deleteBlob failed for', blobPath, err);
+  }
+}
+
 export function photoBlobPath(p: { id: string; inspectionId?: string | null; vesselId?: string | null }): string {
   return p.inspectionId ? `inspections/${p.inspectionId}/${p.id}.jpg` : `vessels/${p.vesselId}/${p.id}.jpg`;
 }
+

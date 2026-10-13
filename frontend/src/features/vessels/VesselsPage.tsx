@@ -131,7 +131,13 @@ export function VesselsPage() {
       try {
         const remote = await api<Vessel[]>('/vessels');
         if (Array.isArray(remote) && remote.length > 0) {
-          await db.vessels.bulkPut(remote as any);
+          const pendingVesselIds = new Set(
+            (await db.outbox.where('entity').equals('vessels').toArray()).map((m) => m.entityId),
+          );
+          const toPut = remote.filter((v) => !pendingVesselIds.has(v.id));
+          if (toPut.length > 0) {
+            await db.vessels.bulkPut(toPut as any);
+          }
         }
         return remote;
       } catch {
@@ -199,12 +205,13 @@ export function VesselsPage() {
     setDeleteError(null);
 
     try {
-      // 1. Delete from local database and sync outbox
+      // 1. Soft-delete from local database and queue outbox mutation
       await localDelete('vessels', vesselToDelete.id);
-      await db.vessels.delete(vesselToDelete.id);
 
-      // 2. Send DELETE to backend
-      await api(`/vessels/${vesselToDelete.id}`, { method: 'DELETE' }).catch(() => {});
+      // 2. Send DELETE to backend if online
+      if (navigator.onLine) {
+        await api(`/vessels/${vesselToDelete.id}`, { method: 'DELETE' }).catch(() => {});
+      }
 
       setVesselToDelete(null);
     } catch (err) {

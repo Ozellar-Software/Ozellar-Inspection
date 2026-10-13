@@ -27,6 +27,7 @@ import { MovePhotoModal } from './MovePhotoModal';
 import { PhotoDownloadModal, type DownloadFilterOption } from './PhotoDownloadModal';
 import { downloadPhotosAsZip } from './photoDownload';
 import { startPhotoDrag, endPhotoDrag, startTouchPhotoDrag, showDragNotification } from './photoDragService';
+import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
 import './PhotoStrip.css';
 
 /**
@@ -75,6 +76,9 @@ export function PhotoStrip({
   const [tooltipTarget, setTooltipTarget] = useState<{ photo: SyncedPhoto; anchorEl: HTMLElement } | null>(null);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [photoToDelete, setPhotoToDelete] = useState<SyncedPhoto | null>(null);
+  const [isBatchDeleteOpen, setIsBatchDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const shouldShowDownloadRow = showDownloadRow ?? (target === 'section');
 
@@ -94,8 +98,10 @@ export function PhotoStrip({
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [modalInitialFiles, setModalInitialFiles] = useState<File[]>([]);
 
-  // Filter out deleted photos
-  const activePhotos = photos.filter((p) => !p.deletedAt);
+  // Filter out deleted photos and maintain stable position order
+  const activePhotos = photos
+    .filter((p) => !p.deletedAt)
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   const defectCount = activePhotos.filter((p) => !!p.isDefect).length;
 
   const alive = useRef(true);
@@ -182,18 +188,33 @@ export function PhotoStrip({
   };
 
   // Batch delete selected photos
-  const handleBatchDelete = async () => {
+  const executeBatchDelete = async () => {
     if (selectedPhotoIds.size === 0) return;
     const count = selectedPhotoIds.size;
-    const confirmMsg = `Are you sure you want to delete ${count} selected photo${count > 1 ? 's' : ''}? This cannot be undone.`;
-    if (!window.confirm(confirmMsg)) return;
-
-    for (const id of selectedPhotoIds) {
-      await localDelete('photos', id);
+    setIsDeleting(true);
+    try {
+      for (const id of selectedPhotoIds) {
+        await localDelete('photos', id);
+      }
+      setSelectedPhotoIds(new Set());
+      if (activePhotos.length <= count) {
+        setIsSelectMode(false);
+      }
+      setIsBatchDeleteOpen(false);
+    } finally {
+      setIsDeleting(false);
     }
-    setSelectedPhotoIds(new Set());
-    if (activePhotos.length <= count) {
-      setIsSelectMode(false);
+  };
+
+  // Single delete photo
+  const executeSingleDelete = async () => {
+    if (!photoToDelete) return;
+    setIsDeleting(true);
+    try {
+      await localDelete('photos', photoToDelete.id);
+      setPhotoToDelete(null);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -579,7 +600,7 @@ export function PhotoStrip({
 
   // Save handler for CameraCaptureModal
   const handleSavePhotosFromCamera = async (newPhotos: { file: File; isDefect: boolean }[]): Promise<string[]> => {
-    let position = photos.length;
+    let position = photos.reduce((max, p) => Math.max(max, (p.position ?? 0) + 1), 0);
     const addedIds: string[] = [];
     for (const item of newPhotos) {
       const id = await addPhoto({
@@ -714,12 +735,12 @@ export function PhotoStrip({
                 disabled={selectedPhotoIds.size === 0}
                 onClick={(e) => {
                   e.stopPropagation();
-                  void handleBatchDelete();
+                  if (selectedPhotoIds.size > 0) setIsBatchDeleteOpen(true);
                 }}
                 onTouchEnd={(e) => {
                   e.stopPropagation();
                   e.preventDefault();
-                  if (selectedPhotoIds.size > 0) void handleBatchDelete();
+                  if (selectedPhotoIds.size > 0) setIsBatchDeleteOpen(true);
                 }}
                 title="Delete selected photos"
               >
@@ -971,7 +992,7 @@ export function PhotoStrip({
                   aria-label="Remove photo"
                   onClick={(e) => {
                     e.stopPropagation();
-                    void localDelete('photos', p.id);
+                    setPhotoToDelete(p);
                   }}
                 >
                   <XIcon />
@@ -1135,8 +1156,9 @@ export function PhotoStrip({
           onToggleDefect={handleToggleDefect}
           onOpenMoveModal={(p) => setMoveModalPhotos([p])}
           onOpenAssignModal={availableQuestions && availableQuestions.length > 0 ? (p) => setAssignModalPhoto(p) : undefined}
-          onDeletePhoto={async (photoId) => {
-            await localDelete('photos', photoId);
+          onDeletePhoto={(photoId) => {
+            const found = activePhotos.find((p) => p.id === photoId);
+            if (found) setPhotoToDelete(found);
           }}
           onClose={() => setTooltipTarget(null)}
         />
@@ -1185,6 +1207,39 @@ export function PhotoStrip({
             setSelectedPhotoIds(new Set());
           }}
           onClose={() => setMoveModalPhotos(null)}
+        />
+      )}
+
+      {/* ── Single Photo Confirmation Modal ── */}
+      {photoToDelete && (
+        <ConfirmDeleteModal
+          isOpen={!!photoToDelete}
+          title="Delete Photo"
+          description="Are you sure you want to delete this photo?"
+          subdesc="This action cannot be undone and will remove the photo from the inspection."
+          previewImageUrl={urls[photoToDelete.id]}
+          confirmText="Delete Photo"
+          loading={isDeleting}
+          onConfirm={executeSingleDelete}
+          onCancel={() => {
+            if (!isDeleting) setPhotoToDelete(null);
+          }}
+        />
+      )}
+
+      {/* ── Batch Photo Deletion Confirmation Modal ── */}
+      {isBatchDeleteOpen && (
+        <ConfirmDeleteModal
+          isOpen={isBatchDeleteOpen}
+          title={`Delete ${selectedPhotoIds.size} Photo${selectedPhotoIds.size > 1 ? 's' : ''}`}
+          description={`Are you sure you want to delete ${selectedPhotoIds.size} selected photo${selectedPhotoIds.size > 1 ? 's' : ''}?`}
+          subdesc="This action cannot be undone and will permanently remove them from this inspection."
+          confirmText={`Delete ${selectedPhotoIds.size} Photo${selectedPhotoIds.size > 1 ? 's' : ''}`}
+          loading={isDeleting}
+          onConfirm={executeBatchDelete}
+          onCancel={() => {
+            if (!isDeleting) setIsBatchDeleteOpen(false);
+          }}
         />
       )}
     </div>

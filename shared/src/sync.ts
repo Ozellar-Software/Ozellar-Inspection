@@ -16,7 +16,7 @@ export type SyncEntity =
 
 /** Entities a client may change through /sync/push. Approvals go through /inspections/{id}/submit|approve|reject. */
 export const PUSHABLE_ENTITIES: readonly SyncEntity[] = [
-  'inspections', 'inspectionSections', 'inspectionQuestions', 'responses', 'findings', 'photos',
+  'vessels', 'inspections', 'inspectionSections', 'inspectionQuestions', 'responses', 'findings', 'photos',
 ] as const;
 
 export interface Mutation {

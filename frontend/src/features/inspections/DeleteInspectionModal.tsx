@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Inspection } from '@ozellar/shared';
-import { db } from '../../offline/db';
 import { localDelete } from '../../offline/outbox';
 import { syncNow } from '../../offline/sync';
 import { TrashIcon, AlertCircleIcon } from '../../icons';
 import './DeleteInspectionModal.css';
+
 
 interface DeleteInspectionModalProps {
   inspection: Inspection | null;
@@ -22,6 +22,13 @@ export function DeleteInspectionModal({
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setIsDeleting(false);
+      setError(null);
+    }
+  }, [isOpen, inspection?.id]);
+
   if (!isOpen || !inspection) return null;
 
   async function handleConfirmDelete() {
@@ -29,8 +36,8 @@ export function DeleteInspectionModal({
     setIsDeleting(true);
     setError(null);
     try {
+      // localDelete atomically sets deletedAt locally AND queues the delete mutation
       await localDelete('inspections', inspection.id);
-      await db.inspections.update(inspection.id, { deletedAt: new Date().toISOString() });
       if (navigator.onLine) {
         void syncNow();
       }
@@ -39,9 +46,11 @@ export function DeleteInspectionModal({
     } catch (err: any) {
       console.error('Failed to delete inspection:', err);
       setError(err?.message || 'Failed to delete inspection. Please try again.');
+    } finally {
       setIsDeleting(false);
     }
   }
+
 
   return (
     <div className="delete-inspection-backdrop" onClick={() => !isDeleting && onClose()}>

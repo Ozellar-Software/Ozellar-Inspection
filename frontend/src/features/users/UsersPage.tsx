@@ -37,7 +37,8 @@ export function UsersPage() {
     },
     enabled: me.data?.role === 'admin' && navigator.onLine,
   });
-  const vessels = useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [];
+  const vessels = (useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [])
+    .filter((v) => !(v as any).deletedAt);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all');
@@ -70,13 +71,21 @@ export function UsersPage() {
 
   async function toggleActive(u: UserRow) {
     try {
-      const payload = { isActive: !u.isActive };
-      await db.users.update(u.id, payload);
+      const nextActive = !u.isActive;
+      const payload = {
+        email: u.email,
+        name: u.name,
+        designation: u.designation,
+        role: u.role,
+        vesselIds: u.vesselIds ?? [],
+        isActive: nextActive,
+      };
+      await db.users.update(u.id, { isActive: nextActive });
       if (navigator.onLine) {
         await api(`/users/${u.id}`, { method: 'PUT', body: payload });
         qc.setQueryData(['users'], (old: UserRow[] | undefined) => {
           if (!old) return old;
-          return old.map(o => o.id === u.id ? { ...o, isActive: !u.isActive } : o);
+          return old.map(o => o.id === u.id ? { ...o, isActive: nextActive } : o);
         });
         await qc.invalidateQueries({ queryKey: ['users'] });
       }

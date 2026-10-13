@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  type User, type TemplateSection, type TemplateQuestion,
+  type TemplateSection, type TemplateQuestion,
   COMMON_VESSEL_TYPES,
 } from '@ozellar/shared';
 import { api, ApiError } from '../../api/client';
@@ -14,6 +13,7 @@ import {
   CheckIcon, EditIcon, ChevronRightIcon, UsersIcon, ShipIcon,
   CameraIcon, CompassIcon, ChevronDownIcon, SearchIcon, XIcon,
 } from '../../icons';
+import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
 import './ChecklistPage.css';
 
 const COMMON_VESSEL_TYPES_INFO: Array<{ name: string; key: string; color: string; bg: string; border: string }> = [
@@ -44,9 +44,11 @@ import { useCurrentUser } from '../../auth/useCurrentUser';
 
 export function ChecklistPage() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const me = useCurrentUser();
   const rawSections = ((useLiveQuery(() => db.templateSections.toArray(), []) as unknown as TemplateSection[] | undefined) ?? [])
-    .filter((s) => !s.deletedAt).sort((a, b) => a.position - b.position);
+    .filter((s) => !s.deletedAt)
+    .sort((a, b) => Number(Boolean(a.photoOnly)) - Number(Boolean(b.photoOnly)) || a.position - b.position);
   const allQuestions = ((useLiveQuery(() => db.templateQuestions.toArray(), []) as unknown as TemplateQuestion[] | undefined) ?? [])
     .filter((q) => !q.deletedAt);
 
@@ -63,11 +65,18 @@ export function ChecklistPage() {
   const [newCustomType, setNewCustomType] = useState('');
   const [questionForm, setQuestionForm] = useState<{ id?: string; ref: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [defaultProgress, setDefaultProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [sectionToDelete, setSectionToDelete] = useState<(TemplateSection & { mergedIds?: string[] }) | null>(null);
+  const [questionToDelete, setQuestionToDelete] = useState<TemplateQuestion | null>(null);
+  const [isDeletingItem, setIsDeletingItem] = useState(false);
 
-  // Filter state
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [filterScope, setFilterScope] = useState<'applicable' | 'assignedOnly'>('applicable');
+  // Filter state (initialize from ?category= if provided)
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
+    const paramCat = searchParams.get('category');
+    return paramCat?.trim() ? paramCat.trim() : 'all';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const catDropdownRef = useRef<HTMLDivElement>(null);
@@ -111,11 +120,23 @@ export function ChecklistPage() {
           api<TemplateSection[]>('/templates/sections/list'),
           api<TemplateQuestion[]>('/templates/questions/list'),
         ]);
-        if (serverSecs.length) {
-          await db.templateSections.bulkPut(serverSecs as unknown as Record<string, unknown> & { id: string }[]);
+        if (Array.isArray(serverSecs)) {
+          const activeSecIds = new Set(serverSecs.map((s) => s.id));
+          const localSecs = await db.templateSections.toArray();
+          const staleSecIds = localSecs.filter((s) => !activeSecIds.has(s.id)).map((s) => s.id);
+          if (staleSecIds.length) await db.templateSections.bulkDelete(staleSecIds);
+          if (serverSecs.length) {
+            await db.templateSections.bulkPut(serverSecs as unknown as Record<string, unknown> & { id: string }[]);
+          }
         }
-        if (serverQs.length) {
-          await db.templateQuestions.bulkPut(serverQs as unknown as Record<string, unknown> & { id: string }[]);
+        if (Array.isArray(serverQs)) {
+          const activeQIds = new Set(serverQs.map((q) => q.id));
+          const localQs = await db.templateQuestions.toArray();
+          const staleQIds = localQs.filter((q) => !activeQIds.has(q.id)).map((q) => q.id);
+          if (staleQIds.length) await db.templateQuestions.bulkDelete(staleQIds);
+          if (serverQs.length) {
+            await db.templateQuestions.bulkPut(serverQs as unknown as Record<string, unknown> & { id: string }[]);
+          }
         }
       } catch {
         void syncNow();
@@ -127,38 +148,99 @@ export function ChecklistPage() {
   const openSection = sections.find((s) => s.id === openSectionId) ?? null;
   const questionsForOpen = allQuestions.filter((q) => q.sectionId === openSectionId).sort((a, b) => a.position - b.position);
 
-  // Category counts
+  // Deduplicated "All Sections" list: merges rows with the same (name, photoOnly) so the same section
+  // never shows 2 times in "All Sections" — instead it shows once with all vessel types it is used for.
+  const deduplicatedAllSections = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        rep: TemplateSection;
+        mergedVesselTypes: string[];
+        hasDefaultBlueprint: boolean;
+        mergedIds: string[];
+      }
+    >();
+
+    for (const s of sections) {
+      const key = `${s.name.trim().toLowerCase()}::${Boolean(s.photoOnly)}`;
+      const isUniv = !s.vesselTypes || s.vesselTypes.length === 0;
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          rep: s,
+          mergedVesselTypes: [...(s.vesselTypes ?? [])],
+          hasDefaultBlueprint: isUniv,
+          mergedIds: [s.id],
+        });
+      } else {
+        existing.mergedIds.push(s.id);
+        if (isUniv) existing.hasDefaultBlueprint = true;
+        for (const vt of s.vesselTypes ?? []) {
+          const vtTrim = vt.trim();
+          if (vtTrim && !existing.mergedVesselTypes.some((m) => m.toLowerCase() === vtTrim.toLowerCase())) {
+            existing.mergedVesselTypes.push(vtTrim);
+          }
+        }
+        // Prefer a row that has questions (or non-universal row if editing vessel types) as representative
+        const repQCount = allQuestions.filter((q) => q.sectionId === existing.rep.id).length;
+        const curQCount = allQuestions.filter((q) => q.sectionId === s.id).length;
+        if (curQCount > repQCount) {
+          existing.rep = s;
+        }
+      }
+    }
+
+    return Array.from(groups.values()).map(({ rep, mergedVesselTypes, hasDefaultBlueprint, mergedIds }) => ({
+      ...rep,
+      vesselTypes: mergedVesselTypes,
+      hasDefaultBlueprint,
+      mergedIds,
+    }));
+  }, [sections, allQuestions]);
+
+  // Category counts: All = deduplicated sections count; Universal = Default sections; each vessel type = unique sections for that type
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {
-      all: sections.length,
+      all: deduplicatedAllSections.length,
       universal: sections.filter((s) => !s.vesselTypes || s.vesselTypes.length === 0).length,
     };
     for (const type of availableVesselTypes) {
       const catLower = type.trim().toLowerCase();
-      counts[type] = sections.filter((s) => {
-        const isUniversal = !s.vesselTypes || s.vesselTypes.length === 0;
-        const isAssigned = (s.vesselTypes ?? []).some((t) => t.trim().toLowerCase() === catLower);
-        return isAssigned || isUniversal;
-      }).length;
+      const matching = sections.filter((s) =>
+        (s.vesselTypes ?? []).some((t) => t.trim().toLowerCase() === catLower)
+      );
+      const uniqueKeys = new Set(matching.map((s) => `${s.name.trim().toLowerCase()}::${Boolean(s.photoOnly)}`));
+      counts[type] = uniqueKeys.size;
     }
     return counts;
-  }, [sections, availableVesselTypes]);
+  }, [sections, deduplicatedAllSections, availableVesselTypes]);
 
-  // Filtered sections list
+  // Filtered sections list:
+  // - In "all", show deduplicatedAllSections (never show the same section twice)
+  // - In "universal", show Default (Universal) sections
+  // - In a specific vessel type, show unique sections assigned to that vessel type
+  // Always sorted with normal sections first, then photo sections last.
   const filteredSections = useMemo(() => {
-    let list = sections;
-    if (selectedCategory === 'universal') {
-      list = list.filter((s) => !s.vesselTypes || s.vesselTypes.length === 0);
-    } else if (selectedCategory !== 'all') {
+    let list: Array<TemplateSection & { hasDefaultBlueprint?: boolean; mergedIds?: string[] }>;
+
+    if (selectedCategory === 'all') {
+      list = deduplicatedAllSections;
+    } else if (selectedCategory === 'universal') {
+      list = sections.filter((s) => !s.vesselTypes || s.vesselTypes.length === 0);
+    } else {
       const catLower = selectedCategory.trim().toLowerCase();
-      list = list.filter((s) => {
-        const isUniversal = !s.vesselTypes || s.vesselTypes.length === 0;
-        const isAssigned = (s.vesselTypes ?? []).some((t) => t.trim().toLowerCase() === catLower);
-        if (filterScope === 'assignedOnly') {
-          return isAssigned;
+      const rawMatches = sections.filter((s) =>
+        (s.vesselTypes ?? []).some((t) => t.trim().toLowerCase() === catLower)
+      );
+      const seen = new Set<string>();
+      list = [];
+      for (const s of rawMatches) {
+        const key = `${s.name.trim().toLowerCase()}::${Boolean(s.photoOnly)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          list.push(s);
         }
-        return isAssigned || isUniversal;
-      });
+      }
     }
 
     if (searchQuery.trim()) {
@@ -170,8 +252,222 @@ export function ChecklistPage() {
       );
     }
 
-    return list;
-  }, [sections, selectedCategory, filterScope, searchQuery]);
+    return [...list].sort(
+      (a, b) => Number(Boolean(a.photoOnly)) - Number(Boolean(b.photoOnly)) || a.position - b.position
+    );
+  }, [sections, deduplicatedAllSections, selectedCategory, searchQuery]);
+
+  // How many Default (Universal) sections are not yet present in the currently selected vessel type
+  const missingDefaultCount = useMemo(() => {
+    if (!selectedCategory || selectedCategory === 'all' || selectedCategory === 'universal') return 0;
+    const defaultSecs = sections.filter((s) => !s.vesselTypes || s.vesselTypes.length === 0);
+    const catLower = selectedCategory.trim().toLowerCase();
+    const existingForType = sections.filter((s) =>
+      (s.vesselTypes ?? []).some((t) => t.trim().toLowerCase() === catLower)
+    );
+    const existingKeys = new Set(
+      existingForType.map((s) => `${s.name.trim().toLowerCase()}::${Boolean(s.photoOnly)}`)
+    );
+    return defaultSecs.filter((ds) => !existingKeys.has(`${ds.name.trim().toLowerCase()}::${Boolean(ds.photoOnly)}`)).length;
+  }, [sections, selectedCategory]);
+
+  const filteredQuestionsCount = useMemo(() => {
+    const secIds = new Set(filteredSections.map((s) => s.id));
+    return allQuestions.filter((q) => secIds.has(q.sectionId)).length;
+  }, [filteredSections, allQuestions]);
+
+  async function handleApplyDefaultSections() {
+    if (!selectedCategory || selectedCategory === 'all' || selectedCategory === 'universal') return;
+    setBusy(true);
+    setDefaultProgress('Preparing default sections…');
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      let createdSections: TemplateSection[] = [];
+      let createdQuestions: TemplateQuestion[] = [];
+
+      const defaultSecs = sections.filter((s) => !s.vesselTypes || s.vesselTypes.length === 0);
+      const catLower = selectedCategory.trim().toLowerCase();
+      const existingForType = sections.filter((s) =>
+        (s.vesselTypes ?? []).some((t) => t.trim().toLowerCase() === catLower)
+      );
+      const existingKeys = new Set(
+        existingForType.map((s) => `${s.name.trim().toLowerCase()}::${Boolean(s.photoOnly)}`)
+      );
+      const toCreate = defaultSecs.filter(
+        (ds) => !existingKeys.has(`${ds.name.trim().toLowerCase()}::${Boolean(ds.photoOnly)}`)
+      );
+
+      if (toCreate.length === 0) {
+        setSuccessMsg(`All ${defaultSecs.length} Default (Universal) sections are already created in ${selectedCategory}.`);
+        setTimeout(() => setSuccessMsg(null), 5000);
+        return;
+      }
+
+      // Map of existing non-universal sections by (name, photoOnly) so we can append vesselType instead of duplicating rows
+      const existingNonUniversalByKey = new Map<string, TemplateSection>();
+      for (const s of sections) {
+        if (s.vesselTypes && s.vesselTypes.length > 0) {
+          const k = `${s.name.trim().toLowerCase()}::${Boolean(s.photoOnly)}`;
+          if (!existingNonUniversalByKey.has(k)) {
+            existingNonUniversalByKey.set(k, s);
+          }
+        }
+      }
+
+      if (!navigator.onLine) {
+        let nextPos = sections.length;
+        let nextSr = sections.reduce((max, s) => Math.max(max, s.sr ?? 0), 0) + 1;
+        for (let i = 0; i < toCreate.length; i++) {
+          const ds = toCreate[i];
+          setDefaultProgress(`Creating ${i + 1}/${toCreate.length}…`);
+          const key = `${ds.name.trim().toLowerCase()}::${Boolean(ds.photoOnly)}`;
+          const existingOtherType = existingNonUniversalByKey.get(key);
+          if (existingOtherType) {
+            const updatedSec: TemplateSection = {
+              ...existingOtherType,
+              vesselTypes: [...existingOtherType.vesselTypes, selectedCategory],
+            };
+            createdSections.push(updatedSec);
+            continue;
+          }
+
+          const newSec: TemplateSection = {
+            id: crypto.randomUUID(),
+            sr: nextSr++,
+            zone: ds.zone,
+            name: ds.name,
+            position: nextPos++,
+            photoOnly: ds.photoOnly,
+            vesselTypes: [selectedCategory],
+          };
+          createdSections.push(newSec);
+
+          const dsQuestions = allQuestions
+            .filter((q) => q.sectionId === ds.id)
+            .sort((a, b) => a.position - b.position);
+          for (const q of dsQuestions) {
+            createdQuestions.push({
+              id: crypto.randomUUID(),
+              sectionId: newSec.id,
+              qid: q.qid,
+              ref: q.ref,
+              text: q.text,
+              position: q.position,
+            });
+          }
+        }
+      } else {
+        try {
+          setDefaultProgress(`Creating ${toCreate.length} default sections…`);
+          const res = await api<{
+            createdSections: TemplateSection[];
+            createdQuestions: TemplateQuestion[];
+            skippedCount: number;
+          }>('/templates/sections/apply-default', {
+            method: 'POST',
+            body: { vesselType: selectedCategory },
+          });
+          createdSections = res.createdSections ?? [];
+          createdQuestions = res.createdQuestions ?? [];
+        } catch (err) {
+          // Fallback to existing endpoints if backend hasn't been restarted/redeployed with /apply-default yet
+          if (err instanceof ApiError && err.status === 404) {
+            for (let i = 0; i < toCreate.length; i++) {
+              const ds = toCreate[i];
+              setDefaultProgress(`Creating section ${i + 1}/${toCreate.length}…`);
+              const key = `${ds.name.trim().toLowerCase()}::${Boolean(ds.photoOnly)}`;
+              const existingOtherType = existingNonUniversalByKey.get(key);
+
+              if (existingOtherType) {
+                const nextTypes = [...existingOtherType.vesselTypes, selectedCategory];
+                const savedSec = await api<TemplateSection>('/templates/sections', {
+                  method: 'POST',
+                  body: {
+                    id: existingOtherType.id,
+                    zone: existingOtherType.zone,
+                    name: existingOtherType.name,
+                    photoOnly: existingOtherType.photoOnly,
+                    vesselTypes: nextTypes,
+                  },
+                });
+                const secWithType: TemplateSection = {
+                  ...savedSec,
+                  vesselTypes: Array.isArray(savedSec.vesselTypes) && savedSec.vesselTypes.length
+                    ? savedSec.vesselTypes
+                    : nextTypes,
+                };
+                createdSections.push(secWithType);
+                await db.templateSections.put(secWithType as unknown as Record<string, unknown> & { id: string });
+                continue;
+              }
+
+              const savedSec = await api<TemplateSection>('/templates/sections', {
+                method: 'POST',
+                body: {
+                  zone: ds.zone,
+                  name: ds.name,
+                  photoOnly: ds.photoOnly,
+                  vesselTypes: [selectedCategory],
+                },
+              });
+              const secWithType: TemplateSection = {
+                ...savedSec,
+                vesselTypes: Array.isArray(savedSec.vesselTypes) && savedSec.vesselTypes.length
+                  ? savedSec.vesselTypes
+                  : [selectedCategory],
+              };
+              createdSections.push(secWithType);
+              await db.templateSections.put(secWithType as unknown as Record<string, unknown> & { id: string });
+
+              const dsQuestions = allQuestions
+                .filter((q) => q.sectionId === ds.id)
+                .sort((a, b) => a.position - b.position);
+              const savedQuestionsBatch: TemplateQuestion[] = [];
+              for (const q of dsQuestions) {
+                const savedQ = await api<TemplateQuestion>('/templates/questions', {
+                  method: 'POST',
+                  body: {
+                    sectionId: savedSec.id,
+                    ref: q.ref,
+                    text: q.text,
+                  },
+                });
+                createdQuestions.push(savedQ);
+                savedQuestionsBatch.push(savedQ);
+              }
+              if (savedQuestionsBatch.length) {
+                await db.templateQuestions.bulkPut(savedQuestionsBatch as unknown as Record<string, unknown> & { id: string }[]);
+              }
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      if (createdSections.length) {
+        await db.templateSections.bulkPut(createdSections as unknown as Record<string, unknown> & { id: string }[]);
+      }
+      if (createdQuestions.length) {
+        await db.templateQuestions.bulkPut(createdQuestions as unknown as Record<string, unknown> & { id: string }[]);
+      }
+
+      if (createdSections.length > 0) {
+        setSuccessMsg(
+          `Loaded ${createdSections.length} Default section${createdSections.length === 1 ? '' : 's'} for ${selectedCategory}.`
+        );
+      } else {
+        setSuccessMsg(`All Default (Universal) sections are already present in ${selectedCategory}.`);
+      }
+      setTimeout(() => setSuccessMsg(null), 5000);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not create default sections');
+    } finally {
+      setBusy(false);
+      setDefaultProgress(null);
+    }
+  }
 
   function handleOpenAddSection() {
     const initialVesselTypes: string[] =
@@ -188,9 +484,16 @@ export function ChecklistPage() {
     setError(null);
   }
 
-  function handleOpenEditSection(s: TemplateSection) {
+  function handleOpenEditSection(s: TemplateSection & { mergedIds?: string[] }) {
+    // If editing from All Sections where a Default row and vessel-specific row were merged,
+    // target the vessel-specific row if vesselTypes are present
+    let targetId = s.id;
+    if (s.mergedIds && s.mergedIds.length > 1 && s.vesselTypes.length > 0) {
+      const nonUniv = sections.find((sec) => s.mergedIds!.includes(sec.id) && sec.vesselTypes.length > 0);
+      if (nonUniv) targetId = nonUniv.id;
+    }
     setSectionForm({
-      id: s.id,
+      id: targetId,
       zone: s.zone,
       name: s.name,
       photoOnly: s.photoOnly,
@@ -233,16 +536,31 @@ export function ChecklistPage() {
     } finally { setBusy(false); }
   }
 
-  async function deleteSection(s: TemplateSection) {
-    if (!window.confirm(`Delete section "${s.name}" and all its questions?`)) return;
-    setBusy(true); setError(null);
+  async function executeDeleteSection() {
+    if (!sectionToDelete) return;
+    const s = sectionToDelete;
+    setIsDeletingItem(true); setBusy(true); setError(null);
     try {
-      await api(`/templates/sections/${s.id}`, { method: 'DELETE' });
-      await db.templateSections.update(s.id, { deletedAt: new Date().toISOString() });
-      if (openSectionId === s.id) setOpenSectionId(null);
+      const idsToDelete = selectedCategory === 'all' && s.mergedIds?.length ? s.mergedIds : [s.id];
+      const deletedAt = new Date().toISOString();
+      for (const id of idsToDelete) {
+        await api(`/templates/sections/${id}`, { method: 'DELETE' });
+        await db.templateSections.update(id, { deletedAt });
+        const sectionQuestions = await db.templateQuestions
+          .filter((q) => (q as any).sectionId === id)
+          .toArray();
+        if (sectionQuestions.length) {
+          await db.templateQuestions.bulkDelete(sectionQuestions.map((q) => q.id));
+        }
+        if (openSectionId === id) setOpenSectionId(null);
+      }
+      setSectionToDelete(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not delete this section');
-    } finally { setBusy(false); }
+    } finally {
+      setIsDeletingItem(false);
+      setBusy(false);
+    }
   }
 
   async function moveSection(s: TemplateSection, dir: -1 | 1) {
@@ -273,15 +591,20 @@ export function ChecklistPage() {
     } finally { setBusy(false); }
   }
 
-  async function deleteQuestion(q: TemplateQuestion) {
-    if (!window.confirm('Delete this question?')) return;
-    setBusy(true); setError(null);
+  async function executeDeleteQuestion() {
+    if (!questionToDelete) return;
+    const q = questionToDelete;
+    setIsDeletingItem(true); setBusy(true); setError(null);
     try {
       await api(`/templates/questions/${q.id}`, { method: 'DELETE' });
       await db.templateQuestions.update(q.id, { deletedAt: new Date().toISOString() });
+      setQuestionToDelete(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not delete this question');
-    } finally { setBusy(false); }
+    } finally {
+      setIsDeletingItem(false);
+      setBusy(false);
+    }
   }
 
   async function moveQuestion(index: number, dir: -1 | 1) {
@@ -449,7 +772,7 @@ export function ChecklistPage() {
                         <EditIcon width={14} height={14} />
                       </button>
                       <button className="cl-icon-btn delete" aria-label="Delete question"
-                        onClick={(e) => { e.stopPropagation(); void deleteQuestion(q); }}>
+                        onClick={(e) => { e.stopPropagation(); setQuestionToDelete(q); }}>
                         <TrashIcon width={14} height={14} />
                       </button>
                     </div>
@@ -458,6 +781,26 @@ export function ChecklistPage() {
               ))}
             </div>
           </>
+        )}
+
+        {/* ── Confirm Delete Question Modal ── */}
+        {questionToDelete && (
+          <ConfirmDeleteModal
+            isOpen={!!questionToDelete}
+            title="Delete Question"
+            description="Are you sure you want to delete this checklist question?"
+            subdesc={
+              questionToDelete.text
+                ? `"${questionToDelete.text.slice(0, 100)}${questionToDelete.text.length > 100 ? '…' : ''}" will be permanently removed.`
+                : undefined
+            }
+            confirmText="Delete Question"
+            loading={isDeletingItem}
+            onConfirm={executeDeleteQuestion}
+            onCancel={() => {
+              if (!isDeletingItem) setQuestionToDelete(null);
+            }}
+          />
         )}
       </div>
     );
@@ -476,11 +819,32 @@ export function ChecklistPage() {
           </button>
           <div className="cl-title-row">
             <h1 className="cl-page-title">Checklist Templates</h1>
-            <span className="cl-count-pill">{sections.length} Section{sections.length !== 1 ? 's' : ''}</span>
+            <span className="cl-count-pill">{categoryCounts.all} Section{categoryCounts.all !== 1 ? 's' : ''}</span>
           </div>
         </div>
         {!sectionForm && (
           <div className="cl-header-actions">
+            {isVesselTypeActive && (
+              <button
+                type="button"
+                className={`cl-header-default-btn ${missingDefaultCount === 0 && categoryCounts.universal > 0 ? 'applied' : ''}`}
+                disabled={busy || categoryCounts.universal === 0}
+                onClick={() => void handleApplyDefaultSections()}
+                title={`Copy Default (Universal) sections and questions into ${selectedCategory}`}
+              >
+                <CompassIcon width={15} height={15} />
+                <span className="cl-btn-text-full">
+                  {defaultProgress
+                    ? defaultProgress
+                    : missingDefaultCount > 0
+                    ? `Default (+${missingDefaultCount})`
+                    : '✓ Default'}
+                </span>
+                <span className="cl-btn-text-short">
+                  {defaultProgress ? '…' : 'Default'}
+                </span>
+              </button>
+            )}
             <button className="cl-primary-btn" onClick={handleOpenAddSection}>
               <PlusIcon width={16} height={16} />
               <span className="cl-btn-text-full">Add Section</span>
@@ -494,6 +858,23 @@ export function ChecklistPage() {
         <div className="cl-error-banner">
           <AlertCircleIcon width={16} height={16} />
           <span>{error}</span>
+        </div>
+      )}
+
+      {successMsg && (
+        <div className="cl-success-banner">
+          <div className="cl-success-banner-main">
+            <CheckIcon width={16} height={16} />
+            <span>{successMsg}</span>
+          </div>
+          <button
+            type="button"
+            className="cl-success-banner-close"
+            onClick={() => setSuccessMsg(null)}
+            aria-label="Dismiss notification"
+          >
+            <XIcon width={14} height={14} />
+          </button>
         </div>
       )}
 
@@ -516,7 +897,7 @@ export function ChecklistPage() {
                 <span className="cl-tab-badge">{categoryCounts.all}</span>
               </button>
 
-              {/* Quick Tab: Universal */}
+              {/* Quick Tab: Default (Universal) */}
               <button
                 type="button"
                 className={`cl-quick-tab ${selectedCategory === 'universal' ? 'active' : ''}`}
@@ -524,10 +905,11 @@ export function ChecklistPage() {
                   setSelectedCategory('universal');
                   setCategoryDropdownOpen(false);
                 }}
-                title="Sections that apply to every vessel type"
+                title="Default (Universal) template sections that can be loaded into any vessel type"
               >
                 <CompassIcon width={14} height={14} />
-                <span>Universal</span>
+                <span className="cl-tab-text-full">Default (Universal)</span>
+                <span className="cl-tab-text-short">Default</span>
                 <span className="cl-tab-badge">{categoryCounts.universal}</span>
               </button>
 
@@ -540,7 +922,7 @@ export function ChecklistPage() {
                 >
                   <ShipIcon width={14} height={14} />
                   <span className="cl-dropdown-label-full">
-                    {isVesselTypeActive ? selectedCategory : 'Filter by Vessel Type'}
+                    {isVesselTypeActive ? selectedCategory : 'Select Vessel Type'}
                   </span>
                   <span className="cl-dropdown-label-short">
                     {isVesselTypeActive ? selectedCategory : 'Vessel Type'}
@@ -623,29 +1005,85 @@ export function ChecklistPage() {
             </div>
           </div>
 
-          {/* Subbar when a specific vessel category is active */}
-          {isVesselTypeActive && (
-            <div className="cl-filter-subbar">
+          {/* 1-Click Vessel Type Quick Access Pill Strip */}
+          <div className="cl-vessel-pill-strip" role="tablist" aria-label="Vessel Types">
+            {availableVesselTypes.map((type) => {
+              const isSelected = selectedCategory === type;
+              const count = categoryCounts[type] ?? 0;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  className={`cl-vessel-pill ${isSelected ? 'active' : ''} ${count === 0 ? 'empty' : ''}`}
+                  onClick={() => {
+                    setSelectedCategory(type);
+                    setCategoryDropdownOpen(false);
+                  }}
+                >
+                  <ShipIcon width={13} height={13} />
+                  <span className="cl-vessel-pill-name">{type}</span>
+                  <span className="cl-vessel-pill-count">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Subbar when Default (Universal) blueprint is active */}
+          {selectedCategory === 'universal' && (
+            <div className="cl-universal-subbar">
               <div className="cl-filter-hint">
-                <span className="cl-filter-hint-dot" />
-                <span>Viewing sections applicable to <strong>{selectedCategory}</strong>:</span>
+                <CompassIcon width={15} height={15} />
+                <span>
+                  <strong>Default (Universal) Blueprint</strong> ({categoryCounts.universal} section{categoryCounts.universal === 1 ? '' : 's'} · {filteredQuestionsCount} question{filteredQuestionsCount === 1 ? '' : 's'}):
+                  {' '}Select any vessel type above and click <strong>Default</strong> to create these sections for that vessel type.
+                </span>
               </div>
-              <div className="cl-scope-toggles">
+            </div>
+          )}
+
+          {/* Action Card when a specific vessel category is active */}
+          {isVesselTypeActive && (
+            <div className="cl-vessel-action-card">
+              <div className="cl-vessel-action-info">
+                <div className="cl-vessel-action-title-row">
+                  <span className="cl-vessel-action-dot" />
+                  <strong className="cl-vessel-action-title">{selectedCategory} Checklist</strong>
+                  <span className="cl-vessel-action-stats">
+                    {categoryCounts[selectedCategory] ?? 0} section{(categoryCounts[selectedCategory] ?? 0) === 1 ? '' : 's'} · {filteredQuestionsCount} question{filteredQuestionsCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <p className="cl-vessel-action-desc">
+                  {missingDefaultCount > 0
+                    ? `Inspections for ${selectedCategory} vessels only use ${selectedCategory} sections. Click "Default" to create ${missingDefaultCount === categoryCounts.universal ? `all ${categoryCounts.universal}` : `${missingDefaultCount} remaining`} Default (Universal) section${missingDefaultCount === 1 ? '' : 's'}, or add custom sections.`
+                    : `All ${categoryCounts.universal} Default (Universal) sections are loaded for ${selectedCategory}. Inspections for ${selectedCategory} vessels will create these sections.`}
+                </p>
+              </div>
+              <div className="cl-vessel-action-btns">
                 <button
                   type="button"
-                  className={`cl-scope-btn ${filterScope === 'applicable' ? 'active' : ''}`}
-                  onClick={() => setFilterScope('applicable')}
-                  title="Shows Universal sections + sections assigned to this vessel category"
+                  className={`cl-btn-default-action ${missingDefaultCount === 0 && categoryCounts.universal > 0 ? 'applied' : ''}`}
+                  disabled={busy || categoryCounts.universal === 0}
+                  onClick={() => void handleApplyDefaultSections()}
+                  title="Creates all Default (Universal) sections and questions for this vessel category"
                 >
-                  All Applicable ({categoryCounts[selectedCategory] ?? 0})
+                  <CompassIcon width={14} height={14} />
+                  <span>
+                    {defaultProgress
+                      ? defaultProgress
+                      : missingDefaultCount > 0
+                      ? `Default — Load Universal (${missingDefaultCount})`
+                      : `✓ Default Sections Added (${categoryCounts.universal})`}
+                  </span>
                 </button>
                 <button
                   type="button"
-                  className={`cl-scope-btn ${filterScope === 'assignedOnly' ? 'active' : ''}`}
-                  onClick={() => setFilterScope('assignedOnly')}
-                  title="Shows only sections specifically assigned to this vessel category"
+                  className="cl-btn-add-action"
+                  onClick={handleOpenAddSection}
                 >
-                  Assigned Only ({sections.filter((s) => s.vesselTypes.some(t => t.toLowerCase() === selectedCategory.toLowerCase())).length})
+                  <PlusIcon width={14} height={14} />
+                  <span>Add New Section</span>
                 </button>
               </div>
             </div>
@@ -691,7 +1129,7 @@ export function ChecklistPage() {
               <div className="cl-assignment-header">
                 <label className="cl-label">Vessel Category Assignment <span className="cl-req">*</span></label>
                 <span className="cl-assignment-subhint">
-                  Assign this section to all vessels or select 1 or more particular vessel categories
+                  Save as a Default (Universal) template section or assign to 1 or more particular vessel categories
                 </span>
               </div>
 
@@ -704,8 +1142,8 @@ export function ChecklistPage() {
                 >
                   <span className="cl-mode-icon"><CompassIcon width={20} height={20} /></span>
                   <div className="cl-mode-text">
-                    <strong>All Vessel Categories (Universal)</strong>
-                    <small>Included in inspections for every vessel</small>
+                    <strong>Default (Universal) Section</strong>
+                    <small>Master default section — created when clicking Default in a vessel type</small>
                   </div>
                 </button>
                 <button
@@ -830,7 +1268,7 @@ export function ChecklistPage() {
                   {sectionForm.vesselTypes.length === 0 && (
                     <div className="cl-warning-hint">
                       <AlertCircleIcon width={14} height={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
-                      No vessel categories selected. Switch to Universal or select at least 1 vessel category above.
+                      No vessel categories selected. Switch to Default (Universal) or select at least 1 vessel category above.
                     </div>
                   )}
                 </div>
@@ -853,35 +1291,62 @@ export function ChecklistPage() {
         <>
           <div className="cl-results-count">
             {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''}
-            {selectedCategory !== 'all' && ` (filtered by ${selectedCategory})`}
+            {selectedCategory !== 'all' && ` (${selectedCategory === 'universal' ? 'Default / Universal' : selectedCategory})`}
             {searchQuery && ` (matching "${searchQuery}")`}
             {' · '}
-            {allQuestions.length} total questions
+            {filteredQuestionsCount} question{filteredQuestionsCount !== 1 ? 's' : ''}
           </div>
 
           {filteredSections.length === 0 && (
             <div className="cl-empty-state">
               <div className="cl-empty-icon"><ClipboardIcon width={48} height={48} /></div>
-              <h3 className="cl-empty-title">No Sections Found</h3>
+              <h3 className="cl-empty-title">
+                {searchQuery ? 'No Matching Sections' : isVesselTypeActive ? `No Sections in ${selectedCategory} Yet` : 'No Sections Found'}
+              </h3>
               <p className="cl-empty-desc">
                 {searchQuery
                   ? `No sections match your search "${searchQuery}".`
-                  : selectedCategory !== 'all'
-                  ? `There are no sections assigned to "${selectedCategory}". Click "Add Section" to create one.`
+                  : isVesselTypeActive
+                  ? `Click "Default" below to create all ${categoryCounts.universal} Default (Universal) sections for ${selectedCategory}, or click "Add New Section" to create a custom section.`
                   : 'Start building your inspection checklist by adding the first section above.'}
               </p>
-              {selectedCategory !== 'all' && (
-                <button className="cl-primary-btn" onClick={handleOpenAddSection}>
-                  <PlusIcon width={16} height={16} /> Add Section for {selectedCategory}
-                </button>
+              {isVesselTypeActive && (
+                <div className="cl-empty-actions">
+                  <button
+                    type="button"
+                    className="cl-btn-default-action"
+                    disabled={busy || categoryCounts.universal === 0}
+                    onClick={() => void handleApplyDefaultSections()}
+                  >
+                    <CompassIcon width={16} height={16} />
+                    <span>
+                      {defaultProgress
+                        ? defaultProgress
+                        : `Default — Create Universal Sections (${categoryCounts.universal})`}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cl-btn-add-action"
+                    onClick={handleOpenAddSection}
+                  >
+                    <PlusIcon width={16} height={16} />
+                    <span>Add New Section for {selectedCategory}</span>
+                  </button>
+                </div>
               )}
             </div>
           )}
 
           <div className="cl-list-container">
-            {filteredSections.map((s) => {
+            {filteredSections.map((s, idx) => {
               const count = allQuestions.filter((q) => q.sectionId === s.id).length;
               const isUniversal = !s.vesselTypes || s.vesselTypes.length === 0;
+              const coversAllStandardTypes =
+                !isUniversal &&
+                COMMON_VESSEL_TYPES.every((vt) =>
+                  s.vesselTypes.some((t) => t.trim().toLowerCase() === vt.toLowerCase())
+                );
 
               return (
                 <div key={s.id} className="cl-row-card">
@@ -899,25 +1364,34 @@ export function ChecklistPage() {
                         {/* Vessel Category Badges */}
                         <div className="cl-vessel-tags-row">
                           {isUniversal ? (
-                            <span className="cl-vessel-badge universal">All Vessel Types</span>
-                          ) : s.vesselTypes.length === 1 ? (
-                            (() => {
-                              const badge = getVesselTypeBadgeColor(s.vesselTypes[0]);
-                              return (
-                                <span
-                                  className="cl-vessel-badge specific"
-                                  style={{ backgroundColor: badge.bg, color: badge.color, borderColor: badge.border }}
-                                >
-                                  <ShipIcon width={12} height={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-                                  {s.vesselTypes[0]}
-                                </span>
-                              );
-                            })()
+                            <span className="cl-vessel-badge universal">Default (Universal)</span>
+                          ) : coversAllStandardTypes ? (
+                            <div className="cl-vessel-badge-cluster">
+                              <span className="cl-vessel-badge universal">All Vessel Types ({s.vesselTypes.length})</span>
+                              {s.vesselTypes.map((t) => {
+                                const badge = getVesselTypeBadgeColor(t);
+                                return (
+                                  <span
+                                    key={t}
+                                    className="cl-vessel-badge specific"
+                                    style={{ backgroundColor: badge.bg, color: badge.color, borderColor: badge.border }}
+                                  >
+                                    <ShipIcon width={12} height={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                                    {t}
+                                  </span>
+                                );
+                              })}
+                            </div>
                           ) : (
                             <div className="cl-vessel-badge-cluster">
-                              <span className="cl-vessel-badge-counter">
-                                {s.vesselTypes.length} Types:
-                              </span>
+                              {selectedCategory === 'all' && s.hasDefaultBlueprint && (
+                                <span className="cl-vessel-badge universal">Default</span>
+                              )}
+                              {s.vesselTypes.length > 1 && (
+                                <span className="cl-vessel-badge-counter">
+                                  {s.vesselTypes.length} Types:
+                                </span>
+                              )}
                               {s.vesselTypes.map((t) => {
                                 const badge = getVesselTypeBadgeColor(t);
                                 return (
@@ -940,16 +1414,16 @@ export function ChecklistPage() {
                           <span className="cl-sub-sep">•</span>
                           <span className="cl-sub-item">{s.photoOnly ? 'Photos only' : `${count} question${count !== 1 ? 's' : ''}`}</span>
                           <span className="cl-sub-sep">•</span>
-                          <span className="cl-sub-item">Position {s.position + 1}</span>
+                          <span className="cl-sub-item">Position {idx + 1}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="cl-row-controls" onClick={(e) => e.stopPropagation()}>
                       <div className="cl-reorder-group" title={selectedCategory !== 'all' ? 'Filtering active — reordering adjusts overall template position' : ''}>
-                        <button className="cl-icon-btn" aria-label="Move up" disabled={s.position === 0}
+                        <button className="cl-icon-btn" aria-label="Move up" disabled={idx === 0}
                           onClick={() => void moveSection(s, -1)}>↑</button>
-                        <button className="cl-icon-btn" aria-label="Move down" disabled={s.position >= sections.length - 1}
+                        <button className="cl-icon-btn" aria-label="Move down" disabled={idx >= filteredSections.length - 1}
                           onClick={() => void moveSection(s, 1)}>↓</button>
                       </div>
                       <button className="cl-icon-btn edit" title="Edit section"
@@ -957,7 +1431,7 @@ export function ChecklistPage() {
                         <EditIcon width={14} height={14} />
                       </button>
                       <button className="cl-icon-btn delete" aria-label="Delete section"
-                        onClick={() => void deleteSection(s)}>
+                        onClick={() => setSectionToDelete(s)}>
                         <TrashIcon width={14} height={14} />
                       </button>
                       <ChevronRightIcon width={16} height={16} style={{ color: 'var(--faint)', flexShrink: 0 }} />
@@ -968,6 +1442,22 @@ export function ChecklistPage() {
             })}
           </div>
         </>
+      )}
+
+      {/* ── Confirm Delete Section Modal ── */}
+      {sectionToDelete && (
+        <ConfirmDeleteModal
+          isOpen={!!sectionToDelete}
+          title={`Delete Section "${sectionToDelete.name}"`}
+          description={`Are you sure you want to delete the "${sectionToDelete.name}" section?`}
+          subdesc="All checklist questions and configurations in this section will be permanently deleted."
+          confirmText="Delete Section"
+          loading={isDeletingItem}
+          onConfirm={executeDeleteSection}
+          onCancel={() => {
+            if (!isDeletingItem) setSectionToDelete(null);
+          }}
+        />
       )}
     </div>
   );

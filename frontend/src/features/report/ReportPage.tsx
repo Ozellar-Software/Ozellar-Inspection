@@ -189,10 +189,16 @@ export function ReportPage() {
   const initialMode = searchParams.get('mode') === 'photo' ? 'photo' : 'full';
   const [reportMode, setReportMode] = useState<'full' | 'photo'>(initialMode);
 
-  const [summary, setSummary] = useState('');
-  const [conclusion, setConclusion] = useState('');
-  const [seeded, setSeeded] = useState(false);
-  if (inspection && !seeded) { setSummary(inspection.summary); setConclusion(inspection.conclusion); setSeeded(true); }
+  const [summary, setSummary] = useState(inspection?.summary ?? '');
+  const [conclusion, setConclusion] = useState(inspection?.conclusion ?? '');
+
+  useEffect(() => {
+    setSummary(inspection?.summary ?? '');
+  }, [inspection?.summary]);
+
+  useEffect(() => {
+    setConclusion(inspection?.conclusion ?? '');
+  }, [inspection?.conclusion]);
 
   const [approverId, setApproverId] = useState('');
   const [comment, setComment] = useState('');
@@ -200,13 +206,11 @@ export function ReportPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [report, setReport] = useState<ReportData | null>(null);
+  const report = useLiveQuery(
+    () => (inspectionId ? loadReportData(inspectionId) : null),
+    [inspectionId],
+  ) ?? null;
   const [exporting, setExporting] = useState(false);
-
-  useEffect(() => {
-    if (!inspectionId) return;
-    void loadReportData(inspectionId).then(setReport);
-  }, [inspectionId, inspection?.updatedAt]);
 
   const isMock = !inspection && inspectionId?.startsWith('mock');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -289,9 +293,8 @@ export function ReportPage() {
       return allUsers
         .filter((u) => {
           if (u.isActive === false) return false;
-          if (targetRole === 'director') return u.role === 'director' || u.role === 'admin';
+          if (targetRole === 'director') return u.role === 'director';
           if (targetRole === 'techManager') {
-            if (u.role === 'admin') return true;
             if (u.role === 'techManager') {
               if (!vesselId) return true;
               return (u.vesselIds ?? []).some((vid) => vid.toLowerCase().trim() === vesselId);
@@ -342,6 +345,7 @@ export function ReportPage() {
     try {
       if (navigator.onLine) {
         try {
+          await syncNow();
           const res = await api<{ status: InspectionStatus }>(`/inspections/${inspectionId}/${path}`, { method: 'POST', body });
           await db.inspections.update(inspectionId!, { status: res.status });
           try {
@@ -386,8 +390,14 @@ export function ReportPage() {
         stage,
         submittedBy: existingAppr?.submittedBy || me.data?.id || '',
         submittedAt: existingAppr?.submittedAt || now,
-        tmUserId: (body.approverId as string) || (body.nextApproverId as string) || existingAppr?.tmUserId || null,
-        directorUserId: (body.approverId as string) || (body.nextApproverId as string) || existingAppr?.directorUserId || null,
+        tmUserId: path === 'submit'
+          ? (nextStatus === 'pending_tm' ? (body.approverId as string) || null : null)
+          : existingAppr?.tmUserId || null,
+        directorUserId: path === 'submit'
+          ? (nextStatus === 'pending_director' ? (body.approverId as string) || null : null)
+          : path === 'approve' && dispInspection.status === 'pending_tm'
+            ? (body.nextApproverId as string) || existingAppr?.directorUserId || null
+            : existingAppr?.directorUserId || null,
         approvedAt: nextStatus === 'approved' ? now : null,
         returnedBy: nextStatus === 'returned' ? me.data?.id || null : null,
         returnComment: nextStatus === 'returned' ? (body.comment as string) || null : null,

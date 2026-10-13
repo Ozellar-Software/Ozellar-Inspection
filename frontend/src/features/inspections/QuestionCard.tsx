@@ -97,6 +97,18 @@ export function QuestionCard({
   const [dragFeedbackType, setDragFeedbackType] = useState<'success' | 'warning'>('success');
   const dragCounter = useRef(0);
 
+  useEffect(() => {
+    setRemarks(response?.remarks ?? '');
+  }, [response?.remarks]);
+
+  useEffect(() => {
+    setCorrectiveAction(response?.correctiveAction ?? '');
+  }, [response?.correctiveAction]);
+
+  useEffect(() => {
+    setPreventiveAction(response?.preventiveAction ?? '');
+  }, [response?.preventiveAction]);
+
   // Clean up dragover overlay whenever any drag ends in window
   useEffect(() => {
     return onPhotoDragEnd(() => {
@@ -222,6 +234,7 @@ export function QuestionCard({
               target: 'question',
               responseId: respId,
               inspectionSectionId: null,
+              findingId: null,
               position: pos++,
             });
             assignedCount++;

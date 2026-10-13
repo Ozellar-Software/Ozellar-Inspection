@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Finding, InspectionSection, Photo } from '@ozellar/shared';
 import { localWrite, localDelete } from '../../offline/outbox';
 import { PhotoStrip } from './PhotoStrip';
 import { TrashIcon } from '../../icons';
+import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
 
 function stateClass(f: Finding): string {
   if (f.answer === 'yes') return 'state-ok';
@@ -28,13 +29,44 @@ export function FindingCard({
   const [text, setText] = useState(finding.text);
   const [correctiveAction, setCorrectiveAction] = useState(finding.correctiveAction);
   const [preventiveAction, setPreventiveAction] = useState(finding.preventiveAction);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    setText(finding.text);
+  }, [finding.text]);
+
+  useEffect(() => {
+    setCorrectiveAction(finding.correctiveAction);
+  }, [finding.correctiveAction]);
+
+  useEffect(() => {
+    setPreventiveAction(finding.preventiveAction);
+  }, [finding.preventiveAction]);
+
+  const handleDeleteFinding = async () => {
+    setIsDeleting(true);
+    try {
+      await localDelete('findings', finding.id);
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className={`qcard ${stateClass(finding)}`}>
       <div className="qhead" style={{ justifyContent: 'space-between' }}>
         <span className="ref">Extra</span>
         {!locked && (
-          <button className="icon-btn" aria-label="Remove observation" onClick={() => void localDelete('findings', finding.id)}><TrashIcon /></button>
+          <button
+            className="icon-btn"
+            aria-label="Remove observation"
+            onClick={() => setShowDeleteConfirm(true)}
+            title="Delete this observation"
+          >
+            <TrashIcon />
+          </button>
         )}
       </div>
 
@@ -73,6 +105,26 @@ export function FindingCard({
           allSections={allSections}
         />
       </div>
+
+      {/* ── Confirm Delete Observation Modal ── */}
+      {showDeleteConfirm && (
+        <ConfirmDeleteModal
+          isOpen={showDeleteConfirm}
+          title="Delete Extra Observation"
+          description="Are you sure you want to delete this observation?"
+          subdesc={
+            finding.text
+              ? `"${finding.text.slice(0, 80)}${finding.text.length > 80 ? '…' : ''}" will be removed.`
+              : 'This finding and any associated data will be removed.'
+          }
+          confirmText="Delete Observation"
+          loading={isDeleting}
+          onConfirm={handleDeleteFinding}
+          onCancel={() => {
+            if (!isDeleting) setShowDeleteConfirm(false);
+          }}
+        />
+      )}
     </div>
   );
 }

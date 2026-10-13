@@ -62,7 +62,9 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
   const inspection = await db.inspections.get(inspectionId);
   if (!inspection) return null;
   const vessel = inspection.vesselId ? await db.vessels.get(inspection.vesselId) : undefined;
-  const allSections = await db.inspectionSections.where('inspectionId').equals(inspectionId).sortBy('position');
+  const allSections = (await db.inspectionSections.where('inspectionId').equals(inspectionId).sortBy('position'))
+    .filter((s) => !(s as any).deletedAt)
+    .sort((a, b) => Number(Boolean(a.photoOnly)) - Number(Boolean(b.photoOnly)) || a.position - b.position);
   const questions = await db.inspectionQuestions.toArray();
   const responses = await db.responses.where('inspectionId').equals(inspectionId).toArray();
   const findings = (await db.findings.where('inspectionId').equals(inspectionId).toArray()).filter((f) => !f.deletedAt);

@@ -45,6 +45,7 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
            left join responses r on r.inspection_question_id = iq.id and r.inspection_id = $1
           where s.inspection_id = $1
             and s.photo_only = false
+            and s.deleted_at is null
             and (r.id is null or (r.answer is null and (r.applicable is null or r.applicable = true)))`,
         [inspectionId]);
       const pendingCount = Number(pendingRes.rows[0]?.count ?? 0);

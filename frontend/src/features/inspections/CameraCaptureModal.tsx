@@ -32,6 +32,7 @@ export function CameraCaptureModal({
 }: CameraCaptureModalProps) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isVideoReady, setIsVideoReady] = useState(false);
   const [capturedPhotos, setCapturedPhotos] = useState<CapturedPhoto[]>([]);
   const [captureMode, setCaptureMode] = useState<'normal' | 'defect'>('normal');
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
@@ -48,6 +49,7 @@ export function CameraCaptureModal({
 
   // Stop camera stream completely and release hardware pipeline
   const stopStream = useCallback(() => {
+    setIsVideoReady(false);
     if (streamRef.current) {
       try {
         const tracks = streamRef.current.getTracks();
@@ -85,10 +87,15 @@ export function CameraCaptureModal({
   const startCamera = useCallback(async (facing: 'environment' | 'user') => {
     stopStream();
     setCameraError(null);
+    setIsVideoReady(false);
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       if (isMountedRef.current) {
-        setCameraError('Direct camera streaming is not supported on this browser. Use the native capture button below.');
+        if (typeof window !== 'undefined' && !window.isSecureContext) {
+          setCameraError('Direct camera streaming requires HTTPS or localhost. You can still capture photos using the native device camera below.');
+        } else {
+          setCameraError('Direct camera streaming is not supported on this browser. Use the native capture button below.');
+        }
       }
       return;
     }
@@ -114,6 +121,15 @@ export function CameraCaptureModal({
         return;
       }
 
+      // Detect if OS or camera hardware stops the track
+      mediaStream.getVideoTracks().forEach((track) => {
+        track.onended = () => {
+          if (isMountedRef.current) {
+            setIsVideoReady(false);
+          }
+        };
+      });
+
       streamRef.current = mediaStream;
       setStream(mediaStream);
 
@@ -136,6 +152,14 @@ export function CameraCaptureModal({
           return;
         }
 
+        fallbackStream.getVideoTracks().forEach((track) => {
+          track.onended = () => {
+            if (isMountedRef.current) {
+              setIsVideoReady(false);
+            }
+          };
+        });
+
         streamRef.current = fallbackStream;
         setStream(fallbackStream);
 
@@ -145,11 +169,14 @@ export function CameraCaptureModal({
         }
       } catch (fallbackErr: any) {
         if (!isMountedRef.current) return;
-        setCameraError(
-          err.name === 'NotAllowedError'
-            ? 'Camera access was denied. Please allow camera permissions or use the native camera file picker.'
-            : 'Could not connect to camera hardware. Use the native camera button below.'
-        );
+        const errName = err?.name || fallbackErr?.name;
+        if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+          setCameraError('Camera access was denied. Please allow camera permissions in your browser or use the native camera button below.');
+        } else if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+          setCameraError('Camera hardware is currently in use by another application. Use the native camera button below.');
+        } else {
+          setCameraError('Could not connect to camera hardware. Use the native camera button below.');
+        }
       }
     }
   }, [stopStream]);
@@ -181,16 +208,37 @@ export function CameraCaptureModal({
     };
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-acquire camera on mobile resume / visibilitychange if tracks were paused/ended by OS
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isOpen && !cameraError) {
+        const activeTracks = streamRef.current?.getVideoTracks().filter((t) => t.readyState === 'live');
+        if (!activeTracks || activeTracks.length === 0) {
+          void startCamera(facingMode);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isOpen, cameraError, facingMode, startCamera]);
+
   if (!isOpen) return null;
 
   // Snap photo from active video stream using selected captureMode (Normal or Defect) - stored immediately!
   const handleSnap = () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current || isSaving) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    const width = video.videoWidth || 1280;
-    const height = video.videoHeight || 720;
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    if (!width || !height || video.readyState < 2) {
+      console.warn('Cannot snap photo: video frame is not ready yet');
+      return;
+    }
+
     canvas.width = width;
     canvas.height = height;
 
@@ -219,11 +267,12 @@ export function CameraCaptureModal({
           const newPhoto: CapturedPhoto = {
             id: photoId,
             file,
-            previewUrl: URL.createObjectURL(blob),
+            previewUrl,
             isDefect: isDefectPhoto,
           };
           setCapturedPhotos((prev) => [...prev, newPhoto]);
         } catch (err: any) {
+          URL.revokeObjectURL(previewUrl);
           console.error('Failed to store captured photo:', err);
           alert(`Failed to save photo: ${err.message || 'Unknown error'}`);
         } finally {
@@ -366,7 +415,9 @@ export function CameraCaptureModal({
                 autoPlay
                 playsInline
                 muted
-                className="ccm-video"
+                className={`ccm-video ${facingMode === 'user' ? 'mirrored' : ''}`}
+                onLoadedMetadata={() => setIsVideoReady(true)}
+                onCanPlay={() => setIsVideoReady(true)}
               />
               {shutterFlash && <div className="ccm-shutter-flash" />}
 
@@ -423,16 +474,17 @@ export function CameraCaptureModal({
                   type="button"
                   className={`ccm-shutter-btn ${captureMode === 'defect' ? 'is-defect-mode' : ''}`}
                   onClick={handleSnap}
-                  disabled={isSaving}
+                  disabled={isSaving || !isVideoReady}
                   aria-label={`Capture ${captureMode} photo`}
-                  title={`Capture photo (${captureMode.toUpperCase()} mode)`}
+                  title={!isVideoReady ? 'Waiting for camera...' : `Capture photo (${captureMode.toUpperCase()} mode)`}
+                  style={!isVideoReady || isSaving ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
                 >
                   <span className="ccm-shutter-inner" />
                 </button>
               </div>
 
               <span className="ccm-shutter-hint">
-                Mode: <b className={captureMode === 'defect' ? 'ccm-hint-defect' : 'ccm-hint-normal'}>{captureMode.toUpperCase()}</b> • Tap shutter to snap & store image directly
+                Mode: <b className={captureMode === 'defect' ? 'ccm-hint-defect' : 'ccm-hint-normal'}>{captureMode.toUpperCase()}</b> • {!isVideoReady ? 'Initializing camera...' : 'Tap shutter to snap & store image directly'}
               </span>
             </div>
           )}
@@ -496,6 +548,31 @@ export function CameraCaptureModal({
             </div>
           </div>
         )}
+
+        {/* ── Modal Footer ── */}
+        <div className="ccm-footer">
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={handleClose}
+            disabled={isSaving}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary ccm-done-btn"
+            onClick={handleClose}
+            disabled={isSaving}
+          >
+            <CheckIcon style={{ width: 16, height: 16 }} />
+            <span>
+              {capturedPhotos.length > 0
+                ? `Done (${capturedPhotos.length} Saved)`
+                : 'Done'}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );

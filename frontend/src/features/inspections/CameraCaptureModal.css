@@ -142,6 +142,10 @@
   display: block;
 }
 
+.ccm-video.mirrored {
+  transform: scaleX(-1);
+}
+
 /* Shutter flash animation */
 .ccm-shutter-flash {
   position: absolute;
@@ -739,6 +743,18 @@
     height: 20px;
     min-width: 20px;
     border-radius: 3px;
+  }
+
+  /* ── Compact Mobile Footer ── */
+  .ccm-footer {
+    padding: 8px 12px max(10px, env(safe-area-inset-bottom));
+    background: #0f172a;
+    gap: 8px;
+  }
+
+  .ccm-done-btn {
+    padding: 8px 18px;
+    font-size: 13px;
   }
 }
 

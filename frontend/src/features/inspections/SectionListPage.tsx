@@ -59,8 +59,17 @@ export function SectionListPage() {
   }, [inspectionId]);
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);
-  const sections = useLiveQuery(
+  const rawSections = useLiveQuery(
     () => (inspectionId ? db.inspectionSections.where('inspectionId').equals(inspectionId).sortBy('position') : []), [inspectionId]) ?? [];
+  // Filter out soft-deleted sections and always group normal checklist sections before photo sections
+  const sections = useMemo(
+    () =>
+      rawSections
+        .filter((s) => !(s as any).deletedAt)
+        .sort((a, b) => Number(Boolean(a.photoOnly)) - Number(Boolean(b.photoOnly)) || a.position - b.position),
+    [rawSections]
+  );
+
   const rawQuestions = useLiveQuery(
     () => (inspectionId ? db.inspectionQuestions.toArray() : []), [inspectionId]) ?? [];
   const sectionIdSet = useMemo(() => new Set(sections.map((s) => s.id)), [sections]);
@@ -125,6 +134,9 @@ export function SectionListPage() {
       position: s.position, done: p.done, total: p.total, photoOnly: s.photoOnly, photoCount: pCount,
     };
   });
+
+  const normalDisplaySections = displaySections.filter((s) => !s.photoOnly);
+  const photoDisplaySections = displaySections.filter((s) => s.photoOnly);
 
   // Overall progress (checklist questions)
   const totalDone  = displaySections.reduce((a, s) => a + s.done, 0);
@@ -205,6 +217,92 @@ export function SectionListPage() {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function renderSectionCard(s: (typeof displaySections)[number], badgeNumber: number) {
+    const isPhoto = s.photoOnly;
+    const pCount = s.photoCount;
+    const hasPhotos = pCount > 0;
+    const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+    const fillColor = isPhoto
+      ? (hasPhotos ? '#10b981' : '#f59e0b')
+      : progressColor(pct);
+    const zone = zoneColor(s.zone);
+
+    return (
+      <div
+        key={s.id}
+        id={`sec-row-${s.id}`}
+        className="section-card-row"
+        onClick={() => {
+          if (inspectionId) {
+            sessionStorage.setItem(`oz_last_sec_${inspectionId}`, `sec-row-${s.id}`);
+          }
+          nav(`/inspections/${inspectionId}/sections/${s.id}`);
+        }}
+      >
+        {/* Section number or camera badge */}
+        <div
+          className="sec-card-badge"
+          style={{
+            background: isPhoto ? '#f0fdfa' : fillColor + '15',
+            border: `1.5px solid ${isPhoto ? '#2dd4bf' : fillColor + '40'}`,
+            color: isPhoto ? '#0d9488' : fillColor,
+          }}
+        >
+          {isPhoto ? <CameraIcon width={18} height={18} /> : badgeNumber}
+        </div>
+
+        <div className="sec-card-content">
+          <div className="sec-card-header-row">
+            <span className="sec-card-name">{s.name}</span>
+            {s.zone && (
+              <span className="sec-card-zone" style={{ background: zone.bg, color: zone.text }}>
+                {s.zone}
+              </span>
+            )}
+            {isPhoto && (
+              <span className="sec-card-photo-pill">
+                PHOTO SECTION
+              </span>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          {isPhoto ? (
+            <div className="sec-card-progress-row">
+              <div className="sec-card-progress-track">
+                <div style={{
+                  height: '100%',
+                  width: hasPhotos ? '100%' : '0%',
+                  background: 'linear-gradient(90deg, #0A828A 0%, #10b981 100%)',
+                  borderRadius: 99,
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+              <span className="sec-card-photo-stat" style={{ color: hasPhotos ? '#0d9488' : '#94a3b8' }}>
+                <CameraIcon width={13} height={13} />
+                {pCount} photo{pCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+          ) : (
+            <div className="sec-card-progress-row">
+              <div className="sec-card-progress-track">
+                <div style={{ height: '100%', width: `${pct}%`, background: fillColor, borderRadius: 99, transition: 'width 0.3s ease' }} />
+              </div>
+              <span className="sec-card-progress-stat">
+                {s.done}/{s.total} · {pct}%
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Chevron */}
+        <svg viewBox="0 0 24 24" className="sec-card-arrow" fill="none" stroke="#cbd5e1" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 18l6-6-6-6" />
+        </svg>
+      </div>
+    );
   }
 
   return (
@@ -463,7 +561,13 @@ export function SectionListPage() {
         <div className="section-list-header">
           <div className="section-list-header-title" style={{ color: light ? '#0d9488' : '#94a3b8' }}>
             {light && <CameraIcon width={14} height={14} />}
-            <span>{light ? `Photo Sections (${displaySections.length})` : 'Inspection Sections'}</span>
+            <span>
+              {light
+                ? `Photo Sections (${photoDisplaySections.length})`
+                : normalDisplaySections.length > 0
+                ? `Inspection Sections (${normalDisplaySections.length})`
+                : `Photo Sections (${photoDisplaySections.length})`}
+            </span>
           </div>
 
           {canAddSection && (
@@ -477,7 +581,7 @@ export function SectionListPage() {
           )}
         </div>
 
-        {/* ── Section cards or Empty State ── */}
+        {/* ── Section cards or Empty State (Grouped: Normal Checklist Sections first, then Photo Sections) ── */}
         {displaySections.length === 0 ? (
           <div className="empty-photo-sections-card">
             <div className="epsc-icon">
@@ -513,91 +617,20 @@ export function SectionListPage() {
             </div>
           </div>
         ) : (
-          displaySections.map((s, idx) => {
-            const isPhoto = s.photoOnly;
-            const pCount = s.photoCount;
-            const hasPhotos = pCount > 0;
-            const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-            const fillColor = isPhoto
-              ? (hasPhotos ? '#10b981' : '#f59e0b')
-              : progressColor(pct);
-            const zone = zoneColor(s.zone);
+          <>
+            {!light && normalDisplaySections.map((s, idx) => renderSectionCard(s, idx + 1))}
 
-            return (
-              <div
-                key={s.id}
-                id={`sec-row-${s.id}`}
-                className="section-card-row"
-                onClick={() => {
-                  if (inspectionId) {
-                    sessionStorage.setItem(`oz_last_sec_${inspectionId}`, `sec-row-${s.id}`);
-                  }
-                  nav(`/inspections/${inspectionId}/sections/${s.id}`);
-                }}
-              >
-                {/* Section number or camera badge */}
-                <div
-                  className="sec-card-badge"
-                  style={{
-                    background: isPhoto ? '#f0fdfa' : fillColor + '15',
-                    border: `1.5px solid ${isPhoto ? '#2dd4bf' : fillColor + '40'}`,
-                    color: isPhoto ? '#0d9488' : fillColor,
-                  }}
-                >
-                  {isPhoto ? <CameraIcon width={18} height={18} /> : (s.position ?? idx + 1)}
+            {!light && normalDisplaySections.length > 0 && photoDisplaySections.length > 0 && (
+              <div className="section-list-header" style={{ marginTop: 18 }}>
+                <div className="section-list-header-title" style={{ color: '#0d9488' }}>
+                  <CameraIcon width={14} height={14} />
+                  <span>Photo Sections ({photoDisplaySections.length})</span>
                 </div>
-
-                <div className="sec-card-content">
-                  <div className="sec-card-header-row">
-                    <span className="sec-card-name">{s.name}</span>
-                    {s.zone && (
-                      <span className="sec-card-zone" style={{ background: zone.bg, color: zone.text }}>
-                        {s.zone}
-                      </span>
-                    )}
-                    {isPhoto && (
-                      <span className="sec-card-photo-pill">
-                        PHOTO SECTION
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Progress bar */}
-                  {isPhoto ? (
-                    <div className="sec-card-progress-row">
-                      <div className="sec-card-progress-track">
-                        <div style={{
-                          height: '100%',
-                          width: hasPhotos ? '100%' : '0%',
-                          background: 'linear-gradient(90deg, #0A828A 0%, #10b981 100%)',
-                          borderRadius: 99,
-                          transition: 'width 0.3s ease',
-                        }} />
-                      </div>
-                      <span className="sec-card-photo-stat" style={{ color: hasPhotos ? '#0d9488' : '#94a3b8' }}>
-                        <CameraIcon width={13} height={13} />
-                        {pCount} photo{pCount !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="sec-card-progress-row">
-                      <div className="sec-card-progress-track">
-                        <div style={{ height: '100%', width: `${pct}%`, background: fillColor, borderRadius: 99, transition: 'width 0.3s ease' }} />
-                      </div>
-                      <span className="sec-card-progress-stat">
-                        {s.done}/{s.total} · {pct}%
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Chevron */}
-                <svg viewBox="0 0 24 24" className="sec-card-arrow" fill="none" stroke="#cbd5e1" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 18l6-6-6-6" />
-                </svg>
               </div>
-            );
-          })
+            )}
+
+            {photoDisplaySections.map((s, idx) => renderSectionCard(s, idx + 1))}
+          </>
         )}
 
         {canDelete && (

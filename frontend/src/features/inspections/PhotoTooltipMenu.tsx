@@ -179,10 +179,8 @@ export function PhotoTooltipMenu({
             type="button"
             className="ptt-item danger"
             onClick={() => {
-              if (window.confirm('Are you sure you want to delete this photo?')) {
-                onClose();
-                void onDeletePhoto(photo.id);
-              }
+              onClose();
+              void onDeletePhoto(photo.id);
             }}
           >
             <TrashIcon width={15} height={15} className="ptt-icon-del" />

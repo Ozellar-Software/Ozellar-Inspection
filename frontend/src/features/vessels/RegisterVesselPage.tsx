@@ -141,13 +141,14 @@ export function RegisterVesselPage() {
     };
 
     try {
-      await db.vessels.put(vesselRecord as any);
       await localWrite('vessels', vesselId, vesselRecord as any);
 
-      if (form.id) {
-        await api(`/vessels/${form.id}`, { method: 'POST', body: vesselRecord }).catch(() => {});
-      } else {
-        await api('/vessels', { method: 'POST', body: vesselRecord }).catch(() => {});
+      if (navigator.onLine) {
+        if (form.id) {
+          await api(`/vessels/${form.id}`, { method: 'POST', body: vesselRecord }).catch(() => {});
+        } else {
+          await api('/vessels', { method: 'POST', body: vesselRecord }).catch(() => {});
+        }
       }
 
       navigate('/vessels');

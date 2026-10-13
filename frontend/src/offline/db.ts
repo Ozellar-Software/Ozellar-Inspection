@@ -96,10 +96,20 @@ db.on('ready', async () => {
   }
   // Purge any soft-deleted template sections from local Dexie
   const allSecs = await db.templateSections.toArray();
-  const deadSecs = allSecs.filter(s => !!(s as any).deletedAt).map(s => s.id);
-  if (deadSecs.length) {
-    console.warn('[DB] Purging', deadSecs.length, 'deleted template section(s)');
-    await db.templateSections.bulkDelete(deadSecs);
+  const deadSecIds = new Set(allSecs.filter(s => !!(s as any).deletedAt).map(s => s.id));
+  if (deadSecIds.size) {
+    console.warn('[DB] Purging', deadSecIds.size, 'deleted template section(s)');
+    await db.templateSections.bulkDelete([...deadSecIds]);
   }
+  // Purge any soft-deleted template questions OR questions belonging to a deleted section
+  const allQs = await db.templateQuestions.toArray();
+  const deadQs = allQs
+    .filter(q => !!(q as any).deletedAt || deadSecIds.has((q as any).sectionId))
+    .map(q => q.id);
+  if (deadQs.length) {
+    console.warn('[DB] Purging', deadQs.length, 'deleted/orphaned template question(s)');
+    await db.templateQuestions.bulkDelete(deadQs);
+  }
+
 });
 
