@@ -63,7 +63,8 @@ export function NewInspectionPage() {
 
   const vessels = (useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [])
     .filter((v) => !(v as any).deletedAt);
-  const templateSections = useLiveQuery(() => db.templateSections.orderBy('position').toArray(), []) ?? [];
+  const templateSections = (useLiveQuery(() => db.templateSections.toArray(), []) ?? [])
+    .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
 
   // TM and VM can only create inspections for their assigned vessels
   const displayVessels = (me.data?.role === 'admin' || me.data?.role === 'director' || !me.data)
@@ -86,12 +87,20 @@ export function NewInspectionPage() {
 
   function getSectionCountForVesselType(vesselType?: string | null): number {
     const vt = vesselType?.trim().toLowerCase() ?? '';
-    const matching = templateSections.filter((s) => {
+    let matching = templateSections.filter((s) => {
       if ((s as any).deletedAt) return false;
       const types: string[] = Array.isArray((s as any).vesselTypes) ? (s as any).vesselTypes : [];
       if (!vt) return types.length === 0;
       return types.some((t) => t.trim().toLowerCase() === vt);
     });
+    if (matching.length === 0) {
+      // Fallback to Universal (Default) sections if none are assigned to this vessel type yet
+      matching = templateSections.filter((s) => {
+        if ((s as any).deletedAt) return false;
+        const types: string[] = Array.isArray((s as any).vesselTypes) ? (s as any).vesselTypes : [];
+        return types.length === 0;
+      });
+    }
     return new Set(matching.map((s) => `${String(s.name ?? '').trim().toLowerCase()}::${Boolean(s.photoOnly)}`)).size;
   }
 

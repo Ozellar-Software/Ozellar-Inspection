@@ -59,6 +59,10 @@ export class VirDB extends Dexie {
       approvalEvents: 'id, inspectionId, createdAt',
       notifications: 'id, userId, read, createdAt',
     });
+    this.version(3).stores({
+      templateSections: 'id, sr, position',
+      templateQuestions: 'id, sectionId, position',
+    });
   }
 
   table_(entity: SyncEntity): Table<Record<string, unknown> & { id: string }, string> {

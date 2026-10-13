@@ -75,7 +75,7 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
 
   // Only create sections assigned to this vessel's type.
   // Universal sections (empty vesselTypes) act as the Default blueprint in Checklist Master.
-  const rawApplicable = templateSections.filter((ts) => {
+  let rawApplicable = templateSections.filter((ts) => {
     const types = (Array.isArray(ts.vesselTypes) ? ts.vesselTypes : []).map((t) => String(t).trim()).filter(Boolean);
     if (input.vesselType?.trim()) {
       const target = input.vesselType.trim().toLowerCase();
@@ -83,6 +83,15 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
     }
     return types.length === 0;
   });
+
+  // If no sections are specifically assigned to this vessel type, fall back to Universal (Default) sections
+  // so the inspection is never created with zero sections!
+  if (rawApplicable.length === 0) {
+    rawApplicable = templateSections.filter((ts) => {
+      const types = (Array.isArray(ts.vesselTypes) ? ts.vesselTypes : []).map((t) => String(t).trim()).filter(Boolean);
+      return types.length === 0;
+    });
+  }
 
   // Deduplicate by (name, photoOnly) and always group normal sections first, photo sections last
   const seenSectionKeys = new Set<string>();
