@@ -169,7 +169,7 @@ svg:not([width]):not([class*="-svg"]) { width: 18px; height: 18px; }
 .seg button.selected { background: var(--accent-tint); border-color: var(--accent); color: var(--accent-dark); }
 
 /* ---------- Search ---------- */
-.search-wrap { position: relative; margin: 2px 0 14px; }
+.search-wrap { position: relative; margin: 0; }
 .search-wrap input {
   width: 100%; padding: 11px 40px 11px 38px; border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: #fff; font-size: 14.5px; color: var(--ink);
