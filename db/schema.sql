@@ -55,6 +55,8 @@ create table if not exists vessels (
   vessel_type   text not null default '',
   particulars   jsonb not null default '{}'::jsonb,   -- flag, callSign, grossTonnage, … (23 fields, see docs/06)
   photo_id      uuid,                                  -- -> photos.id (vessel photo)
+  registration_status text not null default 'registered' check (registration_status in ('registered','unregistered')),
+  created_by    uuid references users(id),
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
   deleted_at    timestamptz,
@@ -103,6 +105,7 @@ create table if not exists inspections (
   imo              text not null default '',
   vessel_type      text not null default '',
   inspection_type  text not null default 'port' check (inspection_type in ('port','remote','sailing')),
+  report_category  text not null default 'inspection' check (report_category in ('inspection','pre_purchase','take_over')),
   port             text not null default '',
   start_date       date,
   completion_date  date,

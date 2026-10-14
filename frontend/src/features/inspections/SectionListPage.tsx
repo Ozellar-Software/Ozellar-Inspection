@@ -51,6 +51,7 @@ export function SectionListPage() {
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [recheckedAccess, setRecheckedAccess] = useState(false);
 
   useEffect(() => {
     if (inspectionId) {
@@ -59,6 +60,16 @@ export function SectionListPage() {
   }, [inspectionId]);
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);
+
+  // The cached /me profile (incl. assigned vesselIds) can be briefly stale right after access to a
+  // vessel was just granted (e.g. registering it inline via a Pre Purchase / Take Over report) — a
+  // real grant that happened server-side within the last few minutes won't show up locally until /me
+  // refetches. Before concluding access is genuinely denied, refetch once to rule that out.
+  useEffect(() => {
+    if (!inspection || !me.data || recheckedAccess) return;
+    if (can(me.data, 'inspection.view', { inspection })) return;
+    void me.refetch().finally(() => setRecheckedAccess(true));
+  }, [inspection, me.data, recheckedAccess, me]);
   const rawSections = useLiveQuery(
     () => (inspectionId ? db.inspectionSections.where('inspectionId').equals(inspectionId).sortBy('position') : []), [inspectionId]) ?? [];
   // Filter out soft-deleted sections and always group normal checklist sections before photo sections
@@ -112,6 +123,7 @@ export function SectionListPage() {
   if (!displayInspection) return null;
 
   if (me.data && !can(me.data, 'inspection.view', { inspection: displayInspection })) {
+    if (!recheckedAccess) return null; // briefly confirming the permission cache isn't just stale
     return (
       <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
         <h2 style={{ color: 'var(--bad)', fontSize: 18, marginBottom: 8 }}>Access Restricted</h2>
@@ -480,7 +492,10 @@ export function SectionListPage() {
 
         {/* ── Report button ── */}
         {(() => {
-          const canSubmit = me.data ? can(me.data, 'inspection.submit', { inspection: displayInspection }) : false;
+          // Pre Purchase / Take Over reports skip the Tech Manager → Director chain entirely — an Admin
+          // approves (or, for Pre Purchase, never approves) the vessel directly, so there's nothing to "submit".
+          const isOrdinaryInspection = ((displayInspection as any).reportCategory ?? 'inspection') === 'inspection';
+          const canSubmit = isOrdinaryInspection && me.data ? can(me.data, 'inspection.submit', { inspection: displayInspection }) : false;
           if (canSubmit) {
             return (
               <div className="section-pad fab-new" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

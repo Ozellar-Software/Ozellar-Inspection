@@ -22,6 +22,7 @@ export function SectionDetailPage() {
   const me = useCurrentUser();
   const [completing, setCompleting] = useState(false);
   const [isDragOverSection, setIsDragOverSection] = useState(false);
+  const [recheckedAccess, setRecheckedAccess] = useState(false);
 
   useEffect(() => {
     if (inspectionId) {
@@ -30,6 +31,15 @@ export function SectionDetailPage() {
   }, [inspectionId]);
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);
+
+  // The cached /me profile (incl. assigned vesselIds) can be briefly stale right after access to a
+  // vessel was just granted (e.g. registering it inline via a Pre Purchase / Take Over report).
+  // Refetch once before concluding access is genuinely denied.
+  useEffect(() => {
+    if (!inspection || !me.data || recheckedAccess) return;
+    if (can(me.data, 'inspection.view', { inspection })) return;
+    void me.refetch().finally(() => setRecheckedAccess(true));
+  }, [inspection, me.data, recheckedAccess, me]);
   const section = useLiveQuery(() => (sectionId ? db.inspectionSections.get(sectionId) : undefined), [sectionId]);
   const questions = useLiveQuery(
     () => (sectionId ? db.inspectionQuestions.where('inspectionSectionId').equals(sectionId).sortBy('position') : []), [sectionId]) ?? [];
@@ -68,6 +78,7 @@ export function SectionDetailPage() {
   if (!dispInspection || !dispSection) return null;
 
   if (me.data && inspection && !can(me.data, 'inspection.view', { inspection })) {
+    if (!recheckedAccess) return null;
     return (
       <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
         <h2 style={{ color: 'var(--bad)', fontSize: 18, marginBottom: 8 }}>Access Restricted</h2>

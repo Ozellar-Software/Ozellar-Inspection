@@ -22,12 +22,14 @@ interface EntityDef {
   /** SQL fragment joined to `t` so that `vis_vessel` is the vessel that controls visibility (null = visible to all) */
   visJoin: string;
   visExpr: string | null;
+  /** Column (on `t`) that also grants visibility to its creator, even when visExpr doesn't match (e.g. a just-registered vessel not yet assigned to anyone). */
+  creatorCol?: string;
   hidden?: string[];            // columns never sent to clients
 }
 
 const ENTITIES: Record<SyncEntity, EntityDef> = {
-  vessels:             { table: 'vessels', idCol: 'id', visJoin: '', visExpr: 't.id' },
-  inspections:         { table: 'inspections', idCol: 'id', visJoin: '', visExpr: 't.vessel_id' },
+  vessels:             { table: 'vessels', idCol: 'id', visJoin: '', visExpr: 't.id', creatorCol: 'created_by' },
+  inspections:         { table: 'inspections', idCol: 'id', visJoin: '', visExpr: 't.vessel_id', creatorCol: 'created_by' },
   inspectionSections:  { table: 'inspection_sections', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
   inspectionQuestions: { table: 'inspection_questions', idCol: 'id',
                          visJoin: 'join inspection_sections s on s.id = t.inspection_section_id join inspections i on i.id = s.inspection_id', visExpr: 'i.vessel_id' },
@@ -50,13 +52,17 @@ export const syncPullHandler = handler(async (req): Promise<PullResponse> => {
     const seesAll = user.role === 'admin' || user.role === 'director';
 
     // 1) One ordered list of (entity, id, row_version) across all tables → a single safe cursor.
-    const parts = (Object.entries(ENTITIES) as [SyncEntity, EntityDef][]).map(([name, d]) =>
-      `select '${name}' as entity, t.${d.idCol}::text as id, t.row_version
+    const parts = (Object.entries(ENTITIES) as [SyncEntity, EntityDef][]).map(([name, d]) => {
+      const visClause = d.visExpr ? `${d.visExpr} = any($3::uuid[])` : null;
+      const creatorClause = d.creatorCol ? `t.${d.creatorCol} = $4` : null;
+      const restriction = [visClause, creatorClause].filter(Boolean).join(' or ');
+      return `select '${name}' as entity, t.${d.idCol}::text as id, t.row_version
          from ${d.table} t ${d.visJoin}
-        where t.row_version > $1 ${!seesAll && d.visExpr ? `and ${d.visExpr} = any($3::uuid[])` : ''}`);
+        where t.row_version > $1 ${!seesAll && restriction ? `and (${restriction})` : ''}`;
+    });
     const idx = await pool.query(
       `${parts.join(' union all ')} order by row_version limit $2`,
-      seesAll ? [cursor, limit] : [cursor, limit, user.vesselIds]);
+      seesAll ? [cursor, limit] : [cursor, limit, user.vesselIds, user.id]);
 
     // 2) Fetch the full rows per entity.
     const byEntity = new Map<SyncEntity, string[]>();
@@ -114,8 +120,8 @@ app.http('sync-pull', {
 
 /** Columns a client may write, per entity (camelCase). Everything else is ignored. */
 const WRITABLE: Partial<Record<SyncEntity, string[]>> = {
-  vessels: ['name', 'imo', 'vesselType', 'particulars', 'photoId'],
-  inspections: ['vesselId', 'vesselName', 'imo', 'vesselType', 'inspectionType', 'port', 'startDate', 'completionDate',
+  vessels: ['name', 'imo', 'vesselType', 'particulars', 'photoId', 'registrationStatus'],
+  inspections: ['vesselId', 'vesselName', 'imo', 'vesselType', 'inspectionType', 'reportCategory', 'port', 'startDate', 'completionDate',
     'sailFromDate', 'sailFromPort', 'sailToDate', 'sailToPort', 'remoteFromDate', 'remoteToDate',
     'inspector', 'company', 'summary', 'conclusion', 'coverPhotoId'],
   inspectionSections: ['inspectionId', 'templateSr', 'zone', 'name', 'position', 'photoOnly', 'isCustom', 'vesselTypes'],
@@ -128,7 +134,7 @@ const WRITABLE: Partial<Record<SyncEntity, string[]>> = {
 const SOFT_DELETE: Partial<Record<SyncEntity, true>> = { vessels: true, inspections: true, inspectionSections: true, findings: true, photos: true };
 
 /** Finds the inspection a mutation belongs to (locked FOR UPDATE, so approvals and edits can't interleave). */
-async function owningInspection(c: Tx, m: Mutation): Promise<{ id: string; vesselId: string | null; status: Inspection['status'] } | null> {
+async function owningInspection(c: Tx, m: Mutation): Promise<{ id: string; vesselId: string | null; status: Inspection['status']; createdBy: string | null } | null> {
   if (m.entity === 'vessels') return null;
   const d = m.data ?? {};
   let inspectionId: string | null = null;
@@ -143,8 +149,8 @@ async function owningInspection(c: Tx, m: Mutation): Promise<{ id: string; vesse
     inspectionId = (await c.query(`select inspection_id from ${table} where id = $1`, [m.entityId])).rows[0]?.inspection_id ?? null;
   }
   if (!inspectionId) return null;
-  const i = (await c.query(`select id, vessel_id, status from inspections where id = $1 for update`, [inspectionId])).rows[0];
-  return i ? { id: i.id, vesselId: i.vessel_id, status: i.status } : null;
+  const i = (await c.query(`select id, vessel_id, status, created_by from inspections where id = $1 for update`, [inspectionId])).rows[0];
+  return i ? { id: i.id, vesselId: i.vessel_id, status: i.status, createdBy: i.created_by } : null;
 }
 
 /**
@@ -256,8 +262,20 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   const insp = await owningInspection(c, m);
 
   // --- permission & lock checks (shared rules) ---
+  let grantVesselAssignment = false;
   if (m.entity === 'vessels') {
-    if (!can(user, 'vessels.manage')) throw fail('FORBIDDEN', 'Only an Admin can manage vessels');
+    if (can(user, 'vessels.manage')) {
+      // admin: always allowed
+    } else if (m.op === 'upsert' && d.registrationStatus === 'unregistered' && user.isActive &&
+      (user.role === 'techManager' || user.role === 'vesselManager')) {
+      // Tech/Vessel Managers may create (but never edit an existing) unregistered vessel inline from a
+      // Pre Purchase / Take Over report — only the first insert, never a later edit of someone else's vessel.
+      const existsRow = (await c.query(`select id from vessels where id = $1`, [m.entityId])).rows[0];
+      if (existsRow) throw fail('FORBIDDEN', 'Only an Admin can edit an existing vessel');
+      grantVesselAssignment = true;
+    } else {
+      throw fail('FORBIDDEN', 'Only an Admin can manage vessels');
+    }
   } else if (m.entity === 'inspections' && !insp) {
     if (m.op === 'delete') return 0;
     if (!can(user, 'inspection.create', { vesselId: (d.vesselId as string) ?? null })) throw fail('FORBIDDEN', 'You can’t create inspections for this vessel');
@@ -337,6 +355,16 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
       return Number(cur.row_version);
     }
     const r = await c.query(`update ${def.table} set ${sets.join(', ')} where ${def.idCol} = $1 returning row_version`, vals);
+
+    if (m.entity === 'vessels' && payload.registrationStatus === 'registered') {
+      // Admin approving a Take Over vessel also approves its report directly — these skip the
+      // Tech Manager / Director chain entirely, so there's no other transition into 'approved'.
+      await c.query(
+        `update inspections set status = 'approved'
+          where vessel_id = $1 and report_category = 'take_over' and status = 'in_progress'`,
+        [m.entityId]);
+    }
+
     return Number(r.rows[0].row_version);
   }
 
@@ -344,16 +372,31 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   const insertCols = ['id', ...insertFields.map(snake)];
   const values: unknown[] = [m.entityId, ...insertFields.map((k) => sanitizeVal(k, d[k]))];
   const extra: Record<string, unknown> = {};
-  if (m.entity === 'inspections') extra.created_by = user.id;
+  if (m.entity === 'inspections' || m.entity === 'vessels') extra.created_by = user.id;
   if (m.entity === 'photos') {
     extra.created_by = user.id;
     extra.blob_path = photoBlobPath({ id: m.entityId, inspectionId: d.inspectionId as string, vesselId: d.vesselId as string });
   }
   if (m.entity === 'responses' || m.entity === 'findings') extra.updated_by = user.id;
   for (const [k, v] of Object.entries(extra)) { insertCols.push(k); values.push(v); }
-  const r = await c.query(
-    `insert into ${def.table} (${insertCols.join(',')}) values (${insertCols.map((_, i) => `$${i + 1}`).join(',')}) returning row_version`,
-    values);
+  let r;
+  try {
+    r = await c.query(
+      `insert into ${def.table} (${insertCols.join(',')}) values (${insertCols.map((_, i) => `$${i + 1}`).join(',')}) returning row_version`,
+      values);
+  } catch (e) {
+    if ((e as { code?: string }).code === '23505' && m.entity === 'vessels') {
+      throw fail('VALIDATION', `A vessel named "${d.name as string}" already exists`);
+    }
+    throw e;
+  }
+
+  if (m.entity === 'vessels' && grantVesselAssignment) {
+    // The Tech/Vessel Manager who registers a vessel inline (Pre Purchase / Take Over) needs to see and edit
+    // it — and the inspection on it — right away, same as any vessel actually assigned to them.
+    await c.query(`insert into user_vessels (user_id, vessel_id) values ($1,$2) on conflict do nothing`, [user.id, m.entityId]);
+    user.vesselIds = [...(user.vesselIds ?? []), m.entityId];
+  }
 
   if (m.entity === 'inspections') {
     const vesselId = (d.vesselId as string) || null;

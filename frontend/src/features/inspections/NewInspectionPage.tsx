@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import type { InspectionType, User } from '@ozellar/shared';
+import type { InspectionType, ReportCategory, User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
-import { createInspection } from '../../offline/createInspection';
+import { createInspection, createInspectionWithNewVessel } from '../../offline/createInspection';
+import { VesselCoreFields, type VesselCoreForm } from '../vessels/VesselCoreFields';
 import { BackIcon, WifiIcon, ShipIcon, AnchorIcon, CheckCircleIcon, WarningIcon } from '../../icons';
 import './NewInspectionPage.css';
 
@@ -13,6 +14,12 @@ const TYPE_LABELS: Record<InspectionType, { label: string; sub: string; icon: Re
   port:    { label: 'In Port',       sub: 'Vessel is docked at port',    icon: <AnchorIcon style={{width:24,height:24}} /> },
   remote:  { label: 'Remote',        sub: 'Inspection without boarding',  icon: <WifiIcon style={{width:24,height:24}} /> },
   sailing: { label: 'While Sailing', sub: 'Vessel underway at sea',       icon: <ShipIcon style={{width:24,height:24}} /> },
+};
+
+const REPORT_LABELS: Record<ReportCategory, { label: string; sub: string }> = {
+  inspection:    { label: 'Inspection Report', sub: 'Standard inspection of a registered vessel' },
+  pre_purchase:  { label: 'Pre Purchase Report', sub: 'Photo survey of a vessel under purchase review' },
+  take_over:     { label: 'Take Over Report', sub: 'Photo survey of a vessel being taken over' },
 };
 
 // ─── Small form field wrapper ──────────────────────────────────────────────
@@ -62,7 +69,7 @@ export function NewInspectionPage() {
   });
 
   const vessels = (useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [])
-    .filter((v) => !(v as any).deletedAt);
+    .filter((v) => !(v as any).deletedAt && (v as any).registrationStatus !== 'unregistered');
   const templateSections = (useLiveQuery(() => db.templateSections.toArray(), []) ?? [])
     .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
 
@@ -74,7 +81,9 @@ export function NewInspectionPage() {
         return ids.includes(v.id.toLowerCase().trim());
       });
 
+  const [reportCategory, setReportCategory] = useState<ReportCategory>('inspection');
   const [vesselId, setVesselId] = useState('');
+  const [newVessel, setNewVessel] = useState<VesselCoreForm>({ name: '', imo: '', vesselType: 'Bulk Carrier' });
   const [inspectionType, setInspectionType] = useState<InspectionType>('port');
   const [port, setPort] = useState('');
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -83,6 +92,7 @@ export function NewInspectionPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isNewVesselReport = reportCategory !== 'inspection';
   const vessel = displayVessels.find((v) => v.id === vesselId);
 
   function getSectionCountForVesselType(vesselType?: string | null): number {
@@ -108,13 +118,31 @@ export function NewInspectionPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const realVessel = vessels.find((v) => v.id === vesselId);
-    if (!realVessel) { setError('Pick a vessel '); return; }
     setBusy(true); setError(null);
+
+    if (isNewVesselReport) {
+      if (!newVessel.name.trim()) { setError('Vessel name is required'); setBusy(false); return; }
+      if (!newVessel.imo.trim()) { setError('IMO number is required'); setBusy(false); return; }
+      try {
+        const id = await createInspectionWithNewVessel({
+          newVessel: { name: newVessel.name.trim(), imo: newVessel.imo.trim(), vesselType: newVessel.vesselType.trim() },
+          vesselName: newVessel.name.trim(), imo: newVessel.imo.trim(), vesselType: newVessel.vesselType.trim(),
+          inspectionType, reportCategory, port, startDate: startDate || null, inspector, company,
+        });
+        nav(`/inspections/${id}`, { replace: true });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not create the inspection');
+        setBusy(false);
+      }
+      return;
+    }
+
+    const realVessel = vessels.find((v) => v.id === vesselId);
+    if (!realVessel) { setError('Pick a vessel '); setBusy(false); return; }
     try {
       const id = await createInspection({
         vesselId: realVessel.id, vesselName: realVessel.name, imo: realVessel.imo, vesselType: realVessel.vesselType,
-        inspectionType, port, startDate: startDate || null, inspector, company,
+        inspectionType, reportCategory, port, startDate: startDate || null, inspector, company,
       });
       nav(`/inspections/${id}`, { replace: true });
     } catch (err) {
@@ -138,51 +166,84 @@ export function NewInspectionPage() {
             </div>
           )}
 
-          {/* Vessel selection */}
+          {/* Report type */}
           <div className="ni-card">
             <div className="ni-card-header">
-              Select Vessel
+              Report Type
             </div>
-            {displayVessels.length === 0 ? (
-              <div className="empty-state" style={{ margin: 0 }}>
-                <p>
-                  {me.data?.role === 'techManager' || me.data?.role === 'vesselManager'
-                    ? 'No vessels assigned to you. Ask an Admin to assign vessels to your account.'
-                    : 'No vessels yet. Ask an Admin to add one under Vessels.'}
-                </p>
-              </div>
-            ) : (
-              <div className="ni-vessel-list">
-                {displayVessels.map((v) => {
-                  const isSelected = vesselId === v.id;
-                  const secCount = getSectionCountForVesselType(v.vesselType);
-                  return (
-                    <button
-                      key={v.id}
-                      type="button"
-                      className={`ni-vessel-btn ${isSelected ? 'selected' : ''}`}
-                      onClick={() => setVesselId(v.id)}
-                    >
-                      <div className="ni-vessel-icon-wrap">
-                        <ShipIcon style={{ width: 22, height: 22 }} />
-                      </div>
-                      <div className="ni-vessel-details">
-                        <div className="ni-vessel-name">{v.name}</div>
-                        <div className="ni-vessel-meta">
-                          {[v.imo && `IMO ${v.imo}`, v.vesselType, `${secCount} section${secCount === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
-                        </div>
-                      </div>
-                      {isSelected && (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="ni-vessel-check">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <div className="ni-type-grid">
+              {(Object.keys(REPORT_LABELS) as ReportCategory[]).map((c) => {
+                const { label, sub } = REPORT_LABELS[c];
+                const isSelected = reportCategory === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    className={`ni-type-btn ${isSelected ? 'selected' : ''}`}
+                    onClick={() => setReportCategory(c)}
+                  >
+                    <span className="ni-type-label">{label}</span>
+                    <span className="ni-type-sub">{sub}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          {/* Vessel selection */}
+          {isNewVesselReport ? (
+            <div className="ni-card">
+              <div className="ni-card-header">
+                New Vessel
+              </div>
+              <VesselCoreFields form={newVessel} setForm={setNewVessel} />
+            </div>
+          ) : (
+            <div className="ni-card">
+              <div className="ni-card-header">
+                Select Vessel
+              </div>
+              {displayVessels.length === 0 ? (
+                <div className="empty-state" style={{ margin: 0 }}>
+                  <p>
+                    {me.data?.role === 'techManager' || me.data?.role === 'vesselManager'
+                      ? 'No vessels assigned to you. Ask an Admin to assign vessels to your account.'
+                      : 'No vessels yet. Ask an Admin to add one under Vessels.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="ni-vessel-list">
+                  {displayVessels.map((v) => {
+                    const isSelected = vesselId === v.id;
+                    const secCount = getSectionCountForVesselType(v.vesselType);
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        className={`ni-vessel-btn ${isSelected ? 'selected' : ''}`}
+                        onClick={() => setVesselId(v.id)}
+                      >
+                        <div className="ni-vessel-icon-wrap">
+                          <ShipIcon style={{ width: 22, height: 22 }} />
+                        </div>
+                        <div className="ni-vessel-details">
+                          <div className="ni-vessel-name">{v.name}</div>
+                          <div className="ni-vessel-meta">
+                            {[v.imo && `IMO ${v.imo}`, v.vesselType, `${secCount} section${secCount === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="ni-vessel-check">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Inspection type */}
           <div className="ni-card">
@@ -275,7 +336,9 @@ export function NewInspectionPage() {
             <button
               className="ni-submit-btn"
               type="submit"
-              disabled={busy || !vesselId || displayVessels.length === 0}
+              disabled={busy || (isNewVesselReport
+                ? !newVessel.name.trim() || !newVessel.imo.trim()
+                : !vesselId || displayVessels.length === 0)}
             >
               {busy ? 'Creating inspection…' : 'Start Inspection'}
             </button>

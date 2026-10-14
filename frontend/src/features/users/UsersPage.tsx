@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ROLE_LABELS, type Role, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
+import { queueUserEdit } from '../../offline/userEditQueue';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { BackIcon, PlusIcon, SearchIcon, UsersIcon, CheckIcon, KeyIcon, ShipIcon, EditIcon, PlayIcon, PauseIcon } from '../../icons';
 import './UsersPage.css'; // Use exactly the same theme file
@@ -88,6 +89,8 @@ export function UsersPage() {
           return old.map(o => o.id === u.id ? { ...o, isActive: nextActive } : o);
         });
         await qc.invalidateQueries({ queryKey: ['users'] });
+      } else {
+        await queueUserEdit(u.id, false, payload);
       }
     } catch (e) {
       console.error('Failed to toggle user status', e);

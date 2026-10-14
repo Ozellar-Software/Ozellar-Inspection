@@ -15,43 +15,6 @@ import {
 } from '../../icons';
 import { PARTICULAR_GROUPS, PARTICULAR_LABELS } from './particulars';
 
-type ParticularsForm = Partial<Record<VesselParticularKey, string>>;
-
-interface VesselForm {
-  id?: string;
-  name: string;
-  imo: string;
-  vesselType: string;
-  particulars: ParticularsForm;
-}
-
-const blankVessel: VesselForm = {
-  name: '',
-  imo: '',
-  vesselType: 'Bulk Carrier',
-  particulars: {},
-};
-
-const COMMON_VESSEL_TYPES = [
-  'Bulk Carrier',
-  'Container Ship',
-  'Oil Tanker',
-  'Chemical Tanker',
-  'Gas Carrier',
-  'General Cargo',
-  'Tug / Offshore'
-];
-
-const COMMON_VESSEL_TYPES_DATA = [
-  { name: 'Bulk Carrier', key: 'bulk', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' },
-  { name: 'Container Ship', key: 'container', color: '#4F46E5', bg: '#EEF2FF', border: '#C7D2FE' },
-  { name: 'Oil Tanker', key: 'tanker', color: '#E11D48', bg: '#FFF1F2', border: '#FECDD3' },
-  { name: 'Chemical Tanker', key: 'tanker', color: '#E11D48', bg: '#FFF1F2', border: '#FECDD3' },
-  { name: 'Gas Carrier', key: 'gas', color: '#059669', bg: '#ECFDF5', border: '#A7F3D0' },
-  { name: 'General Cargo', key: 'general', color: '#0E7C86', bg: '#F0FDFA', border: '#99F6E4' },
-  { name: 'Tug / Offshore', key: 'general', color: '#0E7C86', bg: '#F0FDFA', border: '#99F6E4' },
-];
-
 const MODAL_TABS = [
   { id: 0, title: 'Core Profile', subtitle: 'Identification & Category' },
   { id: 1, title: 'Registration & Flag', subtitle: 'Port, Flag & Registry' },
@@ -114,14 +77,29 @@ export function VesselsPage() {
   const canManageVessels = me.data?.role === 'admin';
 
   // Filter out any soft-deleted vessels, then restrict to assigned vessels for TM/VM
+  const [tab, setTab] = useState<'registered' | 'unregistered'>('registered');
+  const effectiveTab = canManageVessels ? tab : 'registered';
+
   const vessels = useMemo(() => {
     const active = rawVessels.filter(v => !(v as any).deletedAt);
+    const byStatus = active.filter(v => ((v as any).registrationStatus ?? 'registered') === effectiveTab);
     if (me.data?.role === 'techManager' || me.data?.role === 'vesselManager') {
       const ids = (me.data.vesselIds ?? []).map(id => id.toLowerCase().trim());
-      return active.filter(v => ids.includes(v.id.toLowerCase().trim()));
+      return byStatus.filter(v => ids.includes(v.id.toLowerCase().trim()));
     }
-    return active;
-  }, [rawVessels, me.data]);
+    return byStatus;
+  }, [rawVessels, me.data, effectiveTab]);
+
+  const inspectionsByVesselId = useLiveQuery(async () => {
+    const all = await db.inspections.toArray();
+    const map = new Map<string, (typeof all)[number]>();
+    for (const i of all) {
+      if (!i.vesselId || (i as any).deletedAt) continue;
+      const cat = (i as any).reportCategory;
+      if (cat === 'pre_purchase' || cat === 'take_over') map.set(i.vesselId, i);
+    }
+    return map;
+  }, []) ?? new Map();
 
   // Sync with remote backend vessels if connected
   useQuery({
@@ -199,6 +177,12 @@ export function VesselsPage() {
     navigate(`/vessels/${v.id}/edit`);
   }
 
+  async function onApproveVessel(v: Vessel) {
+    // Goes through the generic sync/outbox pipeline (not the admin-only /vessels REST endpoint),
+    // so it queues and retries the same way every other vessel edit does, including offline.
+    await localWrite('vessels', v.id, { registrationStatus: 'registered' });
+  }
+
   async function onConfirmDelete() {
     if (!vesselToDelete) return;
     setDeleteBusy(true);
@@ -237,7 +221,23 @@ export function VesselsPage() {
         </div>
 
         {canManageVessels && (
-          <div className="vessels-header-actions">
+          <div className="vessels-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div role="group" aria-label="Vessel registration status" style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                className={`vessel-filter-btn ${tab === 'registered' ? 'active' : ''}`}
+                onClick={() => setTab('registered')}
+              >
+                Registered
+              </button>
+              <button
+                type="button"
+                className={`vessel-filter-btn ${tab === 'unregistered' ? 'active' : ''}`}
+                onClick={() => setTab('unregistered')}
+              >
+                Unregistered
+              </button>
+            </div>
             <button className="vessel-primary-btn" onClick={startNewVessel}>
               <PlusIcon width={16} height={16} />
               <span className="vessel-register-text-full">Register Vessel</span>
@@ -330,6 +330,8 @@ export function VesselsPage() {
           const port = (v.particulars as Record<string, string>)?.portOfRegistry;
           const isExpanded = !!expandedVessels[v.id];
           const theme = getVesselTypeTheme(v.vesselType);
+          const pendingInspection = effectiveTab === 'unregistered' ? inspectionsByVesselId.get(v.id) : undefined;
+          const reportCategory = (pendingInspection as any)?.reportCategory as 'pre_purchase' | 'take_over' | undefined;
 
           return (
             <div key={v.id} className={`vessel-row-card vessel-type-${theme.key} ${isExpanded ? 'expanded' : ''}`}>
@@ -352,6 +354,11 @@ export function VesselsPage() {
                     <div className="vessel-title-main">
                       <span className="vessel-name-text">{v.name}</span>
                       {v.vesselType && <span className={`vessel-type-chip ${theme.tagClass}`}>{v.vesselType}</span>}
+                      {reportCategory && (
+                        <span className={`vessel-type-chip ${reportCategory === 'take_over' ? 'tag-amber' : 'tag-rose'}`}>
+                          {reportCategory === 'take_over' ? 'Take Over' : 'Pre Purchase'}
+                        </span>
+                      )}
                     </div>
 
                     <div className="vessel-subline">
@@ -372,6 +379,26 @@ export function VesselsPage() {
 
                 {/* Right Side: Action Icons (Edit, Delete, Toggle - Icon Only) */}
                 <div className="vessel-row-controls" onClick={e => e.stopPropagation()}>
+                  {canManageVessels && pendingInspection && (
+                    <button
+                      type="button"
+                      className="vessel-primary-btn"
+                      style={{ padding: '6px 12px', fontSize: 12.5 }}
+                      onClick={() => navigate(`/inspections/${pendingInspection.id}/report`)}
+                    >
+                      View Report
+                    </button>
+                  )}
+                  {canManageVessels && reportCategory === 'take_over' && (
+                    <button
+                      type="button"
+                      className="vessel-primary-btn"
+                      style={{ padding: '6px 12px', fontSize: 12.5 }}
+                      onClick={() => onApproveVessel(v)}
+                    >
+                      <CheckIcon width={14} height={14} /> Approve
+                    </button>
+                  )}
                   {canManageVessels && (
                     <div className="vessel-action-group">
                       <button

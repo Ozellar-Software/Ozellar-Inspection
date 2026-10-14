@@ -16,6 +16,9 @@ export interface User {
 
 export type InspectionType = 'port' | 'remote' | 'sailing';
 
+/** The purpose of the report, layered on top of InspectionType (port/remote/sailing). */
+export type ReportCategory = 'inspection' | 'pre_purchase' | 'take_over';
+
 export type InspectionStatus =
   | 'in_progress'
   | 'pending_tm'
@@ -32,6 +35,9 @@ export interface Vessel {
   vesselType: string;
   particulars: Partial<Record<VesselParticularKey, string>>;
   photoId?: string | null;
+  /** 'unregistered' vessels come from an inline Pre Purchase / Take Over report and are hidden until an Admin approves them. */
+  registrationStatus?: 'registered' | 'unregistered';
+  createdBy?: string | null;
   updatedAt: string;
   deletedAt?: string | null;
 }
@@ -62,6 +68,7 @@ export interface Inspection {
   imo: string;
   vesselType: string;
   inspectionType: InspectionType;
+  reportCategory?: ReportCategory;
   port: string;
   startDate: string | null;       // YYYY-MM-DD
   completionDate: string | null;  // YYYY-MM-DD

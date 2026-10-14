@@ -205,6 +205,16 @@ export function ReportPage() {
   const [rejectComment, setRejectComment] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recheckedAccess, setRecheckedAccess] = useState(false);
+
+  // The cached /me profile (incl. assigned vesselIds) can be briefly stale right after access to a
+  // vessel was just granted (e.g. registering it inline via a Pre Purchase / Take Over report).
+  // Refetch once before concluding access is genuinely denied.
+  useEffect(() => {
+    if (!inspection || !me.data || recheckedAccess) return;
+    if (can(me.data, 'inspection.view', { inspection })) return;
+    void me.refetch().finally(() => setRecheckedAccess(true));
+  }, [inspection, me.data, recheckedAccess, me]);
 
   const report = useLiveQuery(
     () => (inspectionId ? loadReportData(inspectionId) : null),
@@ -315,6 +325,7 @@ export function ReportPage() {
   if (!dispInspection || !me.data) return null;
 
   if (inspection && !can(me.data, 'inspection.view', { inspection })) {
+    if (!recheckedAccess) return null;
     return (
       <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
         <h2 style={{ color: 'var(--bad)', fontSize: 18, marginBottom: 8 }}>Access Restricted</h2>
@@ -327,7 +338,10 @@ export function ReportPage() {
   }
 
   const editable = isEditable(dispInspection.status as any);
-  const canSubmit = can(me.data, 'inspection.submit', { inspection: dispInspection });
+  // Pre Purchase / Take Over reports skip the Tech Manager → Director chain entirely — an Admin
+  // approves (or, for Pre Purchase, never approves) the vessel directly from Manage Vessel instead.
+  const isOrdinaryInspection = (dispInspection.reportCategory ?? 'inspection') === 'inspection';
+  const canSubmit = isOrdinaryInspection && can(me.data, 'inspection.submit', { inspection: dispInspection });
   const approval = history.data?.approval;
   const canApproveHere = dispInspection.status as any === 'pending_tm'
     ? (me.data.role === 'admin' || (me.data.role === 'techManager' && approval?.tmUserId === me.data.id))
@@ -809,6 +823,22 @@ export function ReportPage() {
             onBlurCapture={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
           />
         </div>
+
+        {/* ── Pre Purchase / Take Over: Admin-only approval notice, no TM/Director chain ── */}
+        {!isOrdinaryInspection && (
+          <div className="premium-report-card">
+            <div style={{ fontWeight: 800, fontSize: 16, color: '#0f172a', marginBottom: 4, letterSpacing: '-0.3px' }}>
+              {dispInspection.status === 'approved' ? 'Approved by Admin' : 'Awaiting Admin Approval'}
+            </div>
+            <div style={{ fontSize: 13, color: '#64748b' }}>
+              {dispInspection.reportCategory === 'pre_purchase'
+                ? 'Pre Purchase reports don’t go through the standard approval chain and are never promoted to the main fleet — only you and Admin can see this.'
+                : dispInspection.status === 'approved'
+                ? 'This vessel and report are now visible to everyone with access to it, same as any registered vessel.'
+                : 'This report is reviewed and approved directly by an Admin in Manage Vessel — it does not go through the Technical Manager / Director chain.'}
+            </div>
+          </div>
+        )}
 
         {/* ── Submit for approval card ── */}
         {canSubmit && (

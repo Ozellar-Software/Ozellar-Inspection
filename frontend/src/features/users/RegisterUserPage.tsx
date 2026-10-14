@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { Role } from '@ozellar/shared';
 import { api, ApiError } from '../../api/client';
 import { db } from '../../offline/db';
+import { queueUserEdit } from '../../offline/userEditQueue';
 import './RegisterUserPage.css';
 import {
   UsersIcon, ChevronLeftIcon, AlertCircleIcon, CheckIcon, KeyIcon,
@@ -226,6 +227,7 @@ export function RegisterUserPage() {
         };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await db.users.put(localUserRecord as any);
+        await queueUserEdit(targetId, !form.id, payload);
       }
       qc.invalidateQueries({ queryKey: ['users'] });
       navigate('/users');

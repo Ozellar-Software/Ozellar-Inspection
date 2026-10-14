@@ -7,9 +7,9 @@ import { fail, handler, jsonBody } from '../lib/http.js';
 
 async function checkEditable(user: User, inspectionId: string | null, vesselId: string | null) {
   if (inspectionId) {
-    const i = (await pool.query(`select vessel_id, status from inspections where id = $1 and deleted_at is null`, [inspectionId])).rows[0];
+    const i = (await pool.query(`select vessel_id, status, created_by from inspections where id = $1 and deleted_at is null`, [inspectionId])).rows[0];
     if (!i) throw fail('NOT_FOUND', 'Inspection not found');
-    const insp = { vesselId: i.vessel_id, status: i.status } as Pick<Inspection, 'vesselId' | 'status'>;
+    const insp = { vesselId: i.vessel_id, status: i.status, createdBy: i.created_by } as Pick<Inspection, 'vesselId' | 'status' | 'createdBy'>;
     const isPendingApproval = insp.status === 'pending_tm' || insp.status === 'pending_director';
     const allowPendingPhotoSync = isPendingApproval && user.role !== 'director' && can(user, 'inspection.view', { inspection: insp });
     if (!can(user, 'inspection.edit', { inspection: insp }) && !allowPendingPhotoSync) {
@@ -60,11 +60,11 @@ export const photosReadUrlsHandler = handler(async (req) => {
     const { photoIds } = await jsonBody<{ photoIds: string[] }>(req);
     if (!Array.isArray(photoIds) || photoIds.length > 200) throw fail('VALIDATION', 'photoIds: 1–200 ids');
     const r = await pool.query(
-      `select p.id, p.blob_path, coalesce(i.vessel_id, p.vessel_id) as vessel_id
+      `select p.id, p.blob_path, coalesce(i.vessel_id, p.vessel_id) as vessel_id, i.created_by
          from photos p left join inspections i on i.id = p.inspection_id
         where p.id = any($1) and p.uploaded and p.deleted_at is null`, [photoIds]);
     const out: Record<string, string> = {};
-    for (const row of r.rows) if (canSeeVessel(user, row.vessel_id)) out[row.id] = await readUrl(row.blob_path);
+    for (const row of r.rows) if (canSeeVessel(user, row.vessel_id) || row.created_by === user.id) out[row.id] = await readUrl(row.blob_path);
     return out;
   });
 app.http('photos-read-urls', {

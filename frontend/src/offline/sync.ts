@@ -4,6 +4,7 @@ import { getCachedUser } from '../auth/session';
 import { db, getMeta, setMeta } from './db';
 import { processPhotoQueue, prefetchInspectionPhotos, evictPhotoCache } from './photoQueue';
 import { processApprovalQueue, hasPendingApproval } from './approvalQueue';
+import { processUserEditQueue } from './userEditQueue';
 
 
 type Listener = (s: SyncStatus) => void;
@@ -156,6 +157,7 @@ export function syncNow(): Promise<void> {
         rerunRequested = false;
         await push();
         await processApprovalQueue();
+        await processUserEditQueue();
         await pull();
       } while (rerunRequested && navigator.onLine);
       emit({ state: 'idle', lastSyncAt: new Date().toISOString(), pending: await db.outbox.count(), message: undefined });

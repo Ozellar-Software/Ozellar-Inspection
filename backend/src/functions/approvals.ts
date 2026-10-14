@@ -32,10 +32,13 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
 
   const result = await tx(async (c) => {
     const insp = (await c.query(
-      `select id, vessel_id, vessel_name, start_date, status, summary, conclusion from inspections
+      `select id, vessel_id, vessel_name, start_date, status, summary, conclusion, created_by, report_category from inspections
         where id = $1 and deleted_at is null for update`, [inspectionId])).rows[0];
     if (!insp) throw fail('NOT_FOUND', 'Inspection not found');
-    if (!canSeeVessel(actor, insp.vessel_id)) throw fail('FORBIDDEN', 'Not your vessel');
+    if (!canSeeVessel(actor, insp.vessel_id) && insp.created_by !== actor.id) throw fail('FORBIDDEN', 'Not your vessel');
+    if (insp.report_category && insp.report_category !== 'inspection') {
+      throw fail('VALIDATION', 'Pre Purchase / Take Over reports are approved directly by an Admin, not through the submit workflow.');
+    }
 
     if (cmd.type === 'submit' && !cmd.photoOnly) {
       const pendingRes = await c.query(
@@ -161,8 +164,8 @@ app.http('approval-reopen', {
 
 export const approvalHistoryHandler = handler(async (req) => {
     const user = await requireUser(req);
-    const insp = (await pool.query(`select vessel_id from inspections where id = $1`, [req.params.id])).rows[0];
-    if (!insp || !canSeeVessel(user, insp.vessel_id)) throw fail('NOT_FOUND', 'Inspection not found');
+    const insp = (await pool.query(`select vessel_id, created_by from inspections where id = $1`, [req.params.id])).rows[0];
+    if (!insp || (!canSeeVessel(user, insp.vessel_id) && insp.created_by !== user.id)) throw fail('NOT_FOUND', 'Inspection not found');
     const a = (await pool.query(`select * from approvals where inspection_id = $1`, [req.params.id])).rows[0];
     const ev = await pool.query(`select * from approval_events where inspection_id = $1 order by created_at`, [req.params.id]);
     return { approval: a ? camel(a) : null, history: ev.rows.map((row) => camel(row)) };

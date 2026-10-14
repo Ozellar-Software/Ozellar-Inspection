@@ -54,6 +54,9 @@ export async function ensureSchema(): Promise<void> {
           `alter table if exists inspection_sections add column if not exists is_custom boolean not null default false;`,
           `alter table if exists inspection_sections add column if not exists vessel_types text[] not null default '{}'::text[];`,
           `alter table if exists approval_events add column if not exists row_version bigint not null default nextval('sync_seq');`,
+          `alter table if exists vessels add column if not exists registration_status text not null default 'registered';`,
+          `alter table if exists vessels add column if not exists created_by uuid;`,
+          `alter table if exists inspections add column if not exists report_category text not null default 'inspection';`,
         ];
         for (const sql of statements) {
           try {

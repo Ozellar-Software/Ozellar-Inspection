@@ -10,6 +10,7 @@ import {
   AlertCircleIcon
 } from '../../icons';
 import { PARTICULAR_GROUPS, PARTICULAR_LABELS } from './particulars';
+import { VesselCoreFields } from './VesselCoreFields';
 
 type ParticularsForm = Partial<Record<VesselParticularKey, string>>;
 
@@ -27,26 +28,6 @@ const blankVessel: VesselForm = {
   vesselType: 'Bulk Carrier',
   particulars: {},
 };
-
-const COMMON_VESSEL_TYPES = [
-  'Bulk Carrier',
-  'Container Ship',
-  'Oil Tanker',
-  'Chemical Tanker',
-  'Gas Carrier',
-  'General Cargo',
-  'Tug / Offshore'
-];
-
-const COMMON_VESSEL_TYPES_DATA = [
-  { name: 'Bulk Carrier', key: 'bulk', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' },
-  { name: 'Container Ship', key: 'container', color: '#4F46E5', bg: '#EEF2FF', border: '#C7D2FE' },
-  { name: 'Oil Tanker', key: 'tanker', color: '#E11D48', bg: '#FFF1F2', border: '#FECDD3' },
-  { name: 'Chemical Tanker', key: 'tanker', color: '#E11D48', bg: '#FFF1F2', border: '#FECDD3' },
-  { name: 'Gas Carrier', key: 'gas', color: '#059669', bg: '#ECFDF5', border: '#A7F3D0' },
-  { name: 'General Cargo', key: 'general', color: '#0E7C86', bg: '#F0FDFA', border: '#99F6E4' },
-  { name: 'Tug / Offshore', key: 'general', color: '#0E7C86', bg: '#F0FDFA', border: '#99F6E4' },
-];
 
 const WIZARD_TABS = [
   { id: 0, title: 'Core Profile', subtitle: 'Identification & Category' },
@@ -257,85 +238,10 @@ export function RegisterVesselPage() {
             <div className="rv-form-body">
               {/* Tab 0 */}
               {activeTab === 0 && (
-                <div className="rv-form-section">
-                  <div className="rv-section-header">
-                    <h2>Core Vessel Identification</h2>
-                    <p>Official maritime name and mandatory IMO registry identification</p>
-                  </div>
-
-                  <div className="rv-grid two-cols">
-                    <div className="rv-input-group">
-                      <label className="rv-input-label">Vessel Name <span className="req">*</span></label>
-                      <input
-                        className="rv-text-input"
-                        required
-                        value={form.name}
-                        onChange={e => setForm({ ...form, name: e.target.value })}
-                        placeholder="e.g. MV Pacific Star"
-                        autoFocus
-                      />
-                      <span className="rv-field-hint">Official commercial name inscribed on hull</span>
-                    </div>
-
-                    <div className="rv-input-group">
-                      <label className="rv-input-label">IMO Number <span className="req">*</span></label>
-                      <input
-                        className="rv-text-input"
-                        required
-                        value={form.imo}
-                        onChange={e => setForm({ ...form, imo: e.target.value })}
-                        placeholder="e.g. 9234567"
-                      />
-                      <span className="rv-field-hint">Unique 7-digit International Maritime Organization identifier</span>
-                    </div>
-                  </div>
-
-                  <div className="rv-category-box">
-                    <div className="rv-category-header">
-                      <label className="rv-input-label">Vessel Type & Fleet Class Category <span className="req">*</span></label>
-                      <span className="rv-category-subhint">Click to select a standard category or specify a custom type below</span>
-                    </div>
-                    
-                    <div className="rv-category-grid">
-                      {COMMON_VESSEL_TYPES_DATA.map(t => {
-                        const isSelected = form.vesselType === t.name;
-                        return (
-                          <button
-                            key={t.name}
-                            type="button"
-                            className={`rv-category-tile ${isSelected ? 'selected' : ''}`}
-                            style={{
-                              borderColor: isSelected ? t.color : undefined,
-                              background: isSelected ? t.bg : undefined,
-                              color: isSelected ? t.color : undefined,
-                            }}
-                            onClick={() => setForm({ ...form, vesselType: t.name })}
-                          >
-                            <span className="rv-tile-dot" style={{ background: t.color }} />
-                            <span className="rv-tile-name">{t.name}</span>
-                            {isSelected && (
-                              <span className="rv-tile-check"><CheckIcon width={13} height={13} /></span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    
-                    <div className="rv-custom-type-row">
-                      <label className="rv-custom-label">Custom Class / Specialty:</label>
-                      <input
-                        className="rv-text-input custom"
-                        list="vessel-type-options"
-                        value={form.vesselType}
-                        onChange={e => setForm({ ...form, vesselType: e.target.value })}
-                        placeholder="Type custom vessel type if not listed above..."
-                      />
-                      <datalist id="vessel-type-options">
-                        {COMMON_VESSEL_TYPES.map(t => <option key={t} value={t} />)}
-                      </datalist>
-                    </div>
-                  </div>
-                </div>
+                <VesselCoreFields
+                  form={form}
+                  setForm={(core) => setForm({ ...form, ...core })}
+                />
               )}
 
               {/* Tabs 1 to 5 */}

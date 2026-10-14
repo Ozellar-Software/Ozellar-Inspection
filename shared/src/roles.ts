@@ -38,12 +38,17 @@ export type Action =
 export function can(
   user: User,
   action: Action,
-  ctx: { inspection?: Pick<Inspection, 'vesselId' | 'status'>; vesselId?: string | null } = {},
+  ctx: { inspection?: Pick<Inspection, 'vesselId' | 'status'> & { createdBy?: string | null }; vesselId?: string | null } = {},
 ): boolean {
   if (!user.isActive) return false;
   const r = user.role;
   const isAdmin = r === 'admin';
   const isManager = r === 'techManager' || r === 'vesselManager';
+
+  // The creator of an inspection can always see/work on it — e.g. a Tech/Vessel Manager who just
+  // registered a Pre Purchase / Take Over vessel inline needs to open their own report immediately,
+  // before the vessel-assignment grant has synced back down to their local permission cache.
+  const isOwnInspection = !!ctx.inspection?.createdBy && ctx.inspection.createdBy === user.id;
 
   switch (action) {
     case 'users.manage':
@@ -65,14 +70,14 @@ export function can(
 
     case 'inspection.view':
     case 'inspection.export':
-      return !!ctx.inspection && canSeeVessel(user, ctx.inspection.vesselId);
+      return !!ctx.inspection && (canSeeVessel(user, ctx.inspection.vesselId) || isOwnInspection);
 
     case 'inspection.addSection': {
       if (r === 'director') return false;
       const insp = ctx.inspection;
       if (insp) {
         if (!isEditable(insp.status)) return false;
-        return isAdmin || (isManager && canSeeVessel(user, insp.vesselId));
+        return isAdmin || (isManager && (canSeeVessel(user, insp.vesselId) || isOwnInspection));
       }
       return isAdmin || isManager;
     }
@@ -82,7 +87,7 @@ export function can(
       if (!insp) return false;
       if (r === 'director') return false;                 // Directors are always view-only
       if (!isEditable(insp.status)) return false;         // locked while pending / after approval
-      return isAdmin || (isManager && canSeeVessel(user, insp.vesselId));
+      return isAdmin || (isManager && (canSeeVessel(user, insp.vesselId) || isOwnInspection));
     }
 
     case 'inspection.submit': {
@@ -93,7 +98,7 @@ export function can(
       // Vessel Manager → submits to Tech Manager only (enforced in approval.ts)
       // Tech Manager → submits to Director (enforced in approval.ts)
       // Admin → can submit to anyone
-      return isAdmin || (isManager && canSeeVessel(user, insp.vesselId));
+      return isAdmin || (isManager && (canSeeVessel(user, insp.vesselId) || isOwnInspection));
     }
   }
 }

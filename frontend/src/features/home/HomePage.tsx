@@ -74,6 +74,7 @@ export function HomePage() {
     () => db.inspections.orderBy('updatedAt').reverse().toArray(),
     []
   );
+  const vessels = useLiveQuery(() => db.vessels.toArray(), []);
 
   const isLoading = inspections === undefined;
 
@@ -88,11 +89,23 @@ export function HomePage() {
   const visibleInspections = useMemo(() => {
     const inspList = inspections ?? [];
     const role = me.data?.role;
-    if (role === 'admin' || role === 'director' || !me.data) return inspList;
+    const vesselStatusById = new Map((vessels ?? []).map((v) => [v.id, (v as any).registrationStatus ?? 'registered']));
+
+    // Pre Purchase / Take Over reports for an unregistered vessel are only visible to their creator —
+    // not even Admin/Director, who review them via Manage Vessel → Unregistered instead.
+    const withoutPendingReports = inspList.filter((i) => {
+      const cat = (i as any).reportCategory;
+      if (!cat || cat === 'inspection') return true;
+      if (i.vesselId && vesselStatusById.get(i.vesselId) !== 'unregistered') return true;
+      return !!me.data && i.createdBy === me.data.id;
+    });
+
+    if (role === 'admin' || role === 'director' || !me.data) return withoutPendingReports;
     const vesselIds = (me.data.vesselIds ?? []).map((id) => id.toLowerCase().trim());
-    if (vesselIds.length === 0) return inspList;
-    return inspList.filter((i) => i.vesselId && vesselIds.includes(i.vesselId.toLowerCase().trim()));
-  }, [inspections, me.data]);
+    if (vesselIds.length === 0) return withoutPendingReports;
+    return withoutPendingReports.filter((i) =>
+      (i.vesselId && vesselIds.includes(i.vesselId.toLowerCase().trim())) || i.createdBy === me.data?.id);
+  }, [inspections, vessels, me.data]);
 
   const uniqueVessels = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
