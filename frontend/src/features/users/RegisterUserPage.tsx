@@ -184,12 +184,12 @@ export function RegisterUserPage() {
       setError('Please enter a valid email address');
       return;
     }
-    if (!isEditing && (!form.password || form.password.trim().length < 6)) {
-      setError('Enterprise Standard: Initial password of at least 6 characters is required.');
+    if (!isEditing && (!form.password || form.password.trim().length < 8)) {
+      setError('Enterprise Standard: Initial password of at least 8 characters is required.');
       return;
     }
-    if (isEditing && wantsChangePassword && form.password && form.password.trim().length > 0 && form.password.trim().length < 6) {
-      setError('Password must be at least 6 characters');
+    if (isEditing && wantsChangePassword && form.password && form.password.trim().length > 0 && form.password.trim().length < 8) {
+      setError('Password must be at least 8 characters');
       return;
     }
 
@@ -333,7 +333,7 @@ export function RegisterUserPage() {
                           type={showPassword ? 'text' : 'password'}
                           value={form.password || ''}
                           onChange={e => setForm({ ...form, password: e.target.value })}
-                          placeholder="Min 6 chars..."
+                          placeholder="Min 8 chars..."
                           required={!form.id || !form.hasPassword}
                           style={{ paddingRight: 32 }}
                         />

@@ -437,14 +437,29 @@ export async function resetPassword(resetToken: string, password: string): Promi
   setToken(token);
 }
 
-/** Signs out: clears the JWT and user session, and wipes the offline database so previous user's data does not persist. */
+/**
+ * Signs out: clears the JWT and user session, and wipes the offline database so a previous user's
+ * data doesn't persist on a shared device — but ONLY once everything has actually synced. Wiping with
+ * unsynced outbox mutations still pending (e.g. a token that simply expired mid-session, or a sign-out
+ * while offline) would silently destroy that work forever, so in that case we preserve the local data
+ * instead and let it sync normally the next time this device signs in.
+ */
 export function logout(): void {
   setToken(null);
   setCachedUser(null);
   import('../main').then(({ queryClient }) => {
     queryClient.clear();
   }).catch(() => {/* non-fatal */});
-  clearAllData().catch(() => {/* non-fatal */}).finally(() => {
+  db.outbox.count().then((pending) => {
+    if (pending > 0) {
+      console.warn(`[logout] ${pending} unsynced change(s) still pending — keeping local data instead of wiping it.`);
+      window.location.href = '/';
+      return;
+    }
+    clearAllData().catch(() => {/* non-fatal */}).finally(() => {
+      window.location.href = '/';
+    });
+  }).catch(() => {
     window.location.href = '/';
   });
 }

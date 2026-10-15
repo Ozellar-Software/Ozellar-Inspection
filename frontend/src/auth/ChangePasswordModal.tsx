@@ -54,8 +54,8 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
     e.preventDefault();
     setError(null);
 
-    if (newPassword.length < 6) {
-      setError('New password must be at least 6 characters long.');
+    if (newPassword.length < 8) {
+      setError('New password must be at least 8 characters long.');
       return;
     }
 
@@ -144,11 +144,11 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
               <input
                 type={showNew ? 'text' : 'password'}
                 className="cpm-input"
-                placeholder="At least 6 characters"
+                placeholder="At least 8 characters"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                minLength={6}
+                minLength={8}
                 disabled={busy || success}
               />
               <button
