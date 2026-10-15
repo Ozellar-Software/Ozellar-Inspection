@@ -82,6 +82,8 @@ async function buildInspection(inspectionId: string, input: NewInspectionInput, 
     completionDate: null, summary: '', conclusion: '', createdBy: getCachedUser()?.id ?? null,
   };
 
+  const isPhotoOnlyReport = !!input.reportCategory && input.reportCategory !== 'inspection';
+
   // Only create sections assigned to this vessel's type.
   // Universal sections (empty vesselTypes) act as the Default blueprint in Checklist Master.
   let rawApplicable = templateSections.filter((ts) => {
@@ -94,8 +96,10 @@ async function buildInspection(inspectionId: string, input: NewInspectionInput, 
   });
 
   // If no sections are specifically assigned to this vessel type, fall back to Universal (Default) sections
-  // so the inspection is never created with zero sections!
-  if (rawApplicable.length === 0) {
+  // so the inspection is never created with zero sections! Pre Purchase / Take Over reports are the
+  // exception: a vessel type with no photo sections of its own gets none at all, rather than silently
+  // reusing another type's Universal photo sections (which would look confusingly identical).
+  if (rawApplicable.length === 0 && !isPhotoOnlyReport) {
     rawApplicable = templateSections.filter((ts) => {
       const types = (Array.isArray(ts.vesselTypes) ? ts.vesselTypes : []).map((t) => String(t).trim()).filter(Boolean);
       return types.length === 0;
@@ -103,7 +107,7 @@ async function buildInspection(inspectionId: string, input: NewInspectionInput, 
   }
 
   // Pre Purchase / Take Over reports only ever get photo-only sections.
-  if (input.reportCategory && input.reportCategory !== 'inspection') {
+  if (isPhotoOnlyReport) {
     rawApplicable = rawApplicable.filter((ts) => ts.photoOnly);
   }
 

@@ -95,7 +95,12 @@ export function NewInspectionPage() {
   const isNewVesselReport = reportCategory !== 'inspection';
   const vessel = displayVessels.find((v) => v.id === vesselId);
 
-  function getSectionCountForVesselType(vesselType?: string | null): number {
+  /**
+   * `photoOnlyNoFallback` is used for Pre Purchase / Take Over: unlike a normal inspection, an
+   * unconfigured vessel type never falls back to the Universal photo sections (which would look
+   * confusingly identical to another type's) — it just has zero sections until an Admin configures one.
+   */
+  function getSectionCountForVesselType(vesselType?: string | null, photoOnlyNoFallback = false): number {
     const vt = vesselType?.trim().toLowerCase() ?? '';
     let matching = templateSections.filter((s) => {
       if ((s as any).deletedAt) return false;
@@ -103,7 +108,7 @@ export function NewInspectionPage() {
       if (!vt) return types.length === 0;
       return types.some((t) => t.trim().toLowerCase() === vt);
     });
-    if (matching.length === 0) {
+    if (matching.length === 0 && !photoOnlyNoFallback) {
       // Fallback to Universal (Default) sections if none are assigned to this vessel type yet
       matching = templateSections.filter((s) => {
         if ((s as any).deletedAt) return false;
@@ -111,10 +116,14 @@ export function NewInspectionPage() {
         return types.length === 0;
       });
     }
+    if (photoOnlyNoFallback) {
+      matching = matching.filter((s) => Boolean((s as any).photoOnly));
+    }
     return new Set(matching.map((s) => `${String(s.name ?? '').trim().toLowerCase()}::${Boolean(s.photoOnly)}`)).size;
   }
 
   const selectedVesselSectionCount = vessel ? getSectionCountForVesselType(vessel.vesselType) : 0;
+  const newVesselSectionCount = isNewVesselReport ? getSectionCountForVesselType(newVessel.vesselType, true) : 0;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -197,6 +206,20 @@ export function NewInspectionPage() {
                 New Vessel
               </div>
               <VesselCoreFields form={newVessel} setForm={setNewVessel} />
+              {newVessel.vesselType.trim() && newVesselSectionCount === 0 && (
+                <div className="ni-summary-banner ni-summary-warn" style={{ marginTop: 14 }}>
+                  <WarningIcon width={22} height={22} style={{ color: '#b45309', flexShrink: 0 }} />
+                  <div className="ni-summary-body">
+                    <div className="ni-summary-title">No photo sections configured for {newVessel.vesselType}</div>
+                    <div className="ni-summary-sub">
+                      This report will be created with 0 sections.
+                      {me.data?.role === 'admin'
+                        ? ' Open Checklist Templates and add a photo section for this vessel type.'
+                        : ' Ask an Admin to add a photo section for this vessel type.'}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="ni-card">
