@@ -88,6 +88,9 @@ export function NotificationsMenu() {
         }
       }
       let localNotifs = await db.notifications.toArray();
+      const allInsps = await db.inspections.toArray();
+      const deletedInspIds = new Set(allInsps.filter((i) => !!i.deletedAt).map((i) => i.id));
+      localNotifs = localNotifs.filter((n) => !n.inspectionId || !deletedInspIds.has(n.inspectionId));
       if (currentUserId) {
         localNotifs = localNotifs.filter((n) => !n.userId || n.userId === currentUserId);
       }
@@ -140,6 +143,22 @@ export function NotificationsMenu() {
         console.error('Failed to mark notification as read', err);
       }
     }
+
+    if (item.inspectionId) {
+      const insp = await db.inspections.get(item.inspectionId);
+      if (insp?.deletedAt) {
+        alert('This inspection has been deleted and is no longer available.');
+        try {
+          await db.notifications.filter((n) => n.inspectionId === item.inspectionId).delete();
+        } catch {
+          // safe fallback
+        }
+        qc.invalidateQueries({ queryKey: ['notifications'] });
+        setOpen(false);
+        return;
+      }
+    }
+
     setOpen(false);
     if (item.link) {
       nav(item.link);

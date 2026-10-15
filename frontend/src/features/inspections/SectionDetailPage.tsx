@@ -77,6 +77,18 @@ export function SectionDetailPage() {
 
   if (!dispInspection || !dispSection) return null;
 
+  if ((dispInspection as any).deletedAt) {
+    return (
+      <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
+        <h2 style={{ color: 'var(--bad)', fontSize: 18, marginBottom: 8 }}>Inspection Deleted</h2>
+        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 16 }}>
+          This inspection has been deleted and is no longer available.
+        </p>
+        <button className="btn btn-outline" onClick={() => nav('/')}>Back to Home</button>
+      </div>
+    );
+  }
+
   if (me.data && inspection && !can(me.data, 'inspection.view', { inspection })) {
     if (!recheckedAccess) return null;
     return (

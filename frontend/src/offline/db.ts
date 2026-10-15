@@ -63,6 +63,9 @@ export class VirDB extends Dexie {
       templateSections: 'id, sr, position',
       templateQuestions: 'id, sectionId, position',
     });
+    this.version(4).stores({
+      notifications: 'id, userId, inspectionId, read, createdAt',
+    });
   }
 
   table_(entity: SyncEntity): Table<Record<string, unknown> & { id: string }, string> {

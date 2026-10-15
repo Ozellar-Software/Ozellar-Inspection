@@ -14,16 +14,23 @@ import {
 export const notificationsListHandler = handler(async (req) => {
   const user = await requireUser(req);
   const rows = (await pool.query(
-    `select id, user_id, inspection_id, type, title, message, link, read, created_at
-       from notifications
-      where user_id = $1
-      order by created_at desc
+    `select n.id, n.user_id, n.inspection_id, n.type, n.title, n.message, n.link, n.read, n.created_at
+       from notifications n
+       left join inspections i on i.id = n.inspection_id
+      where n.user_id = $1
+        and (n.inspection_id is null or i.id is null or i.deleted_at is null)
+      order by n.created_at desc
       limit 60`,
     [user.id]
   )).rows;
 
   const countRow = (await pool.query(
-    `select count(*) as count from notifications where user_id = $1 and read = false`,
+    `select count(*) as count
+       from notifications n
+       left join inspections i on i.id = n.inspection_id
+      where n.user_id = $1
+        and n.read = false
+        and (n.inspection_id is null or i.id is null or i.deleted_at is null)`,
     [user.id]
   )).rows[0];
 

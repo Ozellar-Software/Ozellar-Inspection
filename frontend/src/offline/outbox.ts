@@ -54,6 +54,11 @@ export async function localDelete(entity: SyncEntity, id: string): Promise<void>
       if (!p.deletedAt) await db.photos.update(p.id, { deletedAt });
       void evictPhotoCache(p.id);
     }
+    try {
+      await db.notifications.filter((n) => n.inspectionId === id).delete();
+    } catch {
+      // safe fallback
+    }
   } else if (entity === 'findings') {
     const findingPhotos = await db.photos.where('findingId').equals(id).toArray();
     for (const p of findingPhotos) {

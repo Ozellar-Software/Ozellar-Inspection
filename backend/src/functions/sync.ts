@@ -30,14 +30,14 @@ interface EntityDef {
 const ENTITIES: Record<SyncEntity, EntityDef> = {
   vessels:             { table: 'vessels', idCol: 'id', visJoin: '', visExpr: 't.id', creatorCol: 'created_by' },
   inspections:         { table: 'inspections', idCol: 'id', visJoin: '', visExpr: 't.vessel_id', creatorCol: 'created_by' },
-  inspectionSections:  { table: 'inspection_sections', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
+  inspectionSections:  { table: 'inspection_sections', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id', creatorCol: 'i.created_by' },
   inspectionQuestions: { table: 'inspection_questions', idCol: 'id',
-                         visJoin: 'join inspection_sections s on s.id = t.inspection_section_id join inspections i on i.id = s.inspection_id', visExpr: 'i.vessel_id' },
-  responses:           { table: 'responses', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
-  findings:            { table: 'findings', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
-  photos:              { table: 'photos', idCol: 'id', visJoin: 'left join inspections i on i.id = t.inspection_id', visExpr: 'coalesce(i.vessel_id, t.vessel_id)' },
-  approvals:           { table: 'approvals', idCol: 'inspection_id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
-  approvalEvents:      { table: 'approval_events', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id' },
+                         visJoin: 'join inspection_sections s on s.id = t.inspection_section_id join inspections i on i.id = s.inspection_id', visExpr: 'i.vessel_id', creatorCol: 'i.created_by' },
+  responses:           { table: 'responses', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id', creatorCol: 'i.created_by' },
+  findings:            { table: 'findings', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id', creatorCol: 'i.created_by' },
+  photos:              { table: 'photos', idCol: 'id', visJoin: 'left join inspections i on i.id = t.inspection_id', visExpr: 'coalesce(i.vessel_id, t.vessel_id)', creatorCol: 'coalesce(i.created_by, t.created_by)' },
+  approvals:           { table: 'approvals', idCol: 'inspection_id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id', creatorCol: 'i.created_by' },
+  approvalEvents:      { table: 'approval_events', idCol: 'id', visJoin: 'join inspections i on i.id = t.inspection_id', visExpr: 'i.vessel_id', creatorCol: 'i.created_by' },
   templateSections:    { table: 'template_sections', idCol: 'id', visJoin: '', visExpr: null },
   templateQuestions:   { table: 'template_questions', idCol: 'id', visJoin: '', visExpr: null },
   users:               { table: 'users', idCol: 'id', visJoin: '', visExpr: null, hidden: ['entra_oid'] },
@@ -54,7 +54,9 @@ export const syncPullHandler = handler(async (req): Promise<PullResponse> => {
     // 1) One ordered list of (entity, id, row_version) across all tables → a single safe cursor.
     const parts = (Object.entries(ENTITIES) as [SyncEntity, EntityDef][]).map(([name, d]) => {
       const visClause = d.visExpr ? `${d.visExpr} = any($3::uuid[])` : null;
-      const creatorClause = d.creatorCol ? `t.${d.creatorCol} = $4` : null;
+      const creatorClause = d.creatorCol
+        ? (d.creatorCol.includes('.') || d.creatorCol.includes('(') ? `${d.creatorCol} = $4` : `t.${d.creatorCol} = $4`)
+        : null;
       const restriction = [visClause, creatorClause].filter(Boolean).join(' or ');
       return `select '${name}' as entity, t.${d.idCol}::text as id, t.row_version
          from ${d.table} t ${d.visJoin}
@@ -100,8 +102,8 @@ export const syncPullHandler = handler(async (req): Promise<PullResponse> => {
     }
 
     const activeInspRes = await pool.query(
-      `select id::text from inspections where deleted_at is null ${!seesAll ? 'and vessel_id = any($1::uuid[])' : ''}`,
-      seesAll ? [] : [user.vesselIds]
+      `select id::text from inspections where deleted_at is null ${!seesAll ? 'and (vessel_id = any($1::uuid[]) or created_by = $2)' : ''}`,
+      seesAll ? [] : [user.vesselIds, user.id]
     );
     const activeInspectionIds = activeInspRes.rows.map((r: { id: string }) => r.id);
 
@@ -314,6 +316,7 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
     } else if (m.entity === 'vessels') {
       await c.query(`delete from user_vessels where vessel_id = $1`, [m.entityId]);
     } else if (m.entity === 'inspections') {
+      await c.query(`delete from notifications where inspection_id = $1`, [m.entityId]);
       const pr = await c.query(`update photos set deleted_at = now() where inspection_id = $1 and deleted_at is null returning blob_path`, [m.entityId]);
       for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
     } else if (m.entity === 'inspectionSections') {

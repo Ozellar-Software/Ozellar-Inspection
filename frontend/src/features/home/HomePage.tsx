@@ -84,10 +84,35 @@ export function HomePage() {
     }
   }, [inspections]);
 
-  // TM and VM should only see inspections for their assigned vessels
+  // Self-heal: resurrect any local inspections created by the current user that were erroneously
+  // soft-deleted by previous sync cycles if they are not in outbox with an explicit delete mutation
+  useEffect(() => {
+    if (!me.data?.id) return;
+    const myId = me.data.id.toLowerCase().trim();
+    void (async () => {
+      const myDeleted = await db.inspections.filter((i) =>
+        Boolean(i.deletedAt && i.createdBy && i.createdBy.toLowerCase().trim() === myId)
+      ).toArray();
+      for (const d of myDeleted) {
+        const isQueuedDelete = await db.outbox.where('entityId').equals(d.id).filter((m) => m.op === 'delete').count();
+        if (!isQueuedDelete) {
+          await db.inspections.update(d.id, { deletedAt: null });
+          if (d.vesselId) {
+            const v = await db.vessels.get(d.vesselId);
+            if (v && v.deletedAt) {
+              await db.vessels.update(d.vesselId, { deletedAt: null });
+            }
+          }
+        }
+      }
+    })();
+  }, [me.data?.id]);
+
+  // TM and VM should only see inspections for their assigned vessels, PLUS any inspection they created themselves
   const visibleInspections = useMemo(() => {
     const inspList = inspections ?? [];
     const role = me.data?.role;
+    const myId = me.data?.id?.toLowerCase().trim();
     const vesselStatusById = new Map((vessels ?? []).map((v) => [v.id, (v as any).registrationStatus ?? 'registered']));
 
     // Pre Purchase / Take Over reports for an unregistered vessel are only visible to their creator —
@@ -96,14 +121,17 @@ export function HomePage() {
       const cat = (i as any).reportCategory;
       if (!cat || cat === 'inspection') return true;
       if (i.vesselId && vesselStatusById.get(i.vesselId) !== 'unregistered') return true;
-      return !!me.data && i.createdBy === me.data.id;
+      return Boolean(myId && i.createdBy && i.createdBy.toLowerCase().trim() === myId);
     });
 
     if (role === 'admin' || role === 'director' || !me.data) return withoutPendingReports;
     const vesselIds = (me.data.vesselIds ?? []).map((id) => id.toLowerCase().trim());
-    if (vesselIds.length === 0) return withoutPendingReports;
-    return withoutPendingReports.filter((i) =>
-      (i.vesselId && vesselIds.includes(i.vesselId.toLowerCase().trim())) || i.createdBy === me.data?.id);
+    return withoutPendingReports.filter((i) => {
+      const isCreator = Boolean(myId && i.createdBy && i.createdBy.toLowerCase().trim() === myId);
+      if (isCreator) return true;
+      if (vesselIds.length === 0) return true;
+      return Boolean(i.vesselId && vesselIds.includes(i.vesselId.toLowerCase().trim()));
+    });
   }, [inspections, vessels, me.data]);
 
   const uniqueVessels = useMemo(() => {

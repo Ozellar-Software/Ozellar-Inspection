@@ -104,6 +104,18 @@ async function pull(): Promise<void> {
       }
     }
 
+    if (res.changes.inspections && res.changes.inspections.length > 0) {
+      for (const i of res.changes.inspections) {
+        if (i.deletedAt) {
+          try {
+            await db.notifications.filter((n) => n.inspectionId === i.id).delete();
+          } catch {
+            // safe fallback
+          }
+        }
+      }
+    }
+
     if (res.changes.photos && res.changes.photos.length > 0) {
       const inspIds = new Set<string>();
       for (const p of res.changes.photos) {
@@ -124,8 +136,28 @@ async function pull(): Promise<void> {
         const allLocal = await db.inspections.toArray();
         const nowIso = new Date().toISOString();
         for (const loc of allLocal) {
-          if (!loc.deletedAt && !activeSet.has(loc.id) && !pendingIds.has(loc.id)) {
-            await db.inspections.update(loc.id, { deletedAt: nowIso });
+          if (!activeSet.has(loc.id) && !pendingIds.has(loc.id)) {
+            if (!loc.deletedAt) {
+              await db.inspections.update(loc.id, { deletedAt: nowIso });
+              try {
+                await db.notifications.filter((n) => n.inspectionId === loc.id).delete();
+              } catch {
+                // safe fallback
+              }
+            }
+          } else if (activeSet.has(loc.id) && loc.deletedAt) {
+            // Self-healing: if inspection was mistakenly marked deleted locally, resurrect it!
+            await db.inspections.update(loc.id, { deletedAt: null });
+          }
+        }
+
+        // Self-healing: ensure any vessels attached to active inspections are not marked deleted locally
+        const activeInsps = await db.inspections.filter((i) => !i.deletedAt).toArray();
+        const activeVesselIds = new Set(activeInsps.map((i) => i.vesselId).filter(Boolean) as string[]);
+        for (const vId of activeVesselIds) {
+          const v = await db.vessels.get(vId);
+          if (v && v.deletedAt) {
+            await db.vessels.update(vId, { deletedAt: null });
           }
         }
       }

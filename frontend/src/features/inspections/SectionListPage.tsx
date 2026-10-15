@@ -123,6 +123,18 @@ export function SectionListPage() {
   const displayInspection = inspection;
   if (!displayInspection) return null;
 
+  if (displayInspection.deletedAt) {
+    return (
+      <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
+        <h2 style={{ color: 'var(--bad)', fontSize: 18, marginBottom: 8 }}>Inspection Deleted</h2>
+        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 16 }}>
+          This inspection has been deleted and is no longer available.
+        </p>
+        <button className="btn btn-outline" onClick={() => nav('/')}>Back to Home</button>
+      </div>
+    );
+  }
+
   if (me.data && !can(me.data, 'inspection.view', { inspection: displayInspection })) {
     if (!recheckedAccess) return null; // briefly confirming the permission cache isn't just stale
     return (
