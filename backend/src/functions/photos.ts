@@ -13,7 +13,7 @@ async function checkEditable(user: User, inspectionId: string | null, vesselId: 
     const isPendingApproval = insp.status === 'pending_tm' || insp.status === 'pending_director';
     const allowPendingPhotoSync = isPendingApproval && user.role !== 'director' && can(user, 'inspection.view', { inspection: insp });
     if (!can(user, 'inspection.edit', { inspection: insp }) && !allowPendingPhotoSync) {
-      throw fail('LOCKED', 'This inspection can’t be changed now');
+      throw fail('LOCKED', "This inspection can't be changed now");
     }
   } else if (vesselId) {
     if (!can(user, 'vessels.manage')) throw fail('FORBIDDEN', 'Only an Admin can change vessel photos');

@@ -1,5 +1,5 @@
-import { app } from '@azure/functions';
-import { can, DESIGNATION_PRESETS, type Role } from '@ozellar/shared';
+import { app, type HttpRequest } from '@azure/functions';
+import { can, DESIGNATION_PRESETS, type Role, type User } from '@ozellar/shared';
 import { requireUser } from '../lib/auth.js';
 import { pool, tx } from '../lib/db.js';
 import { camel, fail, handler, jsonBody } from '../lib/http.js';
@@ -10,7 +10,8 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // a week to set a first password
 
 const ROLES: Role[] = ['admin', 'director', 'techManager', 'vesselManager'];
 
-async function handleGet(req: any, me: any) {
+async function handleGet(req: HttpRequest, _me: User) {
+
     
     if (req.params.id) {
       const r = await pool.query(
@@ -33,7 +34,8 @@ async function handleGet(req: any, me: any) {
     return r.rows.map((row) => camel(row));
   }
 
-async function handleUpsert(req: any, me: any) {
+async function handleUpsert(req: HttpRequest, me: User) {
+
     const b = await jsonBody<{ email?: string; name?: string; designation?: string; role?: Role; vesselIds?: string[]; isActive?: boolean; password?: string }>(req);
     const isEditing = Boolean(req.params.id);
 
@@ -69,7 +71,8 @@ async function handleUpsert(req: any, me: any) {
 
     let pwdHash: string | null = null;
     if (b.password && b.password.trim()) {
-      if (b.password.trim().length < 6) throw fail('VALIDATION', 'Password must be at least 6 characters');
+      if (b.password.trim().length < 8) throw fail('VALIDATION', 'Password must be at least 8 characters');
+
       pwdHash = await hashPassword(b.password.trim());
     }
 
@@ -85,7 +88,7 @@ async function handleUpsert(req: any, me: any) {
       throw fail('VALIDATION', 'Enterprise policy requires setting an initial password for all new users.');
     }
 
-    const { row: u } = await tx(async (c) => {
+    const { row: u, savedVesselIds } = await tx(async (c) => {
       let r;
       if (isEditing) {
         r = (await c.query(
@@ -115,16 +118,26 @@ async function handleUpsert(req: any, me: any) {
         )).rows[0];
       }
       await c.query(`delete from user_vessels where user_id = $1`, [r.id]);
+      let savedVesselIds: string[] = [];
       if (needsVessels && safeVesselIds.length > 0) {
-        await c.query(`insert into user_vessels (user_id, vessel_id) select $1, unnest($2::uuid[])`, [r.id, safeVesselIds]);
+        // Validate that all supplied vessel IDs actually exist — avoids FK violation if a stale or
+        // non-existent UUID slips through (e.g. unregistered Pre-Purchase vessel not yet in DB).
+        const existingVessels = (await c.query(
+          `select id::text from vessels where id = any($1::uuid[]) and deleted_at is null`,
+          [safeVesselIds]
+        )).rows.map((row: { id: string }) => row.id);
+        if (existingVessels.length > 0) {
+          await c.query(`insert into user_vessels (user_id, vessel_id) select $1, unnest($2::uuid[]) on conflict do nothing`, [r.id, existingVessels]);
+          savedVesselIds = existingVessels;
+        }
       }
       await c.query(
         `insert into audit_log (actor_user_id, entity, entity_id, action, details) values ($1,'user',$2,'upsert',$3)`,
-        [me.id, r.id, JSON.stringify({ role, vesselIds: safeVesselIds, isActive })]);
-      return { row: r };
+        [me.id, r.id, JSON.stringify({ role, vesselIds: savedVesselIds, isActive })]);
+      return { row: r, savedVesselIds };
     });
 
-    const out = { ...u, vessel_ids: needsVessels ? safeVesselIds : [], has_password: Boolean(u.password_hash) } as Record<string, unknown>;
+    const out = { ...u, vessel_ids: needsVessels ? savedVesselIds : [], has_password: Boolean(u.password_hash) } as Record<string, unknown>;
     delete out.password_hash;
     delete out.entra_oid;
     return camel(out);
@@ -146,7 +159,8 @@ export const userSetPasswordHandler = handler(async (req) => {
   if (!can(me, 'users.manage')) throw fail('FORBIDDEN', 'Admins only');
   const userId = req.params.id;
   const b = await jsonBody<{ password: string }>(req);
-  if (!b.password || b.password.trim().length < 6) throw fail('VALIDATION', 'Password must be at least 6 characters');
+  if (!b.password || b.password.trim().length < 8) throw fail('VALIDATION', 'Password must be at least 8 characters');
+
   const hash = await hashPassword(b.password.trim());
   const res = await pool.query(`update users set password_hash = $1 where id = $2 returning id`, [hash, userId]);
   if (!res.rows[0]) throw fail('NOT_FOUND', 'User not found');
@@ -161,7 +175,7 @@ app.http('user-set-password', {
 
 export const designationsHandler = handler(async (req) => {
     await requireUser(req);
-    const used = await pool.query(`select distinct designation from users where designation <> ''`);
+    const used = await pool.query(`select distinct TRIM(designation) as designation from users where TRIM(designation) <> ''`);
     const all = new Map<string, string>();
     for (const d of [...DESIGNATION_PRESETS, ...used.rows.map((r: { designation: string }) => r.designation)]) {
       if (!all.has(d.toLowerCase())) all.set(d.toLowerCase(), d);

@@ -77,9 +77,9 @@ export function RegisterUserPage() {
   const { id } = useParams<{ id: string }>();
   const isEditing = Boolean(id);
   const allVessels = useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [];
-  // Only show valid UUID vessels that are not soft-deleted
+  // Only show valid UUID vessels that are not soft-deleted and not unregistered
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const vessels = allVessels.filter(v => UUID_RE.test(v.id) && !(v as any).deletedAt);
+  const vessels = allVessels.filter(v => UUID_RE.test(v.id) && !(v as any).deletedAt && ((v as any).registrationStatus ?? 'registered') !== 'unregistered');
 
   const [form, setForm] = useState<FormState>(blankForm);
   const [showPassword, setShowPassword] = useState(false);
@@ -230,6 +230,7 @@ export function RegisterUserPage() {
         await queueUserEdit(targetId, !form.id, payload);
       }
       qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['remote-vessels'] });
       navigate('/users');
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);

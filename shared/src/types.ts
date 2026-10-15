@@ -203,8 +203,9 @@ export interface ApprovalEvent {
 export const LIMITS = {
   photosPerQuestionOrSection: 15,
   photosPerPhotoSection: 100,
-  passwordMinLength: 6,
+  passwordMinLength: 8,
 } as const;
+
 
 export type NotificationType =
   | 'inspection_created'

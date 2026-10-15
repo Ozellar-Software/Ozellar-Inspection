@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuthToken } from '../auth/useAuthToken';
 import { LoginScreen } from '../auth/LoginScreen';
 import { ResetPasswordScreen } from '../auth/ResetPasswordScreen';
@@ -17,6 +17,7 @@ import { RegisterUserPage } from '../features/users/RegisterUserPage';
 import { ChecklistPage } from '../features/checklist/ChecklistPage';
 import { UpdatePrompt } from './UpdatePrompt';
 import { ScrollToTop } from './ScrollToTop';
+import { TopNav } from './TopNav';
 
 export function App() {
   const token = useAuthToken();
@@ -43,8 +44,6 @@ export function App() {
   );
 }
 
-import { TopNav } from './TopNav';
-
 function SignedIn() {
   useEffect(() => startSyncLoop(), []);
   return (
@@ -54,17 +53,18 @@ function SignedIn() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/inspections/new" element={<NewInspectionPage />} />
-      <Route path="/inspections/:id" element={<SectionListPage />} />
-      <Route path="/inspections/:id/sections/:sectionId" element={<SectionDetailPage />} />
-      <Route path="/inspections/:id/report" element={<ReportPage />} />
-      <Route path="/vessels" element={<VesselsPage />} />
-      <Route path="/vessels/new" element={<RegisterVesselPage />} />
-      <Route path="/vessels/:id/edit" element={<RegisterVesselPage />} />
-      <Route path="/users" element={<UsersPage />} />
-      <Route path="/users/new" element={<RegisterUserPage />} />
-        <Route path="/users/:id/edit" element={<RegisterUserPage />} />
-        <Route path="/checklist" element={<ChecklistPage />} />
-      </Routes>
+          <Route path="/inspections/:id" element={<SectionListPage />} />
+          <Route path="/inspections/:id/sections/:sectionId" element={<SectionDetailPage />} />
+          <Route path="/inspections/:id/report" element={<ReportPage />} />
+          <Route path="/vessels" element={<VesselsPage />} />
+          <Route path="/vessels/new" element={<RegisterVesselPage />} />
+          <Route path="/vessels/:id/edit" element={<RegisterVesselPage />} />
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/users/new" element={<RegisterUserPage />} />
+          <Route path="/users/:id/edit" element={<RegisterUserPage />} />
+          <Route path="/checklist" element={<ChecklistPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </div>
     </div>
   );

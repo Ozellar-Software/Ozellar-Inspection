@@ -81,13 +81,14 @@ export function SectionListPage() {
     [rawSections]
   );
 
-  const rawQuestions = useLiveQuery(
-    () => (inspectionId ? db.inspectionQuestions.toArray() : []), [inspectionId]) ?? [];
   const sectionIdSet = useMemo(() => new Set(sections.map((s) => s.id)), [sections]);
-  const questions = useMemo(
-    () => rawQuestions.filter((q) => sectionIdSet.has(q.inspectionSectionId)),
-    [rawQuestions, sectionIdSet]
-  );
+  const sectionIds = useMemo(() => sections.map((s) => s.id), [sections]);
+
+  const questions = useLiveQuery(
+    () => (inspectionId && sectionIds.length > 0
+      ? db.inspectionQuestions.where('inspectionSectionId').anyOf(sectionIds).toArray()
+      : []),
+    [inspectionId, sectionIds]) ?? [];
   const responses = useLiveQuery(
     () => (inspectionId ? db.responses.where('inspectionId').equals(inspectionId).toArray() : []), [inspectionId]) ?? [];
   const photos = useLiveQuery(
@@ -398,7 +399,11 @@ export function SectionListPage() {
                   <>You have completed <b>{donePhotoSecs}</b> out of {displaySections.length} photo section{displaySections.length === 1 ? '' : 's'} with photos.</>
                 )
               ) : (
-                <>You have answered <b>{totalDone}</b> out of {totalItems} questions.</>
+                displaySections.length === 0 ? (
+                  'No checklist sections configured for this vessel type. You can add photo sections below.'
+                ) : (
+                  <>You have answered <b>{totalDone}</b> out of {totalItems} questions.</>
+                )
               )}
             </p>
             <div className="ppc-stats">
@@ -602,11 +607,11 @@ export function SectionListPage() {
             <div className="epsc-icon">
               <CameraIcon width={26} height={26} />
             </div>
-            <h3 className="epsc-title">No Photo Sections Found</h3>
+            <h3 className="epsc-title">No Checklist Sections Configured</h3>
             <p className="epsc-desc">
               {light
                 ? 'This inspection contains standard checklist question sections only. Switch to Normal Mode to view all checklist sections.'
-                : 'No inspection sections have been added yet.'}
+                : 'No checklist sections have been configured for this vessel type yet. You can add photo sections below to conduct this inspection.'}
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
               {light && (
@@ -622,11 +627,11 @@ export function SectionListPage() {
               {canAddSection && (
                 <button
                   type="button"
-                  className="btn btn-outline"
-                  style={{ borderRadius: 10, padding: '8px 20px', fontSize: 13 }}
+                  className="btn btn-primary"
+                  style={{ borderRadius: 10, padding: '10px 24px', fontSize: 13.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                   onClick={() => setShowAddSection(true)}
                 >
-                  + Add Photo Section
+                  <PlusIcon width={15} height={15} /> Add Photo Section
                 </button>
               )}
             </div>

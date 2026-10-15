@@ -1,6 +1,6 @@
 import './LoginScreen.css';
 import { useEffect, useState } from 'react';
-import { login, getLastOfflineEmail } from './session';
+import { login, getLastOfflineEmail, requestReset } from './session';
 import { ShipIcon, WifiIcon } from '../icons';
 
 /* ─── Feature bullet icons (inline SVG, no extra dep) ─────────────────── */
@@ -38,6 +38,8 @@ export function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showPw, setShowPw] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -66,6 +68,20 @@ export function LoginScreen() {
       setError(err instanceof Error ? err.message : 'Sign in failed');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onForgotPassword() {
+    if (!email) { setError('Enter your email address above first'); return; }
+    setResetBusy(true);
+    setError(null);
+    try {
+      await requestReset(email);
+      setResetSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send reset email');
+    } finally {
+      setResetBusy(false);
     }
   }
 
@@ -206,10 +222,29 @@ export function LoginScreen() {
               </div>
 
               {error && <div className="auth-error login-msg">{error}</div>}
+              {resetSent && (
+                <div className="login-msg" style={{ color: 'var(--color-success, #16a34a)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                  ✓ Password reset email sent — check your inbox.
+                </div>
+              )}
 
               <button className="btn btn-primary btn-block login-submit" type="submit" disabled={busy}>
                 {busy ? 'Signing in…' : !isOnline ? 'Sign in (Offline)' : 'Sign in'}
               </button>
+
+              {isOnline && !resetSent && (
+                <div style={{ textAlign: 'center', marginTop: '0.75rem' }}>
+                  <button
+                    type="button"
+                    className="login-forgot-link"
+                    onClick={onForgotPassword}
+                    disabled={resetBusy}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary, #2563eb)', fontSize: '0.875rem', textDecoration: 'underline' }}
+                  >
+                    {resetBusy ? 'Sending…' : 'Forgot password?'}
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </div>

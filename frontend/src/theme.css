@@ -5,6 +5,7 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  scrollbar-gutter: stable;
 }
 
 /* Ozellar theme — lifted from the current app's CSS (Downloads/Ozellar-Inspection--main/index.html)

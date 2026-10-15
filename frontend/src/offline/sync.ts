@@ -58,10 +58,11 @@ async function pull(): Promise<void> {
     await setMeta(cursorKey, 0);
   }
 
-  // Auto-heal: If local DB has 0 inspections but cursor is ahead, reset cursor to 0 to pull full list
-  const localCount = await db.inspections.count();
-  if (localCount === 0 && cursor > 0) {
-    console.log('[Sync] Local inspections empty with cursor > 0; resetting cursor to 0 for full initial sync');
+  // Auto-heal: If local DB has 0 inspections or 0 vessels but cursor is ahead, reset cursor to 0 to pull full list
+  const localInspCount = await db.inspections.count();
+  const localVesselCount = await db.vessels.count();
+  if ((localInspCount === 0 || localVesselCount === 0) && cursor > 0) {
+    console.log('[Sync] Local inspections/vessels empty with cursor > 0; resetting cursor to 0 for full initial sync');
     cursor = 0;
     await setMeta(cursorKey, 0);
   }

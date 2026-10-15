@@ -1,6 +1,6 @@
 import type { User } from '@ozellar/shared';
 import bcrypt from 'bcryptjs';
-import { db } from '../offline/db';
+import { db, clearAllData } from '../offline/db';
 
 const TOKEN_KEY = 'oz_token';
 const USER_KEY = 'oz_user';
@@ -437,12 +437,14 @@ export async function resetPassword(resetToken: string, password: string): Promi
   setToken(token);
 }
 
-/** Signs out: clears the JWT and user session, but preserves the offline database and cached accounts. */
+/** Signs out: clears the JWT and user session, and wipes the offline database so previous user's data does not persist. */
 export function logout(): void {
   setToken(null);
   setCachedUser(null);
   import('../main').then(({ queryClient }) => {
     queryClient.clear();
   }).catch(() => {/* non-fatal */});
-  window.location.href = '/';
+  clearAllData().catch(() => {/* non-fatal */}).finally(() => {
+    window.location.href = '/';
+  });
 }

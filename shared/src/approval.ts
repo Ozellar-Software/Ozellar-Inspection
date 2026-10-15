@@ -143,7 +143,7 @@ export function applyApproval(cmd: Command, ctx: TransitionContext): TransitionR
       if (!isAdmin) throw new ApprovalError('FORBIDDEN', 'Only an Admin can reopen');
       if (insp.status !== 'approved' || !approval) throw new ApprovalError('INVALID_STATE', 'Only approved inspections can be reopened');
       return {
-        status: 'returned',
+        status: 'in_progress',
         approval: { ...approval, stage: 'returned', returnedBy: actor.id, returnComment: 'Reopened by Admin' },
         event: { action: 'reopened', level: 'Reopened by Admin', targetUserId: approval.submittedBy, comment: '' },
         notify: [approval.submittedBy],

@@ -134,7 +134,7 @@ const WRITABLE: Partial<Record<SyncEntity, string[]>> = {
 const SOFT_DELETE: Partial<Record<SyncEntity, true>> = { vessels: true, inspections: true, inspectionSections: true, findings: true, photos: true };
 
 /** Finds the inspection a mutation belongs to (locked FOR UPDATE, so approvals and edits can't interleave). */
-async function owningInspection(c: Tx, m: Mutation): Promise<{ id: string; vesselId: string | null; status: Inspection['status']; createdBy: string | null } | null> {
+async function owningInspection(c: Tx, m: Mutation): Promise<{ id: string; vesselId: string | null; status: Inspection['status']; createdBy: string | null; reportCategory?: string | null } | null> {
   if (m.entity === 'vessels') return null;
   const d = m.data ?? {};
   let inspectionId: string | null = null;
@@ -149,8 +149,8 @@ async function owningInspection(c: Tx, m: Mutation): Promise<{ id: string; vesse
     inspectionId = (await c.query(`select inspection_id from ${table} where id = $1`, [m.entityId])).rows[0]?.inspection_id ?? null;
   }
   if (!inspectionId) return null;
-  const i = (await c.query(`select id, vessel_id, status, created_by from inspections where id = $1 for update`, [inspectionId])).rows[0];
-  return i ? { id: i.id, vesselId: i.vessel_id, status: i.status, createdBy: i.created_by } : null;
+  const i = (await c.query(`select id, vessel_id, status, created_by, report_category from inspections where id = $1 for update`, [inspectionId])).rows[0];
+  return i ? { id: i.id, vesselId: i.vessel_id, status: i.status, createdBy: i.created_by, reportCategory: i.report_category } : null;
 }
 
 /**
@@ -256,7 +256,7 @@ function mergeConcurrentConflict(
 }
 
 async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
-  if (!PUSHABLE_ENTITIES.includes(m.entity)) throw fail('VALIDATION', `${m.entity} can’t be changed through sync`);
+  if (!PUSHABLE_ENTITIES.includes(m.entity)) throw fail('VALIDATION', `${m.entity} can't be changed through sync`);
   const def = ENTITIES[m.entity];
   const d = m.data ?? {};
   const insp = await owningInspection(c, m);
@@ -278,7 +278,7 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
     }
   } else if (m.entity === 'inspections' && !insp) {
     if (m.op === 'delete') return 0;
-    if (!can(user, 'inspection.create', { vesselId: (d.vesselId as string) ?? null })) throw fail('FORBIDDEN', 'You can’t create inspections for this vessel');
+    if (!can(user, 'inspection.create', { vesselId: (d.vesselId as string) ?? null })) throw fail('FORBIDDEN', "You can't create inspections for this vessel");
   } else if (m.entity === 'photos' && !insp && d.vesselId) {
     if (!can(user, 'vessels.manage')) throw fail('FORBIDDEN', 'Only an Admin can change vessel photos');
   } else {
@@ -287,11 +287,12 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
       throw fail('NOT_FOUND', 'Inspection not synced yet');
     }
     const action = m.entity === 'inspections' && m.op === 'delete' ? 'inspection.delete' : 'inspection.edit';
+    const isSpecialCategoryAdminAction = Boolean(insp.reportCategory && insp.reportCategory !== 'inspection' && can(user, 'vessels.manage'));
     const isOfflineDataSync = (m.entity === 'responses' || m.entity === 'findings' || m.entity === 'photos' || m.entity === 'inspectionSections');
     const isPendingApproval = (insp.status === 'pending_tm' || insp.status === 'pending_director');
     const allowPendingSync = isPendingApproval && isOfflineDataSync && can(user, 'inspection.view', { inspection: insp });
 
-    if (!can(user, action, { inspection: insp }) && !allowPendingSync) {
+    if (!can(user, action, { inspection: insp }) && !allowPendingSync && !isSpecialCategoryAdminAction) {
       throw fail(insp.status === 'in_progress' || insp.status === 'returned' ? 'FORBIDDEN' : 'LOCKED',
         insp.status === 'approved' ? 'This inspection has already been approved — changes are locked' : 'This inspection is waiting for approval');
     }
@@ -301,7 +302,7 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
 
   // --- delete ---
   if (m.op === 'delete') {
-    if (!SOFT_DELETE[m.entity]) throw fail('VALIDATION', `${m.entity} can’t be deleted`);
+    if (!SOFT_DELETE[m.entity]) throw fail('VALIDATION', `${m.entity} can't be deleted`);
     const selectExtra = m.entity === 'photos' ? ', blob_path' : '';
     const r = await c.query(`update ${def.table} set deleted_at = now() where id = $1 returning row_version${selectExtra}`, [m.entityId]);
     if (!r.rows[0]) return 0;
@@ -348,6 +349,11 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
     }
 
     const cols = (WRITABLE[m.entity] ?? []).filter((k) => k in payload);
+    if (m.entity === 'inspections' && cur.report_category && cur.report_category !== 'inspection' && can(user, 'vessels.manage')) {
+      if (typeof payload.status === 'string' && ['approved', 'returned', 'in_progress'].includes(payload.status) && !cols.includes('status')) {
+        cols.push('status');
+      }
+    }
     const sets = cols.map((k, i) => `${snake(k)} = $${i + 2}`);
     const vals: unknown[] = [m.entityId, ...cols.map((k) => sanitizeVal(k, payload[k]))];
     if (m.entity === 'responses' || m.entity === 'findings') { sets.push(`updated_by = $${vals.length + 1}`); vals.push(user.id); }
@@ -361,8 +367,25 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
       // Tech Manager / Director chain entirely, so there's no other transition into 'approved'.
       await c.query(
         `update inspections set status = 'approved'
-          where vessel_id = $1 and report_category = 'take_over' and status = 'in_progress'`,
+          where vessel_id = $1 and report_category = 'take_over' and status != 'approved'`,
         [m.entityId]);
+    }
+
+    const repCat = (cur.report_category as string) || (payload.reportCategory as string) || '';
+    if (m.entity === 'inspections' && repCat && repCat !== 'inspection' && can(user, 'vessels.manage')) {
+      if (repCat === 'take_over' && payload.status === 'approved') {
+        const vid = (cur.vessel_id as string) || (payload.vesselId as string);
+        if (vid) {
+          await c.query(`update vessels set registration_status = 'registered' where id = $1`, [vid]);
+        } else if (cur.vessel_name || payload.vesselName) {
+          const vName = (cur.vessel_name as string) || (payload.vesselName as string);
+          const vImo = (cur.imo as string) || (payload.imo as string) || '';
+          await c.query(
+            `update vessels set registration_status = 'registered' where lower(name) = lower($1) or (imo != '' and imo = $2)`,
+            [vName, vImo]
+          );
+        }
+      }
     }
 
     return Number(r.rows[0].row_version);
@@ -423,7 +446,7 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
 export const syncPushHandler = handler(async (req, ctx) => {
     const user = await requireUser(req);
     const body = await jsonBody<PushRequest>(req);
-    if (!Array.isArray(body.mutations) || body.mutations.length > 200) throw fail('VALIDATION', 'Send 1–200 mutations per request');
+    if (!Array.isArray(body.mutations) || body.mutations.length === 0 || body.mutations.length > 200) throw fail('VALIDATION', 'Send 1–200 mutations per request');
 
     const results: MutationResult[] = [];
     for (const m of body.mutations) {
@@ -449,7 +472,7 @@ export const syncPushHandler = handler(async (req, ctx) => {
           id: m.id, ok: false,
           code: err && (['FORBIDDEN', 'LOCKED', 'VALIDATION', 'NOT_FOUND', 'CONFLICT'] as const).includes(err.code as 'FORBIDDEN')
             ? (err.code as 'FORBIDDEN' | 'LOCKED' | 'VALIDATION' | 'NOT_FOUND' | 'CONFLICT') : 'VALIDATION',
-          message: err?.message ?? 'Could not apply change',
+          message: (e as Error)?.message ?? 'Could not apply change',
           serverRow: serverRow ? camel(serverRow as Record<string, unknown>) : undefined,
         });
       }

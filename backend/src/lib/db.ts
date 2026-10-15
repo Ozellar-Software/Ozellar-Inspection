@@ -32,6 +32,7 @@ const origConnect = pool.connect.bind(pool);
 const origQuery = pool.query.bind(pool);
 
 let schemaEnsured = false;
+let schemaTried = false;
 let schemaPromise: Promise<void> | null = null;
 
 /**
@@ -40,7 +41,10 @@ let schemaPromise: Promise<void> | null = null;
  */
 export async function ensureSchema(): Promise<void> {
   if (schemaEnsured) return;
+  // If a previous attempt already failed, don't retry on every request — let it wait for next cold start.
+  if (schemaTried && !schemaEnsured) return;
   if (!schemaPromise) {
+    schemaTried = true;
     schemaPromise = (async () => {
       let client: pg.PoolClient | null = null;
       try {

@@ -45,7 +45,7 @@ export async function requireUser(req: HttpRequest): Promise<User> {
   }
 
   const user = await loadUser(userId);
-  if (!user) throw fail('FORBIDDEN', 'You don’t have access yet. Ask your admin to add you.');
+  if (!user) throw fail('FORBIDDEN', "You don't have access yet. Ask your admin to add you.");
   if (!user.isActive) throw fail('FORBIDDEN', 'Your access has been removed.');
   return user;
 }

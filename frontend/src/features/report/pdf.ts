@@ -292,13 +292,26 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     titleX += lw + 6;
   }
 
+  const isTakeOver = (inspection as any)?.reportCategory === 'take_over';
+  const isPrePurchase = (inspection as any)?.reportCategory === 'pre_purchase';
+  const mainPdfTitle = isTakeOver
+    ? 'VESSEL TAKE OVER REPORT'
+    : isPrePurchase
+    ? 'PRE PURCHASE INSPECTION REPORT'
+    : (isPhotoOnly ? 'VESSEL PHOTO INSPECTION REPORT' : 'VESSEL INSPECTION REPORT');
+  const subPdfTitle = isTakeOver
+    ? 'VESSEL TAKE OVER & FLEET ENTRY AUDIT RECORD'
+    : isPrePurchase
+    ? 'PRE PURCHASE PHOTOGRAPHIC CONDITION SURVEY'
+    : (isPhotoOnly ? 'PHOTOGRAPHIC SURVEY & CONDITION AUDIT RECORD' : 'OFFICIAL STATUTORY & TECHNICAL AUDIT RECORD');
+
   doc.pdf.setFont('helvetica', 'bold').setFontSize(13);
   doc.setTextColor(NAVY);
-  doc.pdf.text(isPhotoOnly ? 'VESSEL PHOTO INSPECTION REPORT' : 'VESSEL INSPECTION REPORT', titleX, 11.5);
+  doc.pdf.text(mainPdfTitle, titleX, 11.5);
 
   doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
   doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text(isPhotoOnly ? 'PHOTOGRAPHIC SURVEY & CONDITION AUDIT RECORD' : 'OFFICIAL STATUTORY & TECHNICAL AUDIT RECORD', titleX, 16);
+  doc.pdf.text(subPdfTitle, titleX, 16);
 
   // Top Right Audit Grade Pill
   const auditPillW = 40;
@@ -1057,7 +1070,12 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
       doc.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
       doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text(isPhotoOnly ? ' |  VESSEL PHOTO REPORT' : ' |  VESSEL INSPECTION REPORT', rhLogoX + rtitleW, 11.5);
+      const rhReportType = isTakeOver
+        ? ' |  VESSEL TAKE OVER REPORT'
+        : isPrePurchase
+        ? ' |  PRE PURCHASE REPORT'
+        : (isPhotoOnly ? ' |  VESSEL PHOTO REPORT' : ' |  VESSEL INSPECTION REPORT');
+      doc.pdf.text(rhReportType, rhLogoX + rtitleW, 11.5);
 
       // Right Header
       const rightHead = `${inspection.vesselName || 'VESSEL'}${inspection.imo ? '  |  IMO ' + inspection.imo : ''}`;

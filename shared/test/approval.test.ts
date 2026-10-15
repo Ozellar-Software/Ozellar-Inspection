@@ -54,7 +54,7 @@ describe('full two-level flow + rejection', () => {
     expect(fin.status).toBe('approved');
     expect(fin.approval.approvedAt).toBeTruthy();
     const reopened = applyApproval({ type: 'reopen' }, { actor: admin, inspection: insp(fin.status), approval: fin.approval });
-    expect(reopened.status).toBe('returned');
+    expect(reopened.status).toBe('in_progress');
     expect(() => applyApproval({ type: 'reopen' }, { actor: dir, inspection: insp(fin.status), approval: fin.approval })).toThrow();
   });
   it('TM rejection goes back to the Vessel Manager and needs a reason', () => {

@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { User, Vessel, VesselParticularKey } from '@ozellar/shared';
 import { api, ApiError } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite, localDelete } from '../../offline/outbox';
+import { syncNow } from '../../offline/sync';
 import './VesselsPage.css';
 import {
   PlusIcon, SearchIcon, XIcon, EditIcon, CheckIcon, BackIcon,
@@ -73,12 +74,30 @@ import { useCurrentUser } from '../../auth/useCurrentUser';
 
 export function VesselsPage() {
   const me = useCurrentUser();
+  const qc = useQueryClient();
   const rawVessels = useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [];
   const canManageVessels = me.data?.role === 'admin';
 
   // Filter out any soft-deleted vessels, then restrict to assigned vessels for TM/VM
   const [tab, setTab] = useState<'registered' | 'unregistered'>('registered');
   const effectiveTab = canManageVessels ? tab : 'registered';
+
+  const { registeredCount, unregisteredCount } = useMemo(() => {
+    const active = rawVessels.filter(v => !(v as any).deletedAt);
+    const accessible = (me.data?.role === 'techManager' || me.data?.role === 'vesselManager')
+      ? active.filter(v => (me.data?.vesselIds ?? []).map(id => id.toLowerCase().trim()).includes(v.id.toLowerCase().trim()))
+      : active;
+    let reg = 0;
+    let unreg = 0;
+    for (const v of accessible) {
+      if (((v as any).registrationStatus ?? 'registered') === 'unregistered') {
+        unreg++;
+      } else {
+        reg++;
+      }
+    }
+    return { registeredCount: reg, unregisteredCount: unreg };
+  }, [rawVessels, me.data]);
 
   const vessels = useMemo(() => {
     const active = rawVessels.filter(v => !(v as any).deletedAt);
@@ -103,7 +122,7 @@ export function VesselsPage() {
 
   // Sync with remote backend vessels if connected
   useQuery({
-    queryKey: ['remote-vessels'],
+    queryKey: ['remote-vessels', me.data?.id, (me.data?.vesselIds ?? []).join(',')],
     enabled: navigator.onLine,
     queryFn: async () => {
       try {
@@ -118,11 +137,12 @@ export function VesselsPage() {
           }
         }
         return remote;
-      } catch {
+      } catch (err) {
+        console.warn('[VesselsPage] Failed to fetch remote vessels:', err);
         return [];
       }
     },
-    staleTime: 60_000,
+    staleTime: 10_000,
   });
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -181,6 +201,17 @@ export function VesselsPage() {
     // Goes through the generic sync/outbox pipeline (not the admin-only /vessels REST endpoint),
     // so it queues and retries the same way every other vessel edit does, including offline.
     await localWrite('vessels', v.id, { registrationStatus: 'registered' });
+    await db.vessels.update(v.id, { registrationStatus: 'registered' });
+    const pendingTakeOver = await db.inspections.where('vesselId').equals(v.id).first();
+    if (pendingTakeOver && pendingTakeOver.reportCategory === 'take_over' && pendingTakeOver.status !== 'approved') {
+      await localWrite('inspections', pendingTakeOver.id, { status: 'approved' });
+      await db.inspections.update(pendingTakeOver.id, { status: 'approved' });
+    }
+    if (navigator.onLine) {
+      await syncNow().catch(() => {});
+    }
+    await qc.invalidateQueries({ queryKey: ['remote-vessels'] });
+    await qc.invalidateQueries({ queryKey: ['remote-vessels-new-inspection'] });
   }
 
   async function onConfirmDelete() {
@@ -221,21 +252,36 @@ export function VesselsPage() {
         </div>
 
         {canManageVessels && (
-          <div className="vessels-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div role="group" aria-label="Vessel registration status" style={{ display: 'flex', gap: 6 }}>
+          <div className="vessels-header-actions">
+            {/* Registered / Unregistered Tab Switch */}
+            <div className="vessel-tab-switch" role="tablist" aria-label="Vessel registration status">
               <button
                 type="button"
-                className={`vessel-filter-btn ${tab === 'registered' ? 'active' : ''}`}
+                role="tab"
+                id="tab-registered"
+                aria-selected={tab === 'registered'}
+                aria-controls="vessel-list-container"
+                className={`vessel-tab-btn ${tab === 'registered' ? 'active' : ''}`}
                 onClick={() => setTab('registered')}
               >
-                Registered
+                <CheckCircleIcon width={14} height={14} className="vessel-tab-btn-icon" />
+                <span className="vessel-tab-btn-label">Registered</span>
+                <span className="vessel-tab-badge">{registeredCount}</span>
               </button>
               <button
                 type="button"
-                className={`vessel-filter-btn ${tab === 'unregistered' ? 'active' : ''}`}
+                role="tab"
+                id="tab-unregistered"
+                aria-selected={tab === 'unregistered'}
+                aria-controls="vessel-list-container"
+                className={`vessel-tab-btn ${tab === 'unregistered' ? 'active' : ''}`}
                 onClick={() => setTab('unregistered')}
               >
-                Unregistered
+                <AlertCircleIcon width={14} height={14} className="vessel-tab-btn-icon" />
+                <span className="vessel-tab-btn-label">Unregistered</span>
+                <span className={`vessel-tab-badge ${unregisteredCount > 0 ? 'badge-attention' : ''}`}>
+                  {unregisteredCount}
+                </span>
               </button>
             </div>
             <button className="vessel-primary-btn" onClick={startNewVessel}>
@@ -295,7 +341,9 @@ export function VesselsPage() {
 
       {/* Results Header Count */}
       <div className="vessels-results-count">
-        <span>Showing {filteredVessels.length} of {vessels.length} Fleet Vessels</span>
+        <span>
+          Showing {filteredVessels.length} of {vessels.length} {effectiveTab === 'unregistered' ? 'Unregistered Ships' : 'Fleet Vessels'}
+        </span>
       </div>
 
       {/* Empty State */}
@@ -304,9 +352,15 @@ export function VesselsPage() {
           <div className="vessel-empty-icon">
             <ShipIcon width={48} height={48} />
           </div>
-          <h3 className="vessel-empty-title">No Fleet Vessels Found</h3>
+          <h3 className="vessel-empty-title">
+            {effectiveTab === 'unregistered' ? 'No Unregistered Vessels' : 'No Fleet Vessels Found'}
+          </h3>
           <p className="vessel-empty-desc">
-            No vessels match the specified search query or active filter class.
+            {effectiveTab === 'unregistered'
+              ? (searchQuery || filterType !== 'all')
+                ? 'No unregistered vessels match the specified search query or active filter.'
+                : 'There are currently no unregistered or pending vessels requiring approval.'
+              : 'No vessels match the specified search query or active filter class.'}
           </p>
           {(searchQuery || filterType !== 'all') && (
             <button

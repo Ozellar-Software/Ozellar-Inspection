@@ -58,9 +58,10 @@ app.http('auth-reset-password', { route: 'auth/reset-password', methods: ['POST'
 export const changePasswordHandler = handler(async (req) => {
   const me = await requireUser(req);
   const { currentPassword, newPassword } = await jsonBody<{ currentPassword?: string; newPassword?: string }>(req);
-  if (!newPassword || newPassword.trim().length < 6) {
-    throw fail('VALIDATION', 'New password must be at least 6 characters');
+  if (!newPassword || newPassword.trim().length < 8) {
+    throw fail('VALIDATION', 'New password must be at least 8 characters');
   }
+
 
   const row = (await pool.query(
     `select password_hash from users where id = $1`, [me.id])).rows[0];

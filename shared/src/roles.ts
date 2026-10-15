@@ -55,8 +55,16 @@ export function can(
     case 'vessels.manage':
     case 'checklist.manage':
     case 'approval.reopen':
-    case 'inspection.delete':
       return isAdmin;
+
+    case 'inspection.delete': {
+      if (isAdmin) return true;
+      // Creators of Pre-Purchase / Take-Over reports can delete their own report while it's still editable
+      const insp = ctx.inspection as (Pick<Inspection, 'vesselId' | 'status'> & { createdBy?: string | null; reportCategory?: string }) | undefined;
+      const isSpecialCategory = insp?.reportCategory && insp.reportCategory !== 'inspection';
+      const isEditableStatus = insp && isEditable(insp.status);
+      return !!(isManager && isSpecialCategory && isOwnInspection && isEditableStatus);
+    }
 
     case 'vessels.view':
       // Admin and Director see all vessels; TM/VM see their assigned vessels

@@ -37,7 +37,41 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
     if (!insp) throw fail('NOT_FOUND', 'Inspection not found');
     if (!canSeeVessel(actor, insp.vessel_id) && insp.created_by !== actor.id) throw fail('FORBIDDEN', 'Not your vessel');
     if (insp.report_category && insp.report_category !== 'inspection') {
-      throw fail('VALIDATION', 'Pre Purchase / Take Over reports are approved directly by an Admin, not through the submit workflow.');
+      if (actor.role === 'admin' && (cmd.type === 'approve' || cmd.type === 'reopen')) {
+        const nextStatus = cmd.type === 'approve' ? 'approved' : 'in_progress';
+        await c.query(`update inspections set status = $2 where id = $1`, [inspectionId, nextStatus]);
+        if (insp.report_category === 'take_over' && cmd.type === 'approve') {
+          if (insp.vessel_id) {
+            await c.query(`update vessels set registration_status = 'registered' where id = $1`, [insp.vessel_id]);
+          } else if (insp.vessel_name) {
+            await c.query(`update vessels set registration_status = 'registered' where lower(name) = lower($1)`, [insp.vessel_name]);
+          }
+        }
+        await c.query(
+          `insert into approvals (inspection_id, stage, submitted_by, submitted_at, director_user_id, approved_at)
+           values ($1, $2, $3, now(), $4, case when $2 = 'approved' then now() else null end)
+           on conflict (inspection_id) do update set stage = excluded.stage, director_user_id = excluded.director_user_id, approved_at = excluded.approved_at`,
+          [inspectionId, nextStatus, insp.created_by, actor.id]
+        );
+        const actionLabel = cmd.type === 'approve' ? 'approved' : 'reopened';
+        const eventComment = (cmd as { comment?: string }).comment?.trim() || (cmd.type === 'approve' ? (insp.report_category === 'take_over' ? 'Take Over report approved & vessel registered' : 'Pre Purchase report approved') : 'Report reopened by Administrator');
+        await c.query(
+          `insert into approval_events (inspection_id, action, level, actor_user_id, actor_name, actor_designation, actor_role, target_user_id, comment)
+           values ($1, $2, 'Administrator', $3, $4, $5, $6, null, $7)`,
+          [inspectionId, actionLabel, actor.id, actor.name || actor.email, actor.designation || 'Administrator', actor.role, eventComment]
+        );
+        return {
+          r: {
+            status: nextStatus as any,
+            approval: { stage: nextStatus, submittedBy: insp.created_by, submittedAt: new Date().toISOString(), tmUserId: null, directorUserId: actor.id, approvedAt: cmd.type === 'approve' ? new Date().toISOString() : null, returnedBy: null, returnComment: null } as any,
+            event: { action: actionLabel as any, level: 'Administrator' as any, targetUserId: null, comment: eventComment },
+            notify: []
+          },
+          insp,
+          recipients: []
+        };
+      }
+      throw fail('VALIDATION', 'Pre Purchase / Take Over reports are reviewed and approved directly by an Administrator.');
     }
 
     if (cmd.type === 'submit' && !cmd.photoOnly) {
@@ -124,19 +158,19 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
       link: `/inspections/${inspectionId}/report`,
     });
 
-    const recipients = (await c.query(`select email from users where id = any($1)`, [targetNotifyUserIds])).rows.map((x: { email: string }) => x.email);
+    const recipients = (await c.query(`select email from users where id = any($1::uuid[])`, [targetNotifyUserIds])).rows.map((x: { email: string }) => x.email);
     return { r, insp, recipients };
   });
 
   const { r, insp, recipients } = result;
   const what = `${insp.vessel_name} — inspection of ${insp.start_date ?? ''}`;
   const by = `${personLabel(actor)}, ${ROLE_LABELS[actor.role]}`;
-  const subject = {
+  const subject = ({
     submitted: `Approval needed: ${what}`,
     approved: r.status === 'approved' ? `Approved: ${what}` : `Final approval needed: ${what}`,
     rejected: `Rejected: ${what}`,
     reopened: `Reopened: ${what}`,
-  }[r.event.action];
+  } as Record<string, string>)[r.event.action] ?? 'Inspection update';
   void sendMail(recipients, subject, `${subject}\nBy: ${by}${r.event.comment ? `\nComment: ${r.event.comment}` : ''}`);
   return { status: r.status, approval: r.approval };
 }
@@ -181,7 +215,8 @@ export const approvalInboxHandler = handler(async (req) => {
     const r = await pool.query(
       `select i.id, i.vessel_id, i.vessel_name, i.start_date, i.status, a.*
          from inspections i join approvals a on a.inspection_id = i.id
-        where i.deleted_at is null and i.status in ('pending_tm','pending_director','returned')`);
+        where i.deleted_at is null and i.status in ('pending_tm','pending_director','returned')
+          and (i.report_category is null or i.report_category = 'inspection')`);
     const waiting = [], returned = [];
     for (const row of r.rows) {
       const approval = camel<Approval>(row);

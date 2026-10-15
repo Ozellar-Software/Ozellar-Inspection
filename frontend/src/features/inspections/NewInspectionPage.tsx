@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -46,7 +46,7 @@ export function NewInspectionPage() {
   }, [me.data, nav]);
 
   useQuery({
-    queryKey: ['remote-vessels-new-inspection'],
+    queryKey: ['remote-vessels', 'new-inspection', me.data?.id],
     enabled: navigator.onLine,
     queryFn: async () => {
       try {
@@ -65,21 +65,26 @@ export function NewInspectionPage() {
         return [];
       }
     },
-    staleTime: 60_000,
+    staleTime: 5_000,
   });
 
-  const vessels = (useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [])
-    .filter((v) => !(v as any).deletedAt && (v as any).registrationStatus !== 'unregistered');
+  const rawVessels = useLiveQuery(() => db.vessels.toArray(), []) ?? [];
+  const vessels = useMemo(() => {
+    return rawVessels
+      .filter((v) => !(v as any).deletedAt && (v as any).registrationStatus !== 'unregistered')
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [rawVessels]);
   const templateSections = (useLiveQuery(() => db.templateSections.toArray(), []) ?? [])
     .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
 
   // TM and VM can only create inspections for their assigned vessels
-  const displayVessels = (me.data?.role === 'admin' || me.data?.role === 'director' || !me.data)
-    ? vessels
-    : vessels.filter((v) => {
-        const ids = (me.data?.vesselIds ?? []).map(id => id.toLowerCase().trim());
-        return ids.includes(v.id.toLowerCase().trim());
-      });
+  const displayVessels = useMemo(() => {
+    if (me.data?.role === 'admin' || me.data?.role === 'director' || !me.data) {
+      return vessels;
+    }
+    const ids = (me.data?.vesselIds ?? []).map(id => id.toLowerCase().trim());
+    return vessels.filter((v) => ids.includes(v.id.toLowerCase().trim()));
+  }, [vessels, me.data]);
 
   const [reportCategory, setReportCategory] = useState<ReportCategory>('inspection');
   const [vesselId, setVesselId] = useState('');
@@ -87,6 +92,13 @@ export function NewInspectionPage() {
   const [inspectionType, setInspectionType] = useState<InspectionType>('port');
   const [port, setPort] = useState('');
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [completionDate, setCompletionDate] = useState('');
+  const [sailFromDate, setSailFromDate] = useState('');
+  const [sailFromPort, setSailFromPort] = useState('');
+  const [sailToDate, setSailToDate] = useState('');
+  const [sailToPort, setSailToPort] = useState('');
+  const [remoteFromDate, setRemoteFromDate] = useState('');
+  const [remoteToDate, setRemoteToDate] = useState('');
   const [inspector, setInspector] = useState('');
   const [company, setCompany] = useState('');
   const [busy, setBusy] = useState(false);
@@ -95,12 +107,7 @@ export function NewInspectionPage() {
   const isNewVesselReport = reportCategory !== 'inspection';
   const vessel = displayVessels.find((v) => v.id === vesselId);
 
-  /**
-   * `photoOnlyNoFallback` is used for Pre Purchase / Take Over: unlike a normal inspection, an
-   * unconfigured vessel type never falls back to the Universal photo sections (which would look
-   * confusingly identical to another type's) — it just has zero sections until an Admin configures one.
-   */
-  function getSectionCountForVesselType(vesselType?: string | null, photoOnlyNoFallback = false): number {
+  function getSectionCountForVesselType(vesselType?: string | null, photoOnly = false): number {
     const vt = vesselType?.trim().toLowerCase() ?? '';
     let matching = templateSections.filter((s) => {
       if ((s as any).deletedAt) return false;
@@ -108,26 +115,40 @@ export function NewInspectionPage() {
       if (!vt) return types.length === 0;
       return types.some((t) => t.trim().toLowerCase() === vt);
     });
-    if (matching.length === 0 && !photoOnlyNoFallback) {
-      // Fallback to Universal (Default) sections if none are assigned to this vessel type yet
-      matching = templateSections.filter((s) => {
-        if ((s as any).deletedAt) return false;
-        const types: string[] = Array.isArray((s as any).vesselTypes) ? (s as any).vesselTypes : [];
-        return types.length === 0;
-      });
-    }
-    if (photoOnlyNoFallback) {
+    if (photoOnly) {
       matching = matching.filter((s) => Boolean((s as any).photoOnly));
     }
     return new Set(matching.map((s) => `${String(s.name ?? '').trim().toLowerCase()}::${Boolean(s.photoOnly)}`)).size;
   }
 
-  const selectedVesselSectionCount = vessel ? getSectionCountForVesselType(vessel.vesselType) : 0;
+  const selectedVesselSectionCount = vessel ? getSectionCountForVesselType(vessel.vesselType, isNewVesselReport) : 0;
   const newVesselSectionCount = isNewVesselReport ? getSectionCountForVesselType(newVessel.vesselType, true) : 0;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setError(null);
+
+    const finalStartDate = (inspectionType === 'sailing'
+      ? (sailFromDate || startDate)
+      : inspectionType === 'remote'
+      ? (remoteFromDate || startDate)
+      : startDate) || null;
+
+    const finalCompletionDate = (inspectionType === 'sailing'
+      ? (sailToDate || completionDate)
+      : inspectionType === 'remote'
+      ? (remoteToDate || completionDate)
+      : completionDate) || null;
+
+    if (finalStartDate && finalCompletionDate && finalCompletionDate < finalStartDate) {
+      setError('Inspection completion date cannot be earlier than start date');
+      setBusy(false);
+      return;
+    }
+
+    const finalPort = inspectionType === 'sailing'
+      ? [sailFromPort, sailToPort].filter(Boolean).join(' → ')
+      : port;
 
     if (isNewVesselReport) {
       if (!newVessel.name.trim()) { setError('Vessel name is required'); setBusy(false); return; }
@@ -136,7 +157,17 @@ export function NewInspectionPage() {
         const id = await createInspectionWithNewVessel({
           newVessel: { name: newVessel.name.trim(), imo: newVessel.imo.trim(), vesselType: newVessel.vesselType.trim() },
           vesselName: newVessel.name.trim(), imo: newVessel.imo.trim(), vesselType: newVessel.vesselType.trim(),
-          inspectionType, reportCategory, port, startDate: startDate || null, inspector, company,
+          inspectionType, reportCategory,
+          port: finalPort,
+          startDate: finalStartDate,
+          completionDate: finalCompletionDate,
+          sailFromDate: inspectionType === 'sailing' ? finalStartDate : null,
+          sailFromPort: inspectionType === 'sailing' ? sailFromPort : '',
+          sailToDate: inspectionType === 'sailing' ? finalCompletionDate : null,
+          sailToPort: inspectionType === 'sailing' ? sailToPort : '',
+          remoteFromDate: inspectionType === 'remote' ? finalStartDate : null,
+          remoteToDate: inspectionType === 'remote' ? finalCompletionDate : null,
+          inspector, company,
         });
         nav(`/inspections/${id}`, { replace: true });
       } catch (err) {
@@ -147,11 +178,21 @@ export function NewInspectionPage() {
     }
 
     const realVessel = vessels.find((v) => v.id === vesselId);
-    if (!realVessel) { setError('Pick a vessel '); setBusy(false); return; }
+    if (!realVessel) { setError('Pick a vessel'); setBusy(false); return; }
     try {
       const id = await createInspection({
         vesselId: realVessel.id, vesselName: realVessel.name, imo: realVessel.imo, vesselType: realVessel.vesselType,
-        inspectionType, reportCategory, port, startDate: startDate || null, inspector, company,
+        inspectionType, reportCategory,
+        port: finalPort,
+        startDate: finalStartDate,
+        completionDate: finalCompletionDate,
+        sailFromDate: inspectionType === 'sailing' ? finalStartDate : null,
+        sailFromPort: inspectionType === 'sailing' ? sailFromPort : '',
+        sailToDate: inspectionType === 'sailing' ? finalCompletionDate : null,
+        sailToPort: inspectionType === 'sailing' ? sailToPort : '',
+        remoteFromDate: inspectionType === 'remote' ? finalStartDate : null,
+        remoteToDate: inspectionType === 'remote' ? finalCompletionDate : null,
+        inspector, company,
       });
       nav(`/inspections/${id}`, { replace: true });
     } catch (err) {
@@ -210,12 +251,12 @@ export function NewInspectionPage() {
                 <div className="ni-summary-banner ni-summary-warn" style={{ marginTop: 14 }}>
                   <WarningIcon width={22} height={22} style={{ color: '#b45309', flexShrink: 0 }} />
                   <div className="ni-summary-body">
-                    <div className="ni-summary-title">No photo sections configured for {newVessel.vesselType}</div>
+                    <div className="ni-summary-title">No checklist sections configured for {newVessel.vesselType}</div>
                     <div className="ni-summary-sub">
-                      This report will be created with 0 sections.
+                      This inspection will be created empty (0 sections). You can add photo sections during the inspection.
                       {me.data?.role === 'admin'
-                        ? ' Open Checklist Templates and add a photo section for this vessel type.'
-                        : ' Ask an Admin to add a photo section for this vessel type.'}
+                        ? ' Or open Checklist Templates to configure sections for this vessel type.'
+                        : ''}
                     </div>
                   </div>
                 </div>
@@ -235,31 +276,19 @@ export function NewInspectionPage() {
                   </p>
                 </div>
               ) : (
-                <div className="ni-vessel-list">
+                <div className="ni-vessel-grid">
                   {displayVessels.map((v) => {
                     const isSelected = vesselId === v.id;
-                    const secCount = getSectionCountForVesselType(v.vesselType);
                     return (
                       <button
                         key={v.id}
                         type="button"
-                        className={`ni-vessel-btn ${isSelected ? 'selected' : ''}`}
+                        className={`ni-vessel-pill ${isSelected ? 'selected' : ''}`}
                         onClick={() => setVesselId(v.id)}
+                        title={`${v.name} (${v.vesselType || 'Vessel'}) · IMO ${v.imo || 'N/A'}`}
                       >
-                        <div className="ni-vessel-icon-wrap">
-                          <ShipIcon style={{ width: 22, height: 22 }} />
-                        </div>
-                        <div className="ni-vessel-details">
-                          <div className="ni-vessel-name">{v.name}</div>
-                          <div className="ni-vessel-meta">
-                            {[v.imo && `IMO ${v.imo}`, v.vesselType, `${secCount} section${secCount === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
-                          </div>
-                        </div>
-                        {isSelected && (
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="ni-vessel-check">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
+                        <ShipIcon width={14} height={14} />
+                        <span>{v.name}</span>
                       </button>
                     );
                   })}
@@ -297,21 +326,145 @@ export function NewInspectionPage() {
           <div className="ni-card">
             <div className="ni-card-header">Inspection Details</div>
 
-            <div className="ni-form-row" style={{ marginBottom: 14 }}>
-              <FieldGroup label="Port / Location">
-                <input className="auth-input" value={port} onChange={(e) => setPort(e.target.value)} placeholder="e.g. Singapore" />
-              </FieldGroup>
-              <FieldGroup label="Date">
-                <input className="auth-input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-              </FieldGroup>
-            </div>
+            {/* In Port Details */}
+            {inspectionType === 'port' && (
+              <>
+                <div className="ni-form-row" style={{ marginBottom: 14 }}>
+                  <FieldGroup label="Port of inspection">
+                    <input
+                      className="auth-input"
+                      value={port}
+                      onChange={(e) => setPort(e.target.value)}
+                      placeholder="e.g. Port of Singapore"
+                    />
+                  </FieldGroup>
+                  <FieldGroup label="Inspection start date">
+                    <input
+                      className="auth-input"
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      required
+                    />
+                  </FieldGroup>
+                </div>
+
+                <div className="ni-form-row" style={{ marginBottom: 14 }}>
+                  <FieldGroup label="Inspection completion date">
+                    <input
+                      className="auth-input"
+                      type="date"
+                      value={completionDate}
+                      min={startDate}
+                      onChange={(e) => setCompletionDate(e.target.value)}
+                    />
+                  </FieldGroup>
+                  <div />
+                </div>
+              </>
+            )}
+
+            {/* Sailing inspection period */}
+            {inspectionType === 'sailing' && (
+              <div className="ni-period-group">
+                <div className="ni-period-header">Sailing inspection period & ports</div>
+                <div className="ni-form-row" style={{ marginBottom: 14 }}>
+                  <FieldGroup label="Sailing from port">
+                    <input
+                      className="auth-input"
+                      value={sailFromPort}
+                      onChange={(e) => setSailFromPort(e.target.value)}
+                      placeholder="e.g. Singapore"
+                    />
+                  </FieldGroup>
+                  <FieldGroup label="Sailing from date (Start date)">
+                    <input
+                      className="auth-input"
+                      type="date"
+                      value={sailFromDate || startDate}
+                      onChange={(e) => {
+                        setSailFromDate(e.target.value);
+                        setStartDate(e.target.value);
+                      }}
+                      required
+                    />
+                  </FieldGroup>
+                </div>
+                <div className="ni-form-row">
+                  <FieldGroup label="Sailing to port">
+                    <input
+                      className="auth-input"
+                      value={sailToPort}
+                      onChange={(e) => setSailToPort(e.target.value)}
+                      placeholder="e.g. Rotterdam"
+                    />
+                  </FieldGroup>
+                  <FieldGroup label="Sailing to date (Completion date)">
+                    <input
+                      className="auth-input"
+                      type="date"
+                      value={sailToDate || completionDate}
+                      min={sailFromDate || startDate}
+                      onChange={(e) => {
+                        setSailToDate(e.target.value);
+                        setCompletionDate(e.target.value);
+                      }}
+                    />
+                  </FieldGroup>
+                </div>
+              </div>
+            )}
+
+            {/* Remote inspection period */}
+            {inspectionType === 'remote' && (
+              <div className="ni-period-group">
+                <div className="ni-period-header">Remote inspection period & location</div>
+                <div className="ni-form-row" style={{ marginBottom: 14 }}>
+                  <FieldGroup label="Port / Location">
+                    <input
+                      className="auth-input"
+                      value={port}
+                      onChange={(e) => setPort(e.target.value)}
+                      placeholder="e.g. Singapore / Remote Office"
+                    />
+                  </FieldGroup>
+                  <FieldGroup label="Remote from date (Start date)">
+                    <input
+                      className="auth-input"
+                      type="date"
+                      value={remoteFromDate || startDate}
+                      onChange={(e) => {
+                        setRemoteFromDate(e.target.value);
+                        setStartDate(e.target.value);
+                      }}
+                      required
+                    />
+                  </FieldGroup>
+                </div>
+                <div className="ni-form-row">
+                  <FieldGroup label="Remote to date (Completion date)">
+                    <input
+                      className="auth-input"
+                      type="date"
+                      value={remoteToDate || completionDate}
+                      min={remoteFromDate || startDate}
+                      onChange={(e) => {
+                        setRemoteToDate(e.target.value);
+                        setCompletionDate(e.target.value);
+                      }}
+                    />
+                  </FieldGroup>
+                  <div />
+                </div>
+              </div>
+            )}
 
             <div className="ni-form-row">
               <FieldGroup label="Inspector name">
-                <input className="auth-input" value={inspector} onChange={(e) => setInspector(e.target.value)} placeholder="Your name" />
+                <input className="auth-input" value={inspector} onChange={(e) => setInspector(e.target.value)} placeholder="e.g. Capt. J. Rao" />
               </FieldGroup>
-              <FieldGroup label="Inspecting company">
-                <input className="auth-input" value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company name" />
+              <FieldGroup label="Company / rank">
+                <input className="auth-input" value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. Ozellar Marine" />
               </FieldGroup>
             </div>
           </div>
@@ -329,16 +482,31 @@ export function NewInspectionPage() {
                   {vessel.name} {vessel.vesselType ? `(${vessel.vesselType})` : ''}
                 </div>
                 <div className="ni-summary-sub">
-                  {TYPE_LABELS[inspectionType].label} · {port || 'No port set'} · {startDate} ·{' '}
+                  {TYPE_LABELS[inspectionType].label}
+                  {inspectionType === 'sailing' && (sailFromPort || sailToPort) && (
+                    <> · {[sailFromPort, sailToPort].filter(Boolean).join(' → ')}</>
+                  )}
+                  {inspectionType !== 'sailing' && port && <> · {port}</>}
+                  {inspectionType === 'sailing' && (
+                    <> · {[sailFromDate || startDate, sailToDate || completionDate].filter(Boolean).join(' to ')}</>
+                  )}
+                  {inspectionType === 'remote' && (
+                    <> · {[remoteFromDate || startDate, remoteToDate || completionDate].filter(Boolean).join(' to ')}</>
+                  )}
+                  {inspectionType === 'port' && (
+                    <> · {startDate}{completionDate ? ` to ${completionDate}` : ''}</>
+                  )}
+                  {' · '}
                   <strong>{selectedVesselSectionCount} checklist section{selectedVesselSectionCount === 1 ? '' : 's'}</strong>
                 </div>
                 {selectedVesselSectionCount === 0 && vessel.vesselType && (
                   <div className="ni-checklist-warn-row">
                     <span>
                       No checklist sections are configured for <strong>{vessel.vesselType}</strong> yet.
+                      This inspection will be created empty (0 sections). You can add photo sections during the inspection.
                       {me.data?.role === 'admin'
-                        ? ' Open Checklist Templates and click "Default" to load the Universal sections for this vessel type.'
-                        : ' Ask an Admin to configure the checklist sections for this vessel type.'}
+                        ? ' Or open Checklist Templates to configure sections for this vessel type.'
+                        : ''}
                     </span>
                     {me.data?.role === 'admin' && (
                       <button

@@ -24,7 +24,41 @@
   margin-bottom: 14px;
 }
 
-/* Vessel list */
+/* Vessel Grid & Pills (Matches User Create select style) */
+.ni-vessel-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ni-vessel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid #CBD5E1;
+  background: #F8FAFC;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.ni-vessel-pill:hover {
+  background: #EEF2F6;
+  color: var(--ink);
+}
+
+.ni-vessel-pill.selected {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+/* Vessel list (legacy fallback) */
 .ni-vessel-list {
   display: grid;
   gap: 8px;
@@ -154,6 +188,24 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+/* Period Group (Sailing / Remote) */
+.ni-period-group {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+}
+
+.ni-period-header {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 12px;
 }
 
 /* Summary banner */
@@ -328,6 +380,23 @@
     line-height: 1.2;
   }
 
+  /* Vessel Grid & Pills */
+  .ni-vessel-grid {
+    gap: 6px !important;
+  }
+
+  .ni-vessel-pill {
+    padding: 5px 10px;
+    font-size: 11.5px;
+    border-radius: 16px;
+    gap: 4px;
+  }
+
+  .ni-vessel-pill svg {
+    width: 12px;
+    height: 12px;
+  }
+
   /* Vessel buttons */
   .ni-vessel-btn {
     padding: 10px 12px;
@@ -367,6 +436,16 @@
   .ni-summary-banner {
     margin: 0 0 12px !important;
     padding: 11px 12px;
+  }
+
+  .ni-period-group {
+    padding: 12px 10px;
+    margin-bottom: 12px;
+  }
+
+  .ni-period-header {
+    font-size: 11px;
+    margin-bottom: 10px;
   }
 
   .ni-checklist-warn-row {

@@ -55,13 +55,12 @@ export async function createNotifications(c: DbConn, params: CreateNotificationP
 
     const link = params.link ?? '';
 
-    for (const uid of targetUserIds) {
-      await c.query(
-        `insert into notifications (id, user_id, inspection_id, type, title, message, link, read, created_at)
-         values (gen_random_uuid(), $1, $2, $3, $4, $5, $6, false, now())`,
-        [uid, params.inspectionId ?? null, params.type, params.title, params.message, link]
-      );
-    }
+    // Bulk insert all notifications in a single query using unnest() to avoid N+1 round-trips
+    await c.query(
+      `insert into notifications (id, user_id, inspection_id, type, title, message, link, read, created_at)
+       select gen_random_uuid(), unnest($1::uuid[]), $2, $3, $4, $5, $6, false, now()`,
+      [targetUserIds, params.inspectionId ?? null, params.type, params.title, params.message, link]
+    );
 
     // Also send email in background if recipients have emails configured
     const emailRows = (await c.query(`select email from users where id = any($1) and is_active = true`, [targetUserIds])).rows;

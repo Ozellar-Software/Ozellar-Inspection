@@ -52,6 +52,12 @@ export function DeleteInspectionModal({
   }
 
 
+  const reportLabel = inspection.reportCategory === 'pre_purchase'
+    ? 'Pre-Purchase report'
+    : inspection.reportCategory === 'take_over'
+      ? 'Take-Over report'
+      : 'inspection';
+
   return (
     <div className="delete-inspection-backdrop" onClick={() => !isDeleting && onClose()}>
       <div className="delete-inspection-card" onClick={(e) => e.stopPropagation()}>
@@ -59,13 +65,13 @@ export function DeleteInspectionModal({
           <TrashIcon width={28} height={28} />
         </div>
 
-        <h3 className="delete-inspection-title">Delete Inspection</h3>
+        <h3 className="delete-inspection-title">Delete {reportLabel.charAt(0).toUpperCase() + reportLabel.slice(1)}</h3>
         <p className="delete-inspection-desc">
-          Are you sure you want to delete the inspection for{' '}
+          Are you sure you want to delete the {reportLabel} for{' '}
           <strong>{inspection.vesselName || 'Unnamed vessel'}</strong>?
         </p>
         <p className="delete-inspection-subdesc">
-          This will remove this inspection, checklist responses, observations, and photos from active records. This action can only be performed by administrators.
+          This will permanently remove this {reportLabel}, checklist responses, observations, and all photos from active records. This action cannot be undone.
         </p>
 
         {error && (
@@ -91,7 +97,7 @@ export function DeleteInspectionModal({
             onClick={handleConfirmDelete}
           >
             <TrashIcon width={15} height={15} />
-            {isDeleting ? 'Deleting Inspection...' : 'Yes, Delete Inspection'}
+            {isDeleting ? `Deleting ${reportLabel}...` : `Yes, Delete ${reportLabel.charAt(0).toUpperCase() + reportLabel.slice(1)}`}
           </button>
         </div>
       </div>

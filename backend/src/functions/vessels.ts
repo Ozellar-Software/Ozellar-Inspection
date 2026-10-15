@@ -7,9 +7,11 @@ import { camel, fail, handler, jsonBody } from '../lib/http.js';
 export const vesselsListHandler = handler(async (req) => {
     const user = await requireUser(req);
     const all = user.role === 'admin' || user.role === 'director';
+    const vesselIds = (user.vesselIds ?? []).filter(Boolean);
+    if (!all && vesselIds.length === 0) return [];
     const r = await pool.query(
-      `select * from vessels where deleted_at is null ${all ? '' : 'and id = any($1)'} order by lower(name)`,
-      all ? [] : [user.vesselIds]);
+      `select * from vessels where deleted_at is null ${all ? '' : 'and id = any($1::uuid[])'} order by lower(name)`,
+      all ? [] : [vesselIds]);
     return r.rows.map((row) => camel(row));
   });
 app.http('vessels-list', {
@@ -51,6 +53,8 @@ app.http('vessels-delete', {
 export const fleetStatusHandler = handler(async (req) => {
     const user = await requireUser(req);
     const all = user.role === 'admin' || user.role === 'director';
+    const vesselIds = (user.vesselIds ?? []).filter(Boolean);
+    if (!all && vesselIds.length === 0) return [];
     const r = await pool.query(
       `select v.id, v.name,
               (select json_build_object('id', i.id, 'startDate', i.start_date, 'completionDate', i.completion_date,
@@ -59,8 +63,8 @@ export const fleetStatusHandler = handler(async (req) => {
                 where i.vessel_id = v.id and i.status = 'approved' and i.deleted_at is null
                 order by coalesce(i.completion_date, i.start_date) desc nulls last limit 1) as last
          from vessels v
-        where v.deleted_at is null ${all ? '' : 'and v.id = any($1)'}
-        order by lower(v.name)`, all ? [] : [user.vesselIds]);
+        where v.deleted_at is null and v.registration_status = 'registered' ${all ? '' : 'and v.id = any($1::uuid[])'}
+        order by lower(v.name)`, all ? [] : [vesselIds]);
     return r.rows.map((row) => ({ vesselId: row.id, name: row.name, last: row.last, due: inspectionDueInfo(row.last) }));
   });
 app.http('fleet-status', {

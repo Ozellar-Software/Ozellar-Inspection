@@ -13,6 +13,10 @@ type Synced<T> = T & { rowVersion?: number; deletedAt?: string | null };
 export interface NewInspectionInput {
   vesselId: string; vesselName: string; imo: string; vesselType: string;
   inspectionType: InspectionType; reportCategory?: ReportCategory; port: string; startDate: string | null;
+  completionDate?: string | null;
+  sailFromDate?: string | null; sailFromPort?: string;
+  sailToDate?: string | null; sailToPort?: string;
+  remoteFromDate?: string | null; remoteToDate?: string | null;
   inspector: string; company: string;
 }
 
@@ -79,13 +83,21 @@ async function buildInspection(inspectionId: string, input: NewInspectionInput, 
   mutations.push({ id: crypto.randomUUID(), entity: 'inspections', entityId: inspectionId, op: 'upsert', data: { ...input }, baseVersion: null, createdAt: stamp(), attempts: 0 });
   const inspectionRow: Synced<Inspection> = {
     id: inspectionId, ...input, reportCategory: input.reportCategory ?? 'inspection', status: 'in_progress', updatedAt: new Date().toISOString(),
-    completionDate: null, summary: '', conclusion: '', createdBy: getCachedUser()?.id ?? null,
+    completionDate: input.completionDate ?? null,
+    sailFromDate: input.sailFromDate ?? null,
+    sailFromPort: input.sailFromPort ?? '',
+    sailToDate: input.sailToDate ?? null,
+    sailToPort: input.sailToPort ?? '',
+    remoteFromDate: input.remoteFromDate ?? null,
+    remoteToDate: input.remoteToDate ?? null,
+    summary: '', conclusion: '', createdBy: getCachedUser()?.id ?? null,
   };
 
   const isPhotoOnlyReport = !!input.reportCategory && input.reportCategory !== 'inspection';
 
   // Only create sections assigned to this vessel's type.
-  // Universal sections (empty vesselTypes) act as the Default blueprint in Checklist Master.
+  // If no sections are specifically assigned to this vessel type, do NOT fall back to Universal sections;
+  // create it empty (0 sections) so inspectors can add photo sections manually.
   let rawApplicable = templateSections.filter((ts) => {
     const types = (Array.isArray(ts.vesselTypes) ? ts.vesselTypes : []).map((t) => String(t).trim()).filter(Boolean);
     if (input.vesselType?.trim()) {
@@ -94,17 +106,6 @@ async function buildInspection(inspectionId: string, input: NewInspectionInput, 
     }
     return types.length === 0;
   });
-
-  // If no sections are specifically assigned to this vessel type, fall back to Universal (Default) sections
-  // so the inspection is never created with zero sections! Pre Purchase / Take Over reports are the
-  // exception: a vessel type with no photo sections of its own gets none at all, rather than silently
-  // reusing another type's Universal photo sections (which would look confusingly identical).
-  if (rawApplicable.length === 0 && !isPhotoOnlyReport) {
-    rawApplicable = templateSections.filter((ts) => {
-      const types = (Array.isArray(ts.vesselTypes) ? ts.vesselTypes : []).map((t) => String(t).trim()).filter(Boolean);
-      return types.length === 0;
-    });
-  }
 
   // Pre Purchase / Take Over reports only ever get photo-only sections.
   if (isPhotoOnlyReport) {

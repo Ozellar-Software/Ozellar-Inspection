@@ -8,7 +8,7 @@ import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { syncNow } from '../../offline/sync';
 import { queueApprovalAction } from '../../offline/approvalQueue';
-import { BackIcon, WarningIcon, LockIcon } from '../../icons';
+import { BackIcon, WarningIcon, LockIcon, CheckIcon } from '../../icons';
 import { loadReportData, type ReportData } from './reportData';
 import { generateInspectionPdf } from './pdf';
 import './ReportPage.css';
@@ -228,6 +228,14 @@ export function ReportPage() {
 
   const canExport = !!report || isMock;
 
+  useEffect(() => {
+    if (dispInspection?.reportCategory && dispInspection.reportCategory !== 'inspection') {
+      if (!searchParams.get('mode')) {
+        setReportMode('photo');
+      }
+    }
+  }, [dispInspection?.reportCategory, searchParams]);
+
   const EMPTY_STATS: any = {
     totalQuestions: 0,
     answeredQuestions: 0,
@@ -338,20 +346,252 @@ export function ReportPage() {
   }
 
   const editable = isEditable(dispInspection.status as any);
-  // Pre Purchase / Take Over reports skip the Tech Manager → Director chain entirely — an Admin
-  // approves (or, for Pre Purchase, never approves) the vessel directly from Manage Vessel instead.
   const isOrdinaryInspection = (dispInspection.reportCategory ?? 'inspection') === 'inspection';
+  const isSpecialCategory = !isOrdinaryInspection;
+  const isSpecialTakeOver = dispInspection.reportCategory === 'take_over';
+  const isSpecialPrePurchase = dispInspection.reportCategory === 'pre_purchase';
+
   const canSubmit = isOrdinaryInspection && can(me.data, 'inspection.submit', { inspection: dispInspection });
   const approval = history.data?.approval;
-  const canApproveHere = dispInspection.status as any === 'pending_tm'
+  const canApproveHere = isOrdinaryInspection && (dispInspection.status as any === 'pending_tm'
     ? (me.data.role === 'admin' || (me.data.role === 'techManager' && approval?.tmUserId === me.data.id))
     : dispInspection.status as any === 'pending_director'
     ? (me.data.role === 'admin' || (me.data.role === 'director' && approval?.directorUserId === me.data.id))
-    : false;
-  const canReopen = dispInspection.status as any === 'approved' && me.data.role === 'admin';
+    : false);
+  const canReopen = isOrdinaryInspection && dispInspection.status as any === 'approved' && me.data.role === 'admin';
+
+  // For Take Over and Pre Purchase:
+  // Admin has direct review and approval authority right on this report page.
+  // Inspector (non-admin) can submit the completed survey for Administrator review.
+  const canAdminSpecialApprove = isSpecialCategory && me.data.role === 'admin' && dispInspection.status !== 'approved';
+  const canAdminSpecialReopen = isSpecialCategory && me.data.role === 'admin' && dispInspection.status === 'approved';
+  const canInspectorSpecialSubmit = isSpecialCategory && me.data.role !== 'admin' && (dispInspection.status === 'in_progress' || dispInspection.status === 'returned');
 
   async function saveSummaryConclusion() {
     await localWrite('inspections', inspectionId!, { summary, conclusion });
+  }
+
+  async function onApproveSpecialReport() {
+    setBusy(true);
+    setError(null);
+    try {
+      await saveSummaryConclusion();
+      const isTO = dispInspection.reportCategory === 'take_over';
+
+      let targetVesselId = dispInspection.vesselId;
+      if (!targetVesselId) {
+        const found = await db.vessels.filter(v =>
+          (Boolean(dispInspection.imo) && v.imo === dispInspection.imo) ||
+          (Boolean(dispInspection.vesselName) && v.name.toLowerCase() === dispInspection.vesselName.toLowerCase())
+        ).first();
+        if (found) {
+          targetVesselId = found.id;
+          await db.inspections.update(inspectionId!, { vesselId: targetVesselId });
+          await localWrite('inspections', inspectionId!, { vesselId: targetVesselId });
+        }
+      }
+
+      // 1. If Take Over and vesselId exists, promote vessel to registered
+      if (isTO && targetVesselId) {
+        await localWrite('vessels', targetVesselId, { registrationStatus: 'registered' });
+        await db.vessels.update(targetVesselId, { registrationStatus: 'registered' });
+      }
+
+      // 2. Mark inspection as approved
+      await localWrite('inspections', inspectionId!, { status: 'approved' });
+      await db.inspections.update(inspectionId!, { status: 'approved' });
+
+      // 3. Record approval event in audit trail
+      const eventId = crypto.randomUUID();
+      const eventData: ApprovalEvent = {
+        id: eventId,
+        inspectionId: inspectionId!,
+        action: 'approved',
+        level: 'Administrator',
+        actorUserId: me.data!.id,
+        actorName: me.data!.name || me.data!.email,
+        actorDesignation: me.data!.designation || 'Administrator',
+        actorRole: me.data!.role,
+        targetUserId: null,
+        comment: comment.trim() || (isTO ? 'Take Over vessel approved & registered into active fleet' : 'Pre Purchase report approved & finalized'),
+        createdAt: new Date().toISOString(),
+      };
+      await db.approvalEvents.put(eventData as any);
+
+      // 4. Update approvals table for audit alignment
+      const approvalData = {
+        id: inspectionId!,
+        inspectionId: inspectionId!,
+        stage: 'approved',
+        submittedBy: dispInspection.createdBy,
+        submittedAt: new Date().toISOString(),
+        tmUserId: null,
+        directorUserId: me.data!.id,
+        approvedAt: new Date().toISOString(),
+        returnedBy: null,
+        returnComment: null,
+      };
+      await db.approvals.put(approvalData as any);
+
+      // 5. Sync to backend if online
+      if (navigator.onLine) {
+        await syncNow().catch(() => {});
+        await api(`/inspections/${inspectionId}/approve`, {
+          method: 'POST',
+          body: { comment: comment.trim() || (isTO ? 'Take Over vessel approved & registered into active fleet' : 'Pre Purchase report approved & finalized') }
+        }).catch(() => {});
+      }
+
+      await qc.invalidateQueries({ queryKey: ['approvalHistory', inspectionId] });
+      await qc.invalidateQueries({ queryKey: ['notifications'] });
+      await qc.invalidateQueries({ queryKey: ['inbox'] });
+      await qc.invalidateQueries({ queryKey: ['remote-vessels'] });
+      await qc.invalidateQueries({ queryKey: ['remote-vessels-new-inspection'] });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to approve report');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRejectSpecialReport() {
+    if (!rejectComment.trim()) {
+      setError('Please provide comments on what needs correction before returning.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await saveSummaryConclusion();
+
+      // 1. Mark inspection as returned
+      await localWrite('inspections', inspectionId!, { status: 'returned' });
+      await db.inspections.update(inspectionId!, { status: 'returned' });
+
+      // 2. Record reject event
+      const eventId = crypto.randomUUID();
+      const eventData: ApprovalEvent = {
+        id: eventId,
+        inspectionId: inspectionId!,
+        action: 'rejected',
+        level: 'Administrator',
+        actorUserId: me.data!.id,
+        actorName: me.data!.name || me.data!.email,
+        actorDesignation: me.data!.designation || 'Administrator',
+        actorRole: me.data!.role,
+        targetUserId: null,
+        comment: rejectComment.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      await db.approvalEvents.put(eventData as any);
+
+      // 3. Update approvals table
+      const approvalData = {
+        id: inspectionId!,
+        inspectionId: inspectionId!,
+        stage: 'returned',
+        submittedBy: dispInspection.createdBy,
+        submittedAt: new Date().toISOString(),
+        tmUserId: null,
+        directorUserId: null,
+        approvedAt: null,
+        returnedBy: me.data!.id,
+        returnComment: rejectComment.trim(),
+      };
+      await db.approvals.put(approvalData as any);
+
+      if (navigator.onLine) {
+        await syncNow().catch(() => {});
+      }
+
+      await qc.invalidateQueries({ queryKey: ['approvalHistory', inspectionId] });
+      await qc.invalidateQueries({ queryKey: ['notifications'] });
+      await qc.invalidateQueries({ queryKey: ['inbox'] });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to return report');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onReopenSpecialReport() {
+    setBusy(true);
+    setError(null);
+    try {
+      // 1. Mark inspection back to in_progress
+      await localWrite('inspections', inspectionId!, { status: 'in_progress' });
+      await db.inspections.update(inspectionId!, { status: 'in_progress' });
+
+      // 2. Record reopened event
+      const eventId = crypto.randomUUID();
+      const eventData: ApprovalEvent = {
+        id: eventId,
+        inspectionId: inspectionId!,
+        action: 'reopened',
+        level: 'Administrator',
+        actorUserId: me.data!.id,
+        actorName: me.data!.name || me.data!.email,
+        actorDesignation: me.data!.designation || 'Administrator',
+        actorRole: me.data!.role,
+        targetUserId: null,
+        comment: 'Report reopened by Administrator for updates',
+        createdAt: new Date().toISOString(),
+      };
+      await db.approvalEvents.put(eventData as any);
+
+      if (navigator.onLine) {
+        await syncNow().catch(() => {});
+      }
+
+      await qc.invalidateQueries({ queryKey: ['approvalHistory', inspectionId] });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to reopen report');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onSubmitSpecialReport() {
+    const photoCountInSecs = stats.photoSectionPhotosCount ?? stats.photoCount;
+    if (photoCountInSecs === 0) {
+      setError('Please add at least one photo in photo sections before submitting.');
+      return;
+    }
+    if (!summary.trim() || !conclusion.trim()) {
+      setError('Please provide both Summary and Conclusion before submitting.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await saveSummaryConclusion();
+
+      const eventId = crypto.randomUUID();
+      const eventData: ApprovalEvent = {
+        id: eventId,
+        inspectionId: inspectionId!,
+        action: 'submitted',
+        level: 'Inspector',
+        actorUserId: me.data!.id,
+        actorName: me.data!.name || me.data!.email,
+        actorDesignation: me.data!.designation || 'Inspector',
+        actorRole: me.data!.role,
+        targetUserId: null,
+        comment: comment.trim() || 'Survey submitted for Administrator review',
+        createdAt: new Date().toISOString(),
+      };
+      await db.approvalEvents.put(eventData as any);
+
+      if (navigator.onLine) {
+        await syncNow().catch(() => {});
+      }
+
+      await qc.invalidateQueries({ queryKey: ['approvalHistory', inspectionId] });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to submit report');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function act(path: 'submit' | 'approve' | 'reject' | 'reopen', body: Record<string, unknown>) {
@@ -522,14 +762,84 @@ export function ReportPage() {
   // Use real stats if available, mock if report hasn't loaded
   const stats = report?.stats ?? EMPTY_STATS;
 
+  const stepperNodes = isOrdinaryInspection
+    ? [
+        {
+          label: dispInspection.status === 'returned' ? 'Returned' : 'In Progress',
+          sub: dispInspection.status === 'returned' ? 'Needs Fix' : 'Inspector',
+          isDone: dispInspection.status !== 'in_progress' && dispInspection.status !== 'returned',
+          isCurrent: dispInspection.status === 'in_progress' || dispInspection.status === 'returned',
+          isReturned: dispInspection.status === 'returned',
+        },
+        {
+          label: 'Technical Review',
+          sub: 'Tech Manager',
+          isDone: dispInspection.status === 'pending_director' || dispInspection.status === 'approved',
+          isCurrent: dispInspection.status === 'pending_tm',
+          isReturned: false,
+        },
+        {
+          label: 'Director Sign-off',
+          sub: 'Director',
+          isDone: dispInspection.status === 'approved',
+          isCurrent: dispInspection.status === 'pending_director',
+          isReturned: false,
+        },
+        {
+          label: 'Approved & Locked',
+          sub: 'Final Record',
+          isDone: dispInspection.status === 'approved',
+          isCurrent: false,
+          isReturned: false,
+        },
+      ]
+    : [
+        {
+          label: dispInspection.status === 'returned' ? 'Returned' : 'Survey In Progress',
+          sub: dispInspection.status === 'returned' ? 'Needs Fix' : 'Inspector / VM',
+          isDone: dispInspection.status === 'approved',
+          isCurrent: dispInspection.status === 'in_progress' || dispInspection.status === 'returned',
+          isReturned: dispInspection.status === 'returned',
+        },
+        {
+          label: 'Administrator Review',
+          sub: 'Direct Authority',
+          isDone: dispInspection.status === 'approved',
+          isCurrent: dispInspection.status === 'in_progress',
+          isReturned: false,
+        },
+        {
+          label: isSpecialTakeOver ? 'Approved & Registered' : 'Approved & Finalized',
+          sub: isSpecialTakeOver ? 'Fleet Ship Promoted' : 'Official Record',
+          isDone: dispInspection.status === 'approved',
+          isCurrent: false,
+          isReturned: false,
+        },
+      ];
+
   return (
     <>
       {/* ── App bar ── */}
       <div className="appbar">
-        <button className="back" aria-label="Back" onClick={() => nav(`/inspections/${inspectionId}`)}><BackIcon /></button>
+        <button className="back" aria-label="Back" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))}><BackIcon /></button>
         <div className="title-wrap">
-          <h1>{dispInspection.vesselName}</h1>
-          <div className="sub">{STATUS_LABELS[dispInspection.status as import('@ozellar/shared').InspectionStatus]}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <h1>{dispInspection.vesselName}</h1>
+            {isSpecialTakeOver && (
+              <span className="vessel-type-chip tag-amber" style={{ fontSize: 11, padding: '2px 8px' }}>
+                Take Over Report
+              </span>
+            )}
+            {isSpecialPrePurchase && (
+              <span className="vessel-type-chip tag-rose" style={{ fontSize: 11, padding: '2px 8px' }}>
+                Pre Purchase Report
+              </span>
+            )}
+          </div>
+          <div className="sub">
+            {STATUS_LABELS[dispInspection.status as import('@ozellar/shared').InspectionStatus] || dispInspection.status}
+            {dispInspection.port && ` • Port: ${dispInspection.port}`}
+          </div>
         </div>
         {canExport && (
           <button
@@ -609,38 +919,15 @@ export function ReportPage() {
 
         {/* ── Workflow Stepper ── */}
         <div className="stepper-card">
-          <div className="stepper-title">Inspection Lifecycle</div>
+          <div className="stepper-title">
+            {isOrdinaryInspection
+              ? 'Inspection Lifecycle'
+              : isSpecialTakeOver
+              ? 'Vessel Take Over Lifecycle'
+              : 'Pre Purchase Survey Lifecycle'}
+          </div>
           <div className="stepper-track">
-            {[
-              {
-                label: dispInspection.status === 'returned' ? 'Returned' : 'In Progress',
-                sub: dispInspection.status === 'returned' ? 'Needs Fix' : 'Inspector',
-                isDone: dispInspection.status !== 'in_progress' && dispInspection.status !== 'returned',
-                isCurrent: dispInspection.status === 'in_progress' || dispInspection.status === 'returned',
-                isReturned: dispInspection.status === 'returned',
-              },
-              {
-                label: 'Technical Review',
-                sub: 'Tech Manager',
-                isDone: dispInspection.status === 'pending_director' || dispInspection.status === 'approved',
-                isCurrent: dispInspection.status === 'pending_tm',
-                isReturned: false,
-              },
-              {
-                label: 'Director Sign-off',
-                sub: 'Director',
-                isDone: dispInspection.status === 'approved',
-                isCurrent: dispInspection.status === 'pending_director',
-                isReturned: false,
-              },
-              {
-                label: 'Approved & Locked',
-                sub: 'Final Record',
-                isDone: dispInspection.status === 'approved',
-                isCurrent: false,
-                isReturned: false,
-              },
-            ].map((st, idx) => (
+            {stepperNodes.map((st, idx) => (
               <div
                 key={idx}
                 className={`stepper-node ${st.isDone ? 'done' : st.isReturned ? 'returned' : st.isCurrent ? 'current' : 'pending'}`}
@@ -686,8 +973,20 @@ export function ReportPage() {
           <div className="locked-banner success">
             <div className="locked-banner-icon"><CheckCircleIcon color="var(--ok)" /></div>
             <div className="locked-banner-content">
-              <strong>Official Approved Inspection</strong>
-              <span>This inspection has received final Director approval and is permanently locked.</span>
+              <strong>
+                {isSpecialTakeOver
+                  ? 'Official Approved Take Over Report — Vessel Registered'
+                  : isSpecialPrePurchase
+                  ? 'Official Approved Pre Purchase Report'
+                  : 'Official Approved Inspection'}
+              </strong>
+              <span>
+                {isSpecialTakeOver
+                  ? 'This vessel take over report has received Administrator approval. The vessel is now actively registered in the fleet.'
+                  : isSpecialPrePurchase
+                  ? 'This pre purchase survey has received Administrator approval and is permanently locked.'
+                  : 'This inspection has received final Director approval and is permanently locked.'}
+              </span>
             </div>
           </div>
         )}
@@ -824,18 +1123,200 @@ export function ReportPage() {
           />
         </div>
 
-        {/* ── Pre Purchase / Take Over: Admin-only approval notice, no TM/Director chain ── */}
-        {!isOrdinaryInspection && (
+        {/* ── Administrator Direct Review & Action Card (Take Over / Pre Purchase) ── */}
+        {canAdminSpecialApprove && (
+          <div className="premium-report-card" style={{ borderLeft: '4px solid var(--accent)' }}>
+            <div style={{ fontWeight: 800, fontSize: 16, color: '#0f172a', marginBottom: 4, letterSpacing: '-0.3px' }}>
+              {isSpecialTakeOver
+                ? 'Administrator Review & Fleet Registration'
+                : 'Administrator Review & Final Approval'}
+            </div>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 14 }}>
+              {isSpecialTakeOver
+                ? 'As Administrator, you have direct approval authority over Vessel Take Over surveys. Approving will promote this vessel into the active registered fleet and lock the report.'
+                : 'As Administrator, you have direct approval authority over Pre Purchase surveys. Approving will permanently lock and finalize this report.'}
+            </div>
+
+            {(!summary.trim() || !conclusion.trim()) && (
+              <div style={{
+                background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
+                padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#b45309',
+                display: 'flex', alignItems: 'center', gap: 8
+              }}>
+                <WarningIcon width={16} height={16} style={{ flexShrink: 0 }} />
+                <span>Summary and Conclusion should be completed before approval.</span>
+              </div>
+            )}
+
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+              Approval note / comment (optional)
+            </div>
+            <textarea
+              placeholder="Optional notes for approval audit trail..."
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              style={{
+                width: '100%', minHeight: 60, marginBottom: 16, background: '#f8fafc',
+                border: '1px solid #cbd5e1', borderRadius: 10, padding: 12, fontSize: 14,
+                outline: 'none', color: '#0f172a', resize: 'vertical'
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.background = '#ffffff'; }}
+              onBlurCapture={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
+            />
+
+            <button
+              disabled={busy}
+              onClick={() => void onApproveSpecialReport()}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                background: 'var(--ok)', color: '#fff', border: 'none',
+                borderRadius: 10, padding: '13px 20px',
+                fontWeight: 700, fontSize: 14.5,
+                cursor: busy ? 'not-allowed' : 'pointer',
+                minHeight: 48, opacity: busy ? 0.7 : 1, marginBottom: 16,
+                boxShadow: '0 4px 12px rgba(31,138,87,0.25)',
+              }}
+            >
+              <CheckIcon width={18} height={18} />
+              {busy ? 'Processing…'
+                : isSpecialTakeOver
+                ? 'Approve Take Over Report & Register Vessel'
+                : 'Approve & Finalize Pre Purchase Report'}
+            </button>
+
+            {/* Divider */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+            }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              <span style={{ fontSize: 12, color: 'var(--faint)', fontWeight: 600 }}>OR</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            </div>
+
+            {/* Reject / Return section */}
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--bad)', marginBottom: 6 }}>
+              Return to Inspector for Correction
+            </div>
+            <textarea
+              placeholder="Specify what needs correction (required to return)..."
+              value={rejectComment}
+              onChange={(e) => setRejectComment(e.target.value)}
+              style={{
+                width: '100%', minHeight: 60, marginBottom: 10, background: '#f8fafc',
+                border: '1px solid #cbd5e1', borderRadius: 10, padding: 12, fontSize: 14,
+                outline: 'none', color: '#0f172a', resize: 'vertical'
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--bad)'; e.currentTarget.style.background = '#ffffff'; }}
+              onBlurCapture={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
+            />
+            <button
+              disabled={busy || !rejectComment.trim()}
+              onClick={() => void onRejectSpecialReport()}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                background: !rejectComment.trim() ? '#fee2e2' : 'var(--bad-tint)',
+                color: 'var(--bad)',
+                border: '1.5px solid var(--bad)',
+                borderRadius: 10, padding: '12px 20px',
+                fontWeight: 700, fontSize: 14.5,
+                cursor: (busy || !rejectComment.trim()) ? 'not-allowed' : 'pointer',
+                minHeight: 46, opacity: busy ? 0.7 : 1,
+              }}
+            >
+              <ReturnIcon />
+              Return for Correction
+            </button>
+          </div>
+        )}
+
+        {/* ── Inspector Special Submit Card ── */}
+        {canInspectorSpecialSubmit && (
           <div className="premium-report-card">
             <div style={{ fontWeight: 800, fontSize: 16, color: '#0f172a', marginBottom: 4, letterSpacing: '-0.3px' }}>
-              {dispInspection.status === 'approved' ? 'Approved by Admin' : 'Awaiting Admin Approval'}
+              Submit for Administrator Review
+            </div>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 14 }}>
+              {isSpecialTakeOver
+                ? 'Once your photo sections, summary, and conclusion are ready, submit this Take Over survey directly to the Administrator for approval and vessel registration.'
+                : 'Once your photo sections, summary, and conclusion are ready, submit this Pre Purchase survey directly to the Administrator for review.'}
+            </div>
+
+            {(!summary.trim() || !conclusion.trim()) && (
+              <div style={{
+                background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
+                padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#b45309',
+                display: 'flex', alignItems: 'center', gap: 8
+              }}>
+                <WarningIcon width={16} height={16} style={{ flexShrink: 0 }} />
+                <span>Summary and Conclusion must be completed before submitting.</span>
+              </div>
+            )}
+            {(stats.photoSectionPhotosCount ?? stats.photoCount) === 0 && (
+              <div style={{
+                background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
+                padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#b45309',
+                display: 'flex', alignItems: 'center', gap: 8
+              }}>
+                <WarningIcon width={16} height={16} style={{ flexShrink: 0 }} />
+                <span>At least one photo must be captured in photo sections before submitting.</span>
+              </div>
+            )}
+
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+              Note to Administrator (optional)
+            </div>
+            <textarea
+              placeholder="Any details the Administrator should know..."
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              style={{
+                width: '100%', minHeight: 60, marginBottom: 16, background: '#f8fafc',
+                border: '1px solid #cbd5e1', borderRadius: 10, padding: 12, fontSize: 14,
+                outline: 'none', color: '#0f172a', resize: 'vertical'
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.background = '#ffffff'; }}
+              onBlurCapture={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
+            />
+
+            {(() => {
+              const photoSecCount = stats.photoSectionPhotosCount ?? stats.photoCount;
+              const canClick = !busy && summary.trim() && conclusion.trim() && photoSecCount > 0;
+              return (
+                <button
+                  disabled={!canClick}
+                  onClick={() => void onSubmitSpecialReport()}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    background: !canClick ? '#94a3b8' : 'linear-gradient(135deg, #0f766e 0%, #0d9488 100%)',
+                    color: '#fff', border: 'none',
+                    borderRadius: 12, padding: '13px 20px',
+                    fontWeight: 700, fontSize: 14.5,
+                    cursor: !canClick ? 'not-allowed' : 'pointer',
+                    minHeight: 48, opacity: busy ? 0.7 : 1,
+                  }}
+                >
+                  <CheckIcon width={18} height={18} />
+                  {busy ? 'Submitting…' : 'Submit Survey to Administrator'}
+                </button>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ── Special Report informational notice for other viewers ── */}
+        {isSpecialCategory && !canAdminSpecialApprove && !canInspectorSpecialSubmit && (
+          <div className="premium-report-card">
+            <div style={{ fontWeight: 800, fontSize: 16, color: '#0f172a', marginBottom: 4, letterSpacing: '-0.3px' }}>
+              {dispInspection.status === 'approved' ? 'Approved by Administrator' : 'Administrator Review'}
             </div>
             <div style={{ fontSize: 13, color: '#64748b' }}>
-              {dispInspection.reportCategory === 'pre_purchase'
-                ? 'Pre Purchase reports don’t go through the standard approval chain and are never promoted to the main fleet — only you and Admin can see this.'
-                : dispInspection.status === 'approved'
-                ? 'This vessel and report are now visible to everyone with access to it, same as any registered vessel.'
-                : 'This report is reviewed and approved directly by an Admin in Manage Vessel — it does not go through the Technical Manager / Director chain.'}
+              {isSpecialPrePurchase
+                ? (dispInspection.status === 'approved'
+                  ? 'This Pre Purchase survey report has been approved and permanently archived.'
+                  : 'Pre Purchase reports are reviewed and approved directly by an Administrator — they do not go through the Technical Manager / Director chain.')
+                : (dispInspection.status === 'approved'
+                  ? 'This Take Over report has been approved by the Administrator and the vessel is actively registered in the fleet.'
+                  : 'This Take Over report is reviewed and approved directly by an Administrator — it does not go through the Technical Manager / Director chain.')}
             </div>
           </div>
         )}
@@ -1082,14 +1563,18 @@ export function ReportPage() {
         )}
 
         {/* ── Admin reopen ── */}
-        {canReopen && (
+        {(canReopen || canAdminSpecialReopen) && (
           <div style={{ margin: '0 16px 16px' }}>
             <button
               className="btn btn-outline btn-block"
               disabled={busy}
-              onClick={() => void onReopen()}
+              onClick={() => void (isSpecialCategory ? onReopenSpecialReport() : onReopen())}
             >
-              Reopen Inspection (Admin)
+              {isSpecialTakeOver
+                ? 'Reopen Take Over Report (Admin)'
+                : isSpecialPrePurchase
+                ? 'Reopen Pre Purchase Report (Admin)'
+                : 'Reopen Inspection (Admin)'}
             </button>
           </div>
         )}
