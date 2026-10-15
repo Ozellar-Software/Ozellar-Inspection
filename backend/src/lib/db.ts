@@ -61,6 +61,8 @@ export async function ensureSchema(): Promise<void> {
           `alter table if exists vessels add column if not exists registration_status text not null default 'registered';`,
           `alter table if exists vessels add column if not exists created_by uuid;`,
           `alter table if exists inspections add column if not exists report_category text not null default 'inspection';`,
+          `delete from user_vessels where vessel_id in (select id from vessels where deleted_at is not null or registration_status = 'unregistered');`,
+          `delete from user_vessels where vessel_id not in (select id from vessels);`,
         ];
         for (const sql of statements) {
           try {

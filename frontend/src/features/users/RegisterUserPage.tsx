@@ -136,6 +136,17 @@ export function RegisterUserPage() {
     }
   }, [isEditing, id]);
 
+  // Clean out any stale/deleted vessel IDs from the form state once vessels load
+  useEffect(() => {
+    if (vessels.length > 0 && form.vesselIds.length > 0) {
+      const validSet = new Set(vessels.map(v => v.id.toLowerCase().trim()));
+      const filtered = form.vesselIds.filter(vid => validSet.has(vid.toLowerCase().trim()));
+      if (filtered.length !== form.vesselIds.length) {
+        setForm(f => ({ ...f, vesselIds: filtered }));
+      }
+    }
+  }, [vessels, form.vesselIds]);
+
   function handleGeneratePassword() {
     const pwd = generateSecurePassword();
     setForm(prev => ({ ...prev, password: pwd }));
@@ -183,13 +194,17 @@ export function RegisterUserPage() {
     }
 
     const needsVessels = form.role === 'techManager' || form.role === 'vesselManager';
+    const validVesselIdSet = new Set(vessels.map(v => v.id.toLowerCase().trim()));
+    const sanitizedVesselIds = needsVessels
+      ? form.vesselIds.filter(id => validVesselIdSet.has(id.toLowerCase().trim()))
+      : [];
     // Strip internal-only fields before sending to backend
     const payload = {
       email: form.email.trim().toLowerCase(),
       name: form.name.trim(),
       designation: form.designation.trim(),
       role: form.role,
-      vesselIds: needsVessels ? form.vesselIds : [],
+      vesselIds: sanitizedVesselIds,
       isActive: form.isActive,
       ...(wantsChangePassword && form.password?.trim() ? { password: form.password.trim() } : {}),
     };

@@ -18,7 +18,10 @@ async function loadUser(c: Tx, id: string | null | undefined): Promise<User | nu
   if (!id) return null;
   const u = (await c.query(`select id, email, name, designation, role, is_active from users where id = $1`, [id])).rows[0];
   if (!u) return null;
-  const v = await c.query(`select vessel_id from user_vessels where user_id = $1`, [id]);
+  const v = await c.query(
+    `select distinct uv.vessel_id::text from user_vessels uv
+       join vessels v on v.id = uv.vessel_id and v.deleted_at is null and v.registration_status = 'registered'
+      where uv.user_id = $1`, [id]);
   return { id: u.id, email: u.email, name: u.name, designation: u.designation, role: u.role, isActive: u.is_active,
            vesselIds: v.rows.map((r: { vessel_id: string }) => r.vessel_id) };
 }

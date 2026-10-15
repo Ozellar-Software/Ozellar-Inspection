@@ -21,7 +21,10 @@ async function loadUser(id: string): Promise<User | null> {
   const row = (await pool.query(
     `select id, email, name, designation, role, is_active from users where id = $1`, [id])).rows[0];
   if (!row) return null;
-  const vessels = await pool.query(`select vessel_id from user_vessels where user_id = $1`, [row.id]);
+  const vessels = await pool.query(
+    `select distinct uv.vessel_id::text from user_vessels uv
+       join vessels v on v.id = uv.vessel_id and v.deleted_at is null and v.registration_status = 'registered'
+      where uv.user_id = $1`, [row.id]);
   return {
     id: row.id, email: row.email, name: row.name, designation: row.designation,
     role: row.role, isActive: row.is_active,

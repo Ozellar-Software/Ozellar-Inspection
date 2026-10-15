@@ -41,6 +41,14 @@ export function UsersPage() {
   const vessels = (useLiveQuery(() => db.vessels.orderBy('name').toArray(), []) ?? [])
     .filter((v) => !(v as any).deletedAt);
 
+  const validVesselIds = useMemo(() => {
+    return new Set(
+      vessels
+        .filter((v) => ((v as any).registrationStatus ?? 'registered') !== 'unregistered')
+        .map((v) => v.id.toLowerCase().trim())
+    );
+  }, [vessels]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
@@ -249,14 +257,19 @@ export function UsersPage() {
                           <span className="user-sub-item">{u.designation}</span>
                         </>
                       )}
-                      {(u.role === 'techManager' || u.role === 'vesselManager') && (
-                        <>
-                          <span className="user-sub-sep">•</span>
-                          <span className="user-sub-item" style={{ color: 'var(--accent-dark)', fontWeight: 500 }}>
-                            <ShipIcon width={12} height={12} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> {u.vesselIds?.length || 0} vessel{(u.vesselIds?.length || 0) !== 1 ? 's' : ''}
-                          </span>
-                        </>
-                      )}
+                      {(u.role === 'techManager' || u.role === 'vesselManager') && (() => {
+                        const assignedCount = (u.vesselIds ?? []).filter((id) =>
+                          validVesselIds.has(id.toLowerCase().trim())
+                        ).length;
+                        return (
+                          <>
+                            <span className="user-sub-sep">•</span>
+                            <span className="user-sub-item" style={{ color: 'var(--accent-dark)', fontWeight: 500 }}>
+                              <ShipIcon width={12} height={12} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> {assignedCount} vessel{assignedCount !== 1 ? 's' : ''}
+                            </span>
+                          </>
+                        );
+                      })()}
                       <span className="user-sub-sep">•</span>
                       <span className="user-status-simple" style={!u.isActive ? { color: '#EF4444' } : {}}>
                         <span className="user-dot" style={!u.isActive ? { background: '#EF4444' } : {}} /> {u.isActive ? 'Active' : 'Inactive'}

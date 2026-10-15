@@ -17,8 +17,10 @@ async function handleGet(req: HttpRequest, _me: User) {
       const r = await pool.query(
         `select u.id, u.email, u.name, u.designation, u.role, u.is_active, u.created_at, u.updated_at,
                 (u.password_hash is not null) as has_password,
-                coalesce(array_agg(uv.vessel_id) filter (where uv.vessel_id is not null), '{}') as vessel_ids
-           from users u left join user_vessels uv on uv.user_id = u.id
+                coalesce(array_agg(distinct uv.vessel_id::text) filter (where uv.vessel_id is not null and v.id is not null), '{}') as vessel_ids
+           from users u
+           left join user_vessels uv on uv.user_id = u.id
+           left join vessels v on v.id = uv.vessel_id and v.deleted_at is null and v.registration_status = 'registered'
           where u.id = $1
           group by u.id`, [req.params.id]);
       if (!r.rows.length) throw fail('NOT_FOUND', 'User not found');
@@ -28,8 +30,10 @@ async function handleGet(req: HttpRequest, _me: User) {
     const r = await pool.query(
       `select u.id, u.email, u.name, u.designation, u.role, u.is_active, u.created_at, u.updated_at,
               (u.password_hash is not null) as has_password,
-              coalesce(array_agg(uv.vessel_id) filter (where uv.vessel_id is not null), '{}') as vessel_ids
-         from users u left join user_vessels uv on uv.user_id = u.id
+              coalesce(array_agg(distinct uv.vessel_id::text) filter (where uv.vessel_id is not null and v.id is not null), '{}') as vessel_ids
+         from users u
+         left join user_vessels uv on uv.user_id = u.id
+         left join vessels v on v.id = uv.vessel_id and v.deleted_at is null and v.registration_status = 'registered'
         group by u.id order by lower(u.name), lower(u.email)`);
     return r.rows.map((row) => camel(row));
   }
@@ -42,8 +46,10 @@ async function handleUpsert(req: HttpRequest, me: User) {
     let existingUser: any = null;
     if (isEditing) {
       const existingRes = await pool.query(
-        `select u.*, coalesce(array_agg(uv.vessel_id::text) filter (where uv.vessel_id is not null), '{}') as vessel_ids
-           from users u left join user_vessels uv on uv.user_id = u.id
+        `select u.*, coalesce(array_agg(distinct uv.vessel_id::text) filter (where uv.vessel_id is not null and v.id is not null), '{}') as vessel_ids
+           from users u
+           left join user_vessels uv on uv.user_id = u.id
+           left join vessels v on v.id = uv.vessel_id and v.deleted_at is null and v.registration_status = 'registered'
           where u.id = $1
           group by u.id`,
         [req.params.id]
@@ -123,7 +129,7 @@ async function handleUpsert(req: HttpRequest, me: User) {
         // Validate that all supplied vessel IDs actually exist — avoids FK violation if a stale or
         // non-existent UUID slips through (e.g. unregistered Pre-Purchase vessel not yet in DB).
         const existingVessels = (await c.query(
-          `select id::text from vessels where id = any($1::uuid[]) and deleted_at is null`,
+          `select id::text from vessels where id = any($1::uuid[]) and deleted_at is null and registration_status = 'registered'`,
           [safeVesselIds]
         )).rows.map((row: { id: string }) => row.id);
         if (existingVessels.length > 0) {

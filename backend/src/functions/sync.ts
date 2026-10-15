@@ -77,8 +77,10 @@ export const syncPullHandler = handler(async (req): Promise<PullResponse> => {
       let rows: Array<Record<string, unknown>>;
       if (entity === 'users') {
         rows = (await pool.query(
-          `select u.*, coalesce(array_agg(uv.vessel_id::text) filter (where uv.vessel_id is not null), '{}') as vessel_ids
-             from users u left join user_vessels uv on uv.user_id = u.id
+          `select u.*, coalesce(array_agg(distinct uv.vessel_id::text) filter (where uv.vessel_id is not null and v.id is not null), '{}') as vessel_ids
+             from users u
+             left join user_vessels uv on uv.user_id = u.id
+             left join vessels v on v.id = uv.vessel_id and v.deleted_at is null and v.registration_status = 'registered'
             where u.id::text = any($1)
             group by u.id`, [ids])).rows;
       } else {
@@ -309,6 +311,8 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
     // Fire-and-forget blob deletion for photos (non-fatal if storage call fails)
     if (m.entity === 'photos' && r.rows[0].blob_path) {
       void deleteBlob(r.rows[0].blob_path as string);
+    } else if (m.entity === 'vessels') {
+      await c.query(`delete from user_vessels where vessel_id = $1`, [m.entityId]);
     } else if (m.entity === 'inspections') {
       const pr = await c.query(`update photos set deleted_at = now() where inspection_id = $1 and deleted_at is null returning blob_path`, [m.entityId]);
       for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);

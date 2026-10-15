@@ -43,6 +43,7 @@ export const vesselsDeleteHandler = handler(async (req) => {
     const user = await requireUser(req);
     if (!can(user, 'vessels.manage')) throw fail('FORBIDDEN', 'Only an Admin can manage vessels');
     await pool.query(`update vessels set deleted_at = now() where id = $1`, [req.params.id]);
+    await pool.query(`delete from user_vessels where vessel_id = $1`, [req.params.id]);
     return { ok: true };
   });
 app.http('vessels-delete', {
