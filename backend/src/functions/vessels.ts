@@ -1,7 +1,8 @@
 import { app } from '@azure/functions';
 import { can, inspectionDueInfo, VESSEL_PARTICULAR_KEYS } from '@ozellar/shared';
 import { requireUser } from '../lib/auth.js';
-import { pool } from '../lib/db.js';
+import { deleteBlob } from '../lib/blob.js';
+import { pool, tx } from '../lib/db.js';
 import { camel, fail, handler, jsonBody } from '../lib/http.js';
 
 export const vesselsListHandler = handler(async (req) => {
@@ -42,8 +43,30 @@ app.http('vessels-upsert', {
 export const vesselsDeleteHandler = handler(async (req) => {
     const user = await requireUser(req);
     if (!can(user, 'vessels.manage')) throw fail('FORBIDDEN', 'Only an Admin can manage vessels');
-    await pool.query(`update vessels set deleted_at = now() where id = $1`, [req.params.id]);
-    await pool.query(`delete from user_vessels where vessel_id = $1`, [req.params.id]);
+    const vesselId = req.params.id;
+    await tx(async (c) => {
+      await c.query(`update vessels set deleted_at = now() where id = $1`, [vesselId]);
+      await c.query(`delete from user_vessels where vessel_id = $1`, [vesselId]);
+      // Cascade: the vessel's inspection(s) — and their sections/findings/photos — go with it, so a
+      // deleted Take Over / Pre Purchase report never lingers visible after its vessel is gone.
+      const insps = await c.query(
+        `update inspections set deleted_at = now() where vessel_id = $1 and deleted_at is null returning id`, [vesselId]);
+      const inspIds = insps.rows.map((row: { id: string }) => row.id as string);
+      if (inspIds.length) {
+        await c.query(`delete from notifications where inspection_id = any($1)`, [inspIds]);
+        await c.query(
+          `update findings set deleted_at = now()
+            where inspection_section_id in (select id from inspection_sections where inspection_id = any($1)) and deleted_at is null`,
+          [inspIds]);
+        const pr = await c.query(
+          `update photos set deleted_at = now() where inspection_id = any($1) and deleted_at is null returning blob_path`, [inspIds]);
+        for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
+      }
+      const vp = await c.query(
+        `update photos set deleted_at = now() where vessel_id = $1 and inspection_id is null and deleted_at is null returning blob_path`,
+        [vesselId]);
+      for (const row of vp.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
+    });
     return { ok: true };
   });
 app.http('vessels-delete', {

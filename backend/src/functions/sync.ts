@@ -268,10 +268,17 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
   // --- permission & lock checks (shared rules) ---
   let grantVesselAssignment = false;
   if (m.entity === 'vessels') {
+    const isManagerRole = user.isActive && (user.role === 'techManager' || user.role === 'vesselManager');
     if (can(user, 'vessels.manage')) {
       // admin: always allowed
-    } else if (m.op === 'upsert' && d.registrationStatus === 'unregistered' && user.isActive &&
-      (user.role === 'techManager' || user.role === 'vesselManager')) {
+    } else if (m.op === 'delete' && isManagerRole) {
+      // A Tech/Vessel Manager may withdraw their own still-pending Pre Purchase / Take Over vessel
+      // (and, via cascade below, its report) — but never one an Admin has already approved/registered.
+      const row = (await c.query(`select created_by, registration_status from vessels where id = $1`, [m.entityId])).rows[0];
+      if (!row || row.created_by !== user.id || row.registration_status !== 'unregistered') {
+        throw fail('FORBIDDEN', 'Only an Admin can delete this vessel');
+      }
+    } else if (m.op === 'upsert' && d.registrationStatus === 'unregistered' && isManagerRole) {
       // Tech/Vessel Managers may create (but never edit an existing) unregistered vessel inline from a
       // Pre Purchase / Take Over report — only the first insert, never a later edit of someone else's vessel.
       const existsRow = (await c.query(`select id from vessels where id = $1`, [m.entityId])).rows[0];
@@ -315,10 +322,44 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
       void deleteBlob(r.rows[0].blob_path as string);
     } else if (m.entity === 'vessels') {
       await c.query(`delete from user_vessels where vessel_id = $1`, [m.entityId]);
+      // Cascade: a deleted vessel takes its inspection(s) — and their sections/findings/photos — with it,
+      // so a deleted Take Over / Pre Purchase report never lingers visible after its vessel is gone.
+      const insps = await c.query(
+        `update inspections set deleted_at = now() where vessel_id = $1 and deleted_at is null returning id`, [m.entityId]);
+      const inspIds = insps.rows.map((row: { id: string }) => row.id as string);
+      if (inspIds.length) {
+        await c.query(`delete from notifications where inspection_id = any($1)`, [inspIds]);
+        await c.query(
+          `update findings set deleted_at = now()
+            where inspection_section_id in (select id from inspection_sections where inspection_id = any($1)) and deleted_at is null`,
+          [inspIds]);
+        const pr = await c.query(
+          `update photos set deleted_at = now() where inspection_id = any($1) and deleted_at is null returning blob_path`, [inspIds]);
+        for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
+      }
+      // Vessel-level photos (e.g. cover photo) not tied to any inspection
+      const vp = await c.query(
+        `update photos set deleted_at = now() where vessel_id = $1 and inspection_id is null and deleted_at is null returning blob_path`,
+        [m.entityId]);
+      for (const row of vp.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
     } else if (m.entity === 'inspections') {
       await c.query(`delete from notifications where inspection_id = $1`, [m.entityId]);
       const pr = await c.query(`update photos set deleted_at = now() where inspection_id = $1 and deleted_at is null returning blob_path`, [m.entityId]);
       for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
+      // Reverse cascade: a Pre Purchase / Take Over vessel only exists for its one report — if the
+      // report is deleted directly (by its creator or an Admin) before ever being approved/registered,
+      // the now-pointless vessel goes with it rather than lingering as an orphan in Manage Vessel.
+      if (insp && insp.vesselId && insp.reportCategory && insp.reportCategory !== 'inspection') {
+        const v = (await c.query(`select registration_status from vessels where id = $1 and deleted_at is null`, [insp.vesselId])).rows[0];
+        if (v && v.registration_status === 'unregistered') {
+          await c.query(`update vessels set deleted_at = now() where id = $1`, [insp.vesselId]);
+          await c.query(`delete from user_vessels where vessel_id = $1`, [insp.vesselId]);
+          const vp = await c.query(
+            `update photos set deleted_at = now() where vessel_id = $1 and inspection_id is null and deleted_at is null returning blob_path`,
+            [insp.vesselId]);
+          for (const row of vp.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
+        }
+      }
     } else if (m.entity === 'inspectionSections') {
       await c.query(`update findings set deleted_at = now() where inspection_section_id = $1 and deleted_at is null`, [m.entityId]);
       const pr = await c.query(`update photos set deleted_at = now() where inspection_section_id = $1 and deleted_at is null returning blob_path`, [m.entityId]);

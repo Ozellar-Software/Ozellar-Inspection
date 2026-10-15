@@ -145,16 +145,20 @@ async function pull(): Promise<void> {
                 // safe fallback
               }
             }
-          } else if (activeSet.has(loc.id) && loc.deletedAt) {
-            // Self-healing: if inspection was mistakenly marked deleted locally, resurrect it!
+          } else if (activeSet.has(loc.id) && loc.deletedAt && !pendingIds.has(loc.id)) {
+            // Self-healing: if inspection was mistakenly marked deleted locally, resurrect it! But never
+            // while its own delete mutation is still sitting in the outbox (not yet confirmed by the
+            // server) — otherwise a delete that just hasn't round-tripped yet gets silently undone.
             await db.inspections.update(loc.id, { deletedAt: null });
           }
         }
 
         // Self-healing: ensure any vessels attached to active inspections are not marked deleted locally
+        // (skipping ones with a pending delete mutation of their own, for the same race-condition reason).
         const activeInsps = await db.inspections.filter((i) => !i.deletedAt).toArray();
         const activeVesselIds = new Set(activeInsps.map((i) => i.vesselId).filter(Boolean) as string[]);
         for (const vId of activeVesselIds) {
+          if (pendingIds.has(vId)) continue;
           const v = await db.vessels.get(vId);
           if (v && v.deletedAt) {
             await db.vessels.update(vId, { deletedAt: null });
