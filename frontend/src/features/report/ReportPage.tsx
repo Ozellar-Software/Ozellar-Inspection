@@ -6,7 +6,7 @@ import { can, isEditable, ROLE_LABELS, STATUS_LABELS, type ApprovalEvent, type I
 import { api, ApiError } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite, localDelete } from '../../offline/outbox';
-import { addPhoto, photoSrc } from '../../offline/photoQueue';
+import { addPhoto, photoSrc, prefetchInspectionPhotos } from '../../offline/photoQueue';
 import { syncNow } from '../../offline/sync';
 import { queueApprovalAction } from '../../offline/approvalQueue';
 import { BackIcon, WarningIcon, LockIcon, CheckIcon, UploadIcon, XIcon, EyeIcon } from '../../icons';
@@ -160,6 +160,12 @@ export function ReportPage() {
 
   const inspection = useLiveQuery(() => (inspectionId ? db.inspections.get(inspectionId) : undefined), [inspectionId]);
   const me = useCurrentUser();
+
+  useEffect(() => {
+    if (inspectionId) {
+      void prefetchInspectionPhotos(inspectionId);
+    }
+  }, [inspectionId]);
   const history = useQuery({
     queryKey: ['approvalHistory', inspectionId], enabled: !!inspectionId,
     queryFn: async () => {
