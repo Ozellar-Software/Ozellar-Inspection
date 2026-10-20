@@ -566,7 +566,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PAGE 3: EXECUTIVE SUMMARY & CONCLUSION
+  // PAGE 3: EXECUTIVE SUMMARY
   // ═══════════════════════════════════════════════════════════════════════════
   doc.newPage();
 
@@ -587,26 +587,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     doc.pdf.text(line, MARGIN_LEFT + 8, curSy);
     curSy += 4.6;
   }
-  doc.y += sumBoxH + 8;
-
-  // Conclusion Block
-  doc.subSectionTitle('3. Conclusion & Recommendations');
-  const conclusionText = inspection.conclusion?.trim() || 'No concluding remarks or formal recommendations logged.';
-  const conclusionLines = doc.pdf.splitTextToSize(conclusionText, CONTENT_W - 16) as string[];
-  const conBoxH = Math.max(conclusionLines.length * 4.6 + 12, 22);
-
-  doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, conBoxH, SLATE_BG, BORDER, 2);
-  doc.setFill(NAVY);
-  doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, conBoxH, 'F');
-
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(8.8);
-  doc.setTextColor(TEXT_BODY);
-  let curCy = doc.y + 7;
-  for (const line of conclusionLines) {
-    doc.pdf.text(line, MARGIN_LEFT + 8, curCy);
-    curCy += 4.6;
-  }
-  doc.y += conBoxH + 10;
+  doc.y += sumBoxH + 10;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGES 4+: SECTION EVALUATIONS & CHECKLIST DETAILS / PHOTO SECTIONS
@@ -1026,7 +1007,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   // FORMAL AUDIT TRAIL & SIGN-OFF BLOCK
   // ═══════════════════════════════════════════════════════════════════════════
   doc.ensure(54);
-  doc.subSectionTitle('4. Formal Verification & Approval Sign-Off');
+  doc.subSectionTitle('3. Formal Verification & Approval Sign-Off');
 
   const tmEvent = approvalHistory.find((e) => e.level === 'tm' && e.action === 'approved');
   const dirEvent = approvalHistory.find((e) => e.level === 'director' && e.action === 'approved');
@@ -1107,6 +1088,28 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   doc.pdf.text(dirEvent ? '[+]  FINAL SIGN-OFF' : inspection.status === 'pending_director' ? '[?]  AWAITING SIGN-OFF' : '-  PENDING', bx3 + 8, sBoxY + 30.5);
 
   doc.y += signH + 10;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONCLUSION & RECOMMENDATIONS (shown last)
+  // ═══════════════════════════════════════════════════════════════════════════
+  doc.subSectionTitle('4. Conclusion & Recommendations');
+  const conclusionText = inspection.conclusion?.trim() || 'No concluding remarks or formal recommendations logged.';
+  const conclusionLines = doc.pdf.splitTextToSize(conclusionText, CONTENT_W - 16) as string[];
+  const conBoxH = Math.max(conclusionLines.length * 4.6 + 12, 22);
+
+  doc.ensure(conBoxH + 4);
+  doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, conBoxH, SLATE_BG, BORDER, 2);
+  doc.setFill(NAVY);
+  doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, conBoxH, 'F');
+
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(8.8);
+  doc.setTextColor(TEXT_BODY);
+  let curCy = doc.y + 7;
+  for (const line of conclusionLines) {
+    doc.pdf.text(line, MARGIN_LEFT + 8, curCy);
+    curCy += 4.6;
+  }
+  doc.y += conBoxH + 10;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // POST-PASS: DYNAMIC RUNNING HEADERS & FOOTERS (Page X of Y)
