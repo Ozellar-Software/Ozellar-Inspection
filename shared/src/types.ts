@@ -96,6 +96,7 @@ export interface InspectionSection {
   photoOnly: boolean;
   isCustom: boolean;
   vesselTypes?: string[];
+  remarks?: string;
 }
 
 export interface InspectionQuestion {

@@ -7,7 +7,7 @@ import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, CameraIcon, PlusIcon, XIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon } from '../../icons';
+import { BackIcon, CameraIcon, PlusIcon, XIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon } from '../../icons';
 import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
 import { DeleteInspectionModal } from './DeleteInspectionModal';
@@ -52,6 +52,8 @@ export function SectionListPage() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [recheckedAccess, setRecheckedAccess] = useState(false);
+  const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   useEffect(() => {
     if (inspectionId) {
@@ -174,6 +176,7 @@ export function SectionListPage() {
 
   const canAddSection = Boolean(me.data && can(me.data, 'inspection.addSection', { inspection: displayInspection }) && isEditable(displayInspection.status));
   const canDelete = Boolean(me.data && can(me.data, 'inspection.delete', { inspection: displayInspection }));
+  const sectionsLocked = !isEditable(displayInspection.status);
 
   async function handleDownloadInspectionPhotos(filter: 'all' | 'defect') {
     try {
@@ -244,6 +247,21 @@ export function SectionListPage() {
     }
   }
 
+  function startRenameSection(e: React.MouseEvent, sectionId: string, currentName: string) {
+    e.stopPropagation();
+    setRenamingSectionId(sectionId);
+    setRenameValue(currentName);
+  }
+
+  async function saveRenameSection(sectionId: string) {
+    const name = renameValue.trim();
+    setRenamingSectionId(null);
+    if (!name) return;
+    const current = await db.inspectionSections.get(sectionId);
+    if (current && current.name === name) return;
+    await localWrite('inspectionSections', sectionId, { name });
+  }
+
   function renderSectionCard(s: (typeof displaySections)[number], badgeNumber: number) {
     const isPhoto = s.photoOnly;
     const pCount = s.photoCount;
@@ -280,7 +298,38 @@ export function SectionListPage() {
 
         <div className="sec-card-content">
           <div className="sec-card-header-row">
-            <span className="sec-card-name">{s.name}</span>
+            {renamingSectionId === s.id ? (
+              <div className="sec-card-rename-group" onClick={(e) => e.stopPropagation()}>
+                <input
+                  className="sec-card-rename-input"
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void saveRenameSection(s.id);
+                    if (e.key === 'Escape') setRenamingSectionId(null);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="sec-card-rename-confirm"
+                  aria-label="Save name"
+                  onClick={() => void saveRenameSection(s.id)}
+                >
+                  <CheckIcon width={13} height={13} />
+                </button>
+                <button
+                  type="button"
+                  className="sec-card-rename-cancel"
+                  aria-label="Cancel rename"
+                  onClick={() => setRenamingSectionId(null)}
+                >
+                  <XIcon width={13} height={13} />
+                </button>
+              </div>
+            ) : (
+              <span className="sec-card-name">{s.name}</span>
+            )}
             {s.zone && (
               <span className="sec-card-zone" style={{ background: zone.bg, color: zone.text }}>
                 {s.zone}
@@ -290,6 +339,16 @@ export function SectionListPage() {
               <span className="sec-card-photo-pill">
                 PHOTO SECTION
               </span>
+            )}
+            {isPhoto && !sectionsLocked && renamingSectionId !== s.id && (
+              <button
+                type="button"
+                className="sec-card-rename-btn"
+                aria-label="Rename this photo section"
+                onClick={(e) => startRenameSection(e, s.id, s.name)}
+              >
+                <EditIcon width={13} height={13} />
+              </button>
             )}
           </div>
 

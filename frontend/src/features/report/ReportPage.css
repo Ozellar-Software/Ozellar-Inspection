@@ -115,6 +115,142 @@
   display: none;
 }
 
+/* Compact cover photo row in stats card */
+.report-cover-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 12px;
+  background: #f8fafc;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.report-cover-photo-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #eef1f2;
+  border: 1.5px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.report-cover-photo-thumb.has-photo {
+  border-color: var(--accent, #0e7c86);
+  box-shadow: 0 0 0 3px rgba(14, 124, 134, 0.1);
+}
+
+.report-cover-photo-thumb.clickable {
+  cursor: pointer;
+}
+
+.report-cover-photo-thumb.clickable:hover {
+  border-color: var(--accent, #0e7c86);
+}
+
+.report-cover-photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.report-cover-photo-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.report-cover-photo-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.report-cover-photo-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-cover-photo-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.report-cover-photo-view {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  font-weight: 700;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.report-cover-photo-view:hover {
+  background: #f1f5f9;
+}
+
+.report-cover-photo-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(14, 124, 134, 0.25);
+  background: var(--accent-tint, #ecfdf5);
+  color: var(--accent-dark, #0e7c86);
+  font-weight: 700;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.report-cover-photo-btn:hover:not(:disabled) {
+  background: #d9f6f2;
+}
+
+.report-cover-photo-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.report-cover-photo-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.report-cover-photo-remove:hover {
+  background: #fee2e2;
+}
+
 /* Official Download PDF button in stats card */
 .report-pdf-download-actions {
   display: flex;
@@ -750,4 +886,48 @@
   .qcard textarea::placeholder {
     font-size: 11px !important;
   }
+}
+
+/* Cover photo full-size viewer */
+.cover-photo-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 26, 44, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  box-sizing: border-box;
+  animation: confirmModalFadeIn 0.18s ease-out;
+}
+
+.cover-photo-viewer-img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  object-fit: contain;
+}
+
+.cover-photo-viewer-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.cover-photo-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.22);
 }

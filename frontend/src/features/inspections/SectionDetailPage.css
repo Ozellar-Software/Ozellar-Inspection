@@ -74,6 +74,108 @@
   gap: 10px;
 }
 
+.section-rename-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: middle;
+  border-radius: 6px;
+}
+
+.section-rename-btn:hover {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.section-rename-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.section-rename-input {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: inherit;
+  color: var(--ink);
+  background: #f0fdfa;
+  border: none;
+  border-bottom: 2px solid #0d9488;
+  border-radius: 4px 4px 0 0;
+  padding: 4px 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  outline: none;
+}
+
+.section-rename-confirm,
+.section-rename-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.section-rename-confirm {
+  background: #0d9488;
+  color: #fff;
+}
+.section-rename-confirm:hover {
+  background: #0f766e;
+}
+
+.section-rename-cancel {
+  background: #f1f5f9;
+  color: #64748b;
+}
+.section-rename-cancel:hover {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.section-remarks-card {
+  margin: 0 16px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 4px rgba(11, 33, 56, 0.06);
+}
+
+.section-remarks-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--bg, #f8fafc);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.section-remarks-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .findings-header {
   margin: 8px 16px 4px;
   display: flex;
@@ -167,6 +269,14 @@
 
   .section-photos-header {
     padding: 12px 14px 10px;
+  }
+
+  .section-remarks-card {
+    margin: 0 0 10px !important;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    padding: 12px 14px;
   }
 
   .findings-header {

@@ -140,11 +140,13 @@ create table if not exists inspection_sections (
   photo_only      boolean not null default false,
   is_custom       boolean not null default false,
   vessel_types    text[] not null default '{}'::text[],
+  remarks         text not null default '',
   updated_at      timestamptz not null default now(),
   deleted_at      timestamptz,
   row_version     bigint not null default nextval('sync_seq')
 );
 alter table inspection_sections add column if not exists vessel_types text[] not null default '{}'::text[];
+alter table inspection_sections add column if not exists remarks text not null default '';
 create index if not exists insp_sections_insp_idx on inspection_sections (inspection_id);
 
 create table if not exists inspection_questions (

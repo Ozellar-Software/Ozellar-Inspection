@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { can, isEditable, ROLE_LABELS, STATUS_LABELS, type ApprovalEvent, type InspectionStatus, type User } from '@ozellar/shared';
 import { api, ApiError } from '../../api/client';
 import { db } from '../../offline/db';
-import { localWrite } from '../../offline/outbox';
+import { localWrite, localDelete } from '../../offline/outbox';
+import { addPhoto, photoSrc } from '../../offline/photoQueue';
 import { syncNow } from '../../offline/sync';
 import { queueApprovalAction } from '../../offline/approvalQueue';
-import { BackIcon, WarningIcon, LockIcon, CheckIcon } from '../../icons';
+import { BackIcon, WarningIcon, LockIcon, CheckIcon, UploadIcon, XIcon, EyeIcon } from '../../icons';
 import { loadReportData, type ReportData } from './reportData';
 import { generateInspectionPdf } from './pdf';
 import './ReportPage.css';
@@ -206,6 +207,52 @@ export function ReportPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recheckedAccess, setRecheckedAccess] = useState(false);
+  const [coverPhotoUrl, setCoverPhotoUrl] = useState<string | null>(null);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isCoverViewerOpen, setIsCoverViewerOpen] = useState(false);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const coverPhotoId = inspection?.coverPhotoId;
+    if (!coverPhotoId) {
+      setCoverPhotoUrl(null);
+      return;
+    }
+    void photoSrc(coverPhotoId).then((src) => {
+      if (alive) setCoverPhotoUrl(src);
+    });
+    return () => { alive = false; };
+  }, [inspection?.coverPhotoId]);
+
+  async function handleCoverPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !inspectionId) return;
+    setIsUploadingCover(true);
+    try {
+      const prevCoverPhotoId = inspection?.coverPhotoId;
+      const newId = await addPhoto({ file, target: 'cover', inspectionId, position: 0 });
+      await localWrite('inspections', inspectionId, { coverPhotoId: newId });
+      if (prevCoverPhotoId) {
+        await localDelete('photos', prevCoverPhotoId);
+      }
+    } catch (err) {
+      console.error('Failed to upload cover photo', err);
+      alert('Failed to upload cover photo');
+    } finally {
+      setIsUploadingCover(false);
+    }
+  }
+
+  async function handleRemoveCoverPhoto() {
+    if (!inspectionId) return;
+    const prevCoverPhotoId = inspection?.coverPhotoId;
+    await localWrite('inspections', inspectionId, { coverPhotoId: null });
+    if (prevCoverPhotoId) {
+      await localDelete('photos', prevCoverPhotoId);
+    }
+  }
 
   // The cached /me profile (incl. assigned vesselIds) can be briefly stale right after access to a
   // vessel was just granted (e.g. registering it inline via a Pre Purchase / Take Over report).
@@ -1080,6 +1127,94 @@ export function ReportPage() {
                   accentBg="var(--accent-tint)" accentText="var(--accent-dark)" />
               </div>
             </>
+          )}
+
+          {/* ── Cover Photo (small) ── */}
+          <div className="report-cover-photo-row">
+            <div
+              className={`report-cover-photo-thumb${coverPhotoUrl ? ' has-photo clickable' : editable ? ' clickable' : ''}`}
+              onClick={() => {
+                if (coverPhotoUrl) setIsCoverViewerOpen(true);
+                else if (editable) coverFileInputRef.current?.click();
+              }}
+            >
+              {isUploadingCover ? (
+                <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite', color: '#0e7c86' }}>
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/>
+                </svg>
+              ) : coverPhotoUrl ? (
+                <img src={coverPhotoUrl} alt="Inspection cover" />
+              ) : (
+                <CameraIcon color="#94a3b8" />
+              )}
+            </div>
+            <div className="report-cover-photo-copy">
+              <span className="report-cover-photo-label">Cover Photo</span>
+              <span className="report-cover-photo-hint">
+                {coverPhotoUrl ? 'Shown on the PDF cover page' : 'Add a photo to appear on the PDF cover page'}
+              </span>
+            </div>
+            <div className="report-cover-photo-actions">
+              {coverPhotoUrl && (
+                <button
+                  type="button"
+                  className="report-cover-photo-view"
+                  onClick={() => setIsCoverViewerOpen(true)}
+                >
+                  <EyeIcon width={12} height={12} />
+                  View
+                </button>
+              )}
+              {editable && (
+                <>
+                  <input
+                    ref={coverFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => void handleCoverPhotoChange(e)}
+                  />
+                  <button
+                    type="button"
+                    className="report-cover-photo-btn"
+                    disabled={isUploadingCover}
+                    onClick={() => coverFileInputRef.current?.click()}
+                  >
+                    <UploadIcon width={12} height={12} />
+                    {isUploadingCover ? 'Uploading...' : coverPhotoUrl ? 'Replace' : 'Add Photo'}
+                  </button>
+                  {coverPhotoUrl && !isUploadingCover && (
+                    <button
+                      type="button"
+                      className="report-cover-photo-remove"
+                      aria-label="Remove cover photo"
+                      onClick={() => void handleRemoveCoverPhoto()}
+                    >
+                      <XIcon width={11} height={11} />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {isCoverViewerOpen && coverPhotoUrl && (
+            <div className="cover-photo-viewer-backdrop" onClick={() => setIsCoverViewerOpen(false)}>
+              <button
+                type="button"
+                className="cover-photo-viewer-close"
+                aria-label="Close"
+                onClick={() => setIsCoverViewerOpen(false)}
+              >
+                <XIcon width={18} height={18} />
+              </button>
+              <img
+                src={coverPhotoUrl}
+                alt="Inspection cover"
+                className="cover-photo-viewer-img"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
           )}
 
           {/* ── Export PDF buttons ── */}

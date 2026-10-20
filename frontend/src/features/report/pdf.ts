@@ -325,8 +325,51 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   doc.setTextColor(TEXT_FAINT);
   doc.pdf.text(`ISSUED: ${fmtDate(inspection.startDate || new Date().toISOString())}`, PAGE_W - MARGIN_RIGHT - auditPillW + 5, 14.5);
 
+  // Hero Cover Image or Maritime Silhouette Banner
+  const heroY = 30;
+  const heroH = 62;
+  let coverImgLoaded: LoadedImage | null = null;
+  if (inspection.coverPhotoId) {
+    coverImgLoaded = await loadImage(inspection.coverPhotoId);
+  }
+
+  if (coverImgLoaded) {
+    // Render framed photo with subtle border
+    doc.roundedBox(MARGIN_LEFT, heroY, CONTENT_W, heroH, SLATE_BG, BORDER, 3);
+    const scale = Math.min(CONTENT_W / coverImgLoaded.w, heroH / coverImgLoaded.h);
+    const imgW = coverImgLoaded.w * scale;
+    const imgH = coverImgLoaded.h * scale;
+    const imgX = MARGIN_LEFT + (CONTENT_W - imgW) / 2;
+    const imgY = heroY + (heroH - imgH) / 2;
+    doc.pdf.addImage(coverImgLoaded.dataUrl, 'JPEG', imgX, imgY, imgW, imgH);
+  } else {
+    // Executive Maritime Vector Card
+    doc.roundedBox(MARGIN_LEFT, heroY, CONTENT_W, heroH, [13, 33, 56], [30, 65, 100], 3);
+
+    doc.setFill([10, 130, 138]);
+    doc.pdf.rect(MARGIN_LEFT + 10, heroY + 10, 20, 1.5, 'F');
+
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(19);
+    doc.setTextColor(WHITE);
+    doc.pdf.text((inspection.vesselName || 'VESSEL INSPECTION').toUpperCase(), MARGIN_LEFT + 10, heroY + 23);
+
+    doc.pdf.setFont('helvetica', 'normal').setFontSize(9.5);
+    doc.setTextColor([180, 225, 235]);
+    doc.pdf.text(`IMO: ${inspection.imo || 'NOT SPECIFIED'}   |   TYPE: ${(inspection.vesselType || 'COMMERCIAL VESSEL').toUpperCase()}`, MARGIN_LEFT + 10, heroY + 32);
+
+    doc.pdf.setFont('helvetica', 'normal').setFontSize(8.5);
+    doc.setTextColor([150, 180, 205]);
+    doc.pdf.text(`PORT: ${inspection.port || 'NOT SET'}   |   SURVEY DATE: ${fmtDate(inspection.startDate)}`, MARGIN_LEFT + 10, heroY + 40);
+
+    doc.setFill([20, 50, 80]);
+    doc.pdf.roundedRect(MARGIN_LEFT + 10, heroY + 47, 58, 8, 2, 2, 'F');
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+    doc.setTextColor([120, 215, 225]);
+    doc.pdf.text('OFFICIAL CONDITION SURVEY', MARGIN_LEFT + 13, heroY + 52.5);
+  }
+
   // Vessel Identity & Status Banner
-  const vcardY = 30;
+  const vcardY = heroY + heroH + 6;
   const vcardH = 22;
   doc.roundedBox(MARGIN_LEFT, vcardY, CONTENT_W, vcardH, WHITE, BORDER, 2.5);
 
@@ -460,50 +503,11 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   doc.pdf.text(certLines, MARGIN_LEFT + 6, certY + 10.5);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PAGE 2: EXECUTIVE SUMMARY & TECHNICAL PARTICULARS
+  // PAGE 2: VESSEL TECHNICAL PARTICULARS
   // ═══════════════════════════════════════════════════════════════════════════
   doc.newPage();
 
-  doc.subSectionTitle('1. Executive Summary');
-
-  const summaryText = inspection.summary?.trim() || 'No executive summary remarks recorded by the surveyor.';
-  const summaryLines = doc.pdf.splitTextToSize(summaryText, CONTENT_W - 16) as string[];
-  const sumBoxH = Math.max(summaryLines.length * 4.6 + 12, 22);
-
-  doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, sumBoxH, SLATE_BG, BORDER, 2);
-  doc.setFill(TEAL);
-  doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, sumBoxH, 'F');
-
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(8.8);
-  doc.setTextColor(TEXT_BODY);
-  let curSy = doc.y + 7;
-  for (const line of summaryLines) {
-    doc.pdf.text(line, MARGIN_LEFT + 8, curSy);
-    curSy += 4.6;
-  }
-  doc.y += sumBoxH + 8;
-
-  // Conclusion Block
-  doc.subSectionTitle('2. Conclusion & Recommendations');
-  const conclusionText = inspection.conclusion?.trim() || 'No concluding remarks or formal recommendations logged.';
-  const conclusionLines = doc.pdf.splitTextToSize(conclusionText, CONTENT_W - 16) as string[];
-  const conBoxH = Math.max(conclusionLines.length * 4.6 + 12, 22);
-
-  doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, conBoxH, SLATE_BG, BORDER, 2);
-  doc.setFill(NAVY);
-  doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, conBoxH, 'F');
-
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(8.8);
-  doc.setTextColor(TEXT_BODY);
-  let curCy = doc.y + 7;
-  for (const line of conclusionLines) {
-    doc.pdf.text(line, MARGIN_LEFT + 8, curCy);
-    curCy += 4.6;
-  }
-  doc.y += conBoxH + 10;
-
-  // Vessel Technical Specifications Table
-  doc.subSectionTitle('3. Vessel Technical Particulars');
+  doc.subSectionTitle('1. Vessel Technical Particulars');
   const p = vessel?.particulars ?? {};
   const hasParticulars = Object.values(p).some(Boolean);
 
@@ -562,7 +566,50 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PAGES 3+: SECTION EVALUATIONS & CHECKLIST DETAILS / PHOTO SECTIONS
+  // PAGE 3: EXECUTIVE SUMMARY & CONCLUSION
+  // ═══════════════════════════════════════════════════════════════════════════
+  doc.newPage();
+
+  doc.subSectionTitle('2. Executive Summary');
+
+  const summaryText = inspection.summary?.trim() || 'No executive summary remarks recorded by the surveyor.';
+  const summaryLines = doc.pdf.splitTextToSize(summaryText, CONTENT_W - 16) as string[];
+  const sumBoxH = Math.max(summaryLines.length * 4.6 + 12, 22);
+
+  doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, sumBoxH, SLATE_BG, BORDER, 2);
+  doc.setFill(TEAL);
+  doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, sumBoxH, 'F');
+
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(8.8);
+  doc.setTextColor(TEXT_BODY);
+  let curSy = doc.y + 7;
+  for (const line of summaryLines) {
+    doc.pdf.text(line, MARGIN_LEFT + 8, curSy);
+    curSy += 4.6;
+  }
+  doc.y += sumBoxH + 8;
+
+  // Conclusion Block
+  doc.subSectionTitle('3. Conclusion & Recommendations');
+  const conclusionText = inspection.conclusion?.trim() || 'No concluding remarks or formal recommendations logged.';
+  const conclusionLines = doc.pdf.splitTextToSize(conclusionText, CONTENT_W - 16) as string[];
+  const conBoxH = Math.max(conclusionLines.length * 4.6 + 12, 22);
+
+  doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, conBoxH, SLATE_BG, BORDER, 2);
+  doc.setFill(NAVY);
+  doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, conBoxH, 'F');
+
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(8.8);
+  doc.setTextColor(TEXT_BODY);
+  let curCy = doc.y + 7;
+  for (const line of conclusionLines) {
+    doc.pdf.text(line, MARGIN_LEFT + 8, curCy);
+    curCy += 4.6;
+  }
+  doc.y += conBoxH + 10;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGES 4+: SECTION EVALUATIONS & CHECKLIST DETAILS / PHOTO SECTIONS
   // ═══════════════════════════════════════════════════════════════════════════
   const displaySections = isPhotoOnly
     ? photoSectionsOnly
@@ -589,6 +636,30 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         s.section.zone || 'General',
         `${s.sectionPhotoIds.length} Photographs Captured`
       );
+
+      // Section Remarks (if any)
+      if (s.section.remarks?.trim()) {
+        doc.ensure(20);
+        const remLines = doc.pdf.splitTextToSize(s.section.remarks, CONTENT_W - 16) as string[];
+        const remBoxH = Math.max(remLines.length * 4.4 + 15, 20);
+
+        doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, remBoxH, SLATE_BG, BORDER, 2);
+        doc.setFill(TEAL);
+        doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, remBoxH, 'F');
+
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+        doc.setTextColor(TEXT_MUTED);
+        doc.pdf.text('REMARKS', MARGIN_LEFT + 7, doc.y + 6);
+
+        doc.pdf.setFont('helvetica', 'normal').setFontSize(8.5);
+        doc.setTextColor(TEXT_BODY);
+        let remY = doc.y + 6 + (remLines.length > 0 ? 5 : 0);
+        for (const line of remLines) {
+          doc.pdf.text(line, MARGIN_LEFT + 7, remY);
+          remY += 4.4;
+        }
+        doc.y += remBoxH + 6;
+      }
 
       // Section Level Photos
       if (s.sectionPhotoIds.length > 0) {

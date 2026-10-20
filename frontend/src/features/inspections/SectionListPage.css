@@ -141,6 +141,74 @@
   color: #0f766e;
   letter-spacing: 0.4px;
 }
+.sec-card-rename-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.sec-card-rename-btn:hover {
+  color: #0d9488;
+  background: #ccfbf1;
+}
+.sec-card-rename-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 280px;
+}
+.sec-card-rename-input {
+  font-weight: 700;
+  font-size: 14.5px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #f0fdfa;
+  border: none;
+  border-bottom: 2px solid #0d9488;
+  border-radius: 4px 4px 0 0;
+  padding: 3px 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  outline: none;
+}
+.sec-card-rename-confirm,
+.sec-card-rename-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sec-card-rename-confirm {
+  background: #0d9488;
+  color: #fff;
+}
+.sec-card-rename-confirm:hover {
+  background: #0f766e;
+}
+.sec-card-rename-cancel {
+  background: #f1f5f9;
+  color: #64748b;
+}
+.sec-card-rename-cancel:hover {
+  background: #e2e8f0;
+  color: #334155;
+}
 .sec-card-progress-row {
   display: flex;
   align-items: center;

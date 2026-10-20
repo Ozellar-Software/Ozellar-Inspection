@@ -7,7 +7,7 @@ import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { addPhoto, prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon } from '../../icons';
+import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon, EditIcon, XIcon } from '../../icons';
 import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
@@ -23,6 +23,9 @@ export function SectionDetailPage() {
   const [completing, setCompleting] = useState(false);
   const [isDragOverSection, setIsDragOverSection] = useState(false);
   const [recheckedAccess, setRecheckedAccess] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [remarksValue, setRemarksValue] = useState('');
 
   useEffect(() => {
     if (inspectionId) {
@@ -75,6 +78,10 @@ export function SectionDetailPage() {
     { id: 'q2', text: 'Are safety labels clearly visible?', position: 2, inspectionSectionId: sectionId, qid: 2, ref: 'Q2' },
   ] : questions;
 
+  useEffect(() => {
+    setRemarksValue((dispSection as any)?.remarks ?? '');
+  }, [sectionId, (dispSection as any)?.remarks]);
+
   if (!dispInspection || !dispSection) return null;
 
   if ((dispInspection as any).deletedAt) {
@@ -114,6 +121,23 @@ export function SectionDetailPage() {
       (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p);
     else if (p.target === 'section' && p.inspectionSectionId === sectionId)
       sectionPhotos.push(p);
+  }
+
+  function startRename() {
+    setRenameValue(dispSection!.name);
+    setIsRenaming(true);
+  }
+
+  async function saveRename() {
+    const name = renameValue.trim();
+    setIsRenaming(false);
+    if (!sectionId || !name || name === dispSection!.name) return;
+    await localWrite('inspectionSections', sectionId, { name });
+  }
+
+  async function saveRemarks(value: string) {
+    if (!sectionId) return;
+    await localWrite('inspectionSections', sectionId, { remarks: value });
   }
 
   async function addFinding() {
@@ -174,7 +198,50 @@ export function SectionDetailPage() {
           <BackIcon />
         </button>
         <div className="title-wrap">
-          <h1>{dispSection.name}</h1>
+          {isRenaming ? (
+            <div className="section-rename-group">
+              <input
+                className="section-rename-input"
+                autoFocus
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void saveRename();
+                  if (e.key === 'Escape') setIsRenaming(false);
+                }}
+              />
+              <button
+                type="button"
+                className="section-rename-confirm"
+                aria-label="Save name"
+                onClick={() => void saveRename()}
+              >
+                <CheckIcon width={14} height={14} />
+              </button>
+              <button
+                type="button"
+                className="section-rename-cancel"
+                aria-label="Cancel rename"
+                onClick={() => setIsRenaming(false)}
+              >
+                <XIcon width={14} height={14} />
+              </button>
+            </div>
+          ) : (
+            <h1>
+              {dispSection.name}
+              {dispSection.photoOnly && !locked && (
+                <button
+                  type="button"
+                  className="section-rename-btn"
+                  aria-label="Rename this section"
+                  onClick={startRename}
+                >
+                  <EditIcon width={14} height={14} />
+                </button>
+              )}
+            </h1>
+          )}
           <div className="sub">{dispSection.zone}</div>
         </div>
       </div>
@@ -350,6 +417,22 @@ export function SectionDetailPage() {
             />
           </div>
         </div>
+
+        {/* Photo section remarks */}
+        {dispSection.photoOnly && (
+          <div className="section-remarks-card">
+            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', marginBottom: 8 }}>Remarks</div>
+            <textarea
+              className="section-remarks-input"
+              placeholder="Add remarks or observations for this photo section..."
+              value={remarksValue}
+              disabled={locked}
+              onChange={(e) => setRemarksValue(e.target.value)}
+              onBlur={() => void saveRemarks(remarksValue)}
+              rows={3}
+            />
+          </div>
+        )}
 
         {/* Additional findings heading */}
         <div className="findings-header">
