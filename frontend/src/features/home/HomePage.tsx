@@ -90,20 +90,26 @@ export function HomePage() {
     if (!me.data?.id) return;
     const myId = me.data.id.toLowerCase().trim();
     void (async () => {
-      const myDeleted = await db.inspections.filter((i) =>
-        Boolean(i.deletedAt && i.createdBy && i.createdBy.toLowerCase().trim() === myId)
-      ).toArray();
-      for (const d of myDeleted) {
-        const isQueuedDelete = await db.outbox.where('entityId').equals(d.id).filter((m) => m.op === 'delete').count();
-        if (!isQueuedDelete) {
-          await db.inspections.update(d.id, { deletedAt: null });
-          if (d.vesselId) {
-            const v = await db.vessels.get(d.vesselId);
-            if (v && v.deletedAt) {
-              await db.vessels.update(d.vesselId, { deletedAt: null });
+      try {
+        const myDeleted = await db.inspections.filter((i) =>
+          Boolean(i.deletedAt && i.createdBy && i.createdBy.toLowerCase().trim() === myId)
+        ).toArray();
+        if (!myDeleted.length) return;
+        const outboxMutations = await db.outbox.toArray();
+        for (const d of myDeleted) {
+          const isQueuedDelete = outboxMutations.some((m) => m.entityId === d.id && m.op === 'delete');
+          if (!isQueuedDelete) {
+            await db.inspections.update(d.id, { deletedAt: null });
+            if (d.vesselId) {
+              const v = await db.vessels.get(d.vesselId);
+              if (v && v.deletedAt) {
+                await db.vessels.update(d.vesselId, { deletedAt: null });
+              }
             }
           }
         }
+      } catch (err) {
+        console.warn('[HomePage] Auto-heal inspections notice:', err);
       }
     })();
   }, [me.data?.id]);

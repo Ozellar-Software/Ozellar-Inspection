@@ -53,7 +53,7 @@ export function NewInspectionPage() {
         const remote = await api<any[]>('/vessels');
         if (Array.isArray(remote) && remote.length > 0) {
           const pendingVesselIds = new Set(
-            (await db.outbox.where('entity').equals('vessels').toArray()).map((m) => m.entityId),
+            (await db.outbox.filter((m) => m.entity === 'vessels').toArray()).map((m) => m.entityId),
           );
           const toPut = remote.filter((v) => !pendingVesselIds.has(v.id));
           if (toPut.length > 0) {
