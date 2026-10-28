@@ -450,16 +450,20 @@ export function logout(): void {
   import('../main').then(({ queryClient }) => {
     queryClient.clear();
   }).catch(() => {/* non-fatal */});
-  db.outbox.count().then((pending) => {
-    if (pending > 0) {
-      console.warn(`[logout] ${pending} unsynced change(s) still pending — keeping local data instead of wiping it.`);
-      window.location.href = '/';
-      return;
-    }
-    clearAllData().catch(() => {/* non-fatal */}).finally(() => {
+
+  Promise.all([db.outbox.count(), db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').count()])
+    .then(([outboxPending, photoPending]) => {
+      if (outboxPending > 0 || photoPending > 0) {
+        // Preserve local data: unsent text mutations or unuploaded photos would be lost permanently if we wipe now.
+        console.warn(`[logout] Keeping local data — ${outboxPending} outbox mutation(s) and ${photoPending} photo(s) pending upload.`);
+        window.location.href = '/';
+        return;
+      }
+      clearAllData().catch(() => {/* non-fatal */}).finally(() => {
+        window.location.href = '/';
+      });
+    })
+    .catch(() => {
       window.location.href = '/';
     });
-  }).catch(() => {
-    window.location.href = '/';
-  });
 }

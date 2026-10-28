@@ -82,9 +82,40 @@ export async function setMeta(key: string, value: unknown): Promise<void> {
   await db.meta.put({ key, value });
 }
 
-/** Clears all tables in the database (used on user sign-out to prevent data bleeding between accounts). */
+/**
+ * Requests permanent, non-evictable storage from the mobile browser.
+ * When granted, the browser/OS will NEVER automatically purge or evict
+ * this site's IndexedDB data under storage pressure.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+    try {
+      const isPersisted = await navigator.storage.persist();
+      console.log(`[Storage] Persistent storage: ${isPersisted ? 'granted' : 'default'}`);
+      return isPersisted;
+    } catch (e) {
+      console.warn('[Storage] Could not request persistent storage:', e);
+    }
+  }
+  return false;
+}
+
+/**
+ * Clears tables on user sign-out to prevent data bleeding between accounts.
+ * CRITICAL SAFETY GUARD: It will NEVER clear `photoQueue` or `outbox` if any
+ * pending or unsynced data remains, preventing accidental offline data loss.
+ */
 export async function clearAllData(): Promise<void> {
-  await Promise.all(db.tables.map((t) => t.clear()));
+  const pendingPhotos = await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').count();
+  const pendingOutbox = await db.outbox.count();
+
+  const tablesToClear = db.tables.filter((t) => {
+    if (t.name === 'photoQueue' && pendingPhotos > 0) return false;
+    if (t.name === 'outbox' && pendingOutbox > 0) return false;
+    return true;
+  });
+
+  await Promise.all(tablesToClear.map((t) => t.clear()));
 }
 
 // Auto-purge corrupted legacy vessel IDs (ves-timestamp format) on startup

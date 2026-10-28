@@ -89,6 +89,8 @@ export async function addPhoto(input: {
     photoId, inspectionId: input.inspectionId ?? null, vesselId: input.vesselId ?? null,
     blob, status: 'pending', attempts: 0,
   });
+  // Dual-store in Service Worker CacheStorage so image binary is preserved in two independent storages
+  void putCachedBlobToServiceWorker(photoId, blob);
   // Immediately cache blob URL in memory so thumbnails render instantly without waiting for async DB fetch
   const objUrl = URL.createObjectURL(blob);
   blobUrlCache.set(photoId, objUrl);
@@ -102,10 +104,52 @@ export async function addPhoto(input: {
   return photoId;
 }
 
+// ─── Photo sync progress (used by PhotoSyncBanner) ──────────────────────────────────────────
+export interface PhotoSyncProgress {
+  pending: number;
+  total: number;
+  isUploading: boolean;
+}
+const progressListeners = new Set<(p: PhotoSyncProgress) => void>();
+
+/** Subscribe to live upload progress updates. Returns an unsubscribe function. */
+export function subscribePhotoSync(cb: (p: PhotoSyncProgress) => void): () => void {
+  progressListeners.add(cb);
+  return () => { progressListeners.delete(cb); };
+}
+
+function emitProgress(pending: number, total: number, isUploading: boolean): void {
+  const p: PhotoSyncProgress = { pending, total, isUploading };
+  progressListeners.forEach((cb) => { try { cb(p); } catch { /* ignore */ } });
+}
+
+// ─── Screen Wake Lock (prevents phone from sleeping mid-upload) ─────────────────────────
+let wakeLock: WakeLockSentinel | null = null;
+
+async function acquireWakeLock(): Promise<void> {
+  try {
+    if ('wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    }
+  } catch {
+    // Wake Lock not supported on this device/OS — non-fatal
+  }
+}
+
+function releaseWakeLock(): void {
+  if (wakeLock) {
+    wakeLock.release().catch(() => {});
+    wakeLock = null;
+  }
+}
+
 let photoProcessing: Promise<void> | null = null;
 let rerunPhotoProcessing = false;
 
-/** Upload pending images: get SAS URL → PUT to Blob → commit. Survives restarts; retried on next sync. */
+/** Upload pending images: get SAS URL → PUT to Blob → commit.
+ *  Runs up to 4 parallel uploads. Acquires a Screen Wake Lock so the phone
+ *  does not sleep mid-upload. Emits progress events for PhotoSyncBanner. */
 export function processPhotoQueue(): Promise<void> {
   if (photoProcessing) {
     rerunPhotoProcessing = true;
@@ -115,46 +159,69 @@ export function processPhotoQueue(): Promise<void> {
     do {
       rerunPhotoProcessing = false;
       const items = await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').toArray();
+      if (!items.length) {
+        emitProgress(0, 0, false);
+        break;
+      }
+
+      await acquireWakeLock();
+
+      // Filter out orphaned / soft-deleted entries first
+      const uploadable: typeof items = [];
       for (const it of items) {
-        // Skip photos that have been soft-deleted — clean them up from queue instead
         const photoRow = await db.photos.get(it.photoId);
-        if (photoRow?.deletedAt) {
-          await db.photoQueue.delete(it.photoId);
-          continue;
-        }
+        if (photoRow?.deletedAt) { await db.photoQueue.delete(it.photoId); continue; }
         if (it.inspectionId) {
           const insp = await db.inspections.get(it.inspectionId);
-          if (insp?.deletedAt) {
-            await db.photoQueue.delete(it.photoId);
-            continue;
-          }
+          if (insp?.deletedAt) { await db.photoQueue.delete(it.photoId); continue; }
         }
-        // Also skip if the photo doesn't exist in db.photos at all yet (not yet synced) — retry later
-        // but if it's been missing for many attempts, clean up
         if (!photoRow) {
-          if (it.attempts > 8) {
-            await db.photoQueue.delete(it.photoId);
-          }
+          // If metadata is still catching up, keep image blob safely in queue — NEVER auto-delete!
           continue;
         }
-        try {
-          if (it.status !== 'uploaded') {
-            await db.photoQueue.update(it.photoId, { status: 'uploading' });
-            const { uploadUrl, headers } = await api<{ uploadUrl: string; headers: Record<string, string> }>(
-              '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } });
-            const put = await fetch(uploadUrl, { method: 'PUT', headers, body: it.blob });
-            if (!put.ok) throw new Error(`Upload failed (${put.status})`);
-            await db.photoQueue.update(it.photoId, { status: 'uploaded' });
-          }
-          await api(`/photos/${it.photoId}/commit`, { method: 'POST', body: {} });
-          await db.photoQueue.update(it.photoId, { status: 'committed' });
-        } catch (e) {
-          await db.photoQueue.update(it.photoId, {
-            status: it.status === 'uploaded' ? 'uploaded' : 'pending', attempts: it.attempts + 1, lastError: (e as Error).message,
-          });
-        }
+        uploadable.push(it);
       }
+
+      if (!uploadable.length) { emitProgress(0, 0, false); break; }
+
+      const total = uploadable.length;
+      let remaining = total;
+      emitProgress(remaining, total, true);
+
+      // Parallel upload — 4 concurrent workers
+      const CONCURRENCY = 4;
+      const queue = [...uploadable];
+
+      const worker = async () => {
+        for (let it: typeof uploadable[0] | undefined; (it = queue.shift());) {
+          try {
+            if (it.status !== 'uploaded') {
+              await db.photoQueue.update(it.photoId, { status: 'uploading' });
+              const { uploadUrl, headers } = await api<{ uploadUrl: string; headers: Record<string, string> }>(
+                '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } });
+              const put = await fetch(uploadUrl, { method: 'PUT', headers, body: it.blob });
+              if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+              await db.photoQueue.update(it.photoId, { status: 'uploaded' });
+            }
+            await api(`/photos/${it.photoId}/commit`, { method: 'POST', body: {} });
+            await db.photoQueue.update(it.photoId, { status: 'committed' });
+          } catch (e) {
+            await db.photoQueue.update(it.photoId, {
+              status: it.status === 'uploaded' ? 'uploaded' : 'pending',
+              attempts: it.attempts + 1,
+              lastError: (e as Error).message,
+            });
+          } finally {
+            remaining--;
+            emitProgress(remaining, total, remaining > 0);
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     } while (rerunPhotoProcessing && navigator.onLine);
+
+    releaseWakeLock();
   })().finally(() => { photoProcessing = null; });
   return photoProcessing;
 }

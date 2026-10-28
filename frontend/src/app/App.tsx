@@ -15,13 +15,34 @@ import { ReportPage } from '../features/report/ReportPage';
 import { UsersPage } from '../features/users/UsersPage';
 import { RegisterUserPage } from '../features/users/RegisterUserPage';
 import { ChecklistPage } from '../features/checklist/ChecklistPage';
-import { UpdatePrompt } from './UpdatePrompt';
+import { useRegisterSW } from 'virtual:pwa-register/react';
+import { requestPersistentStorage } from '../offline/db';
+import { processPhotoQueue } from '../offline/photoQueue';
 import { ScrollToTop } from './ScrollToTop';
 import { TopNav } from './TopNav';
+
+/**
+ * Invisible Service Worker registrar that automatically checks for server updates
+ * every 5 minutes and auto-updates in the background with zero user prompts.
+ */
+function SilentPwaUpdater() {
+  useRegisterSW({
+    immediate: true,
+    onRegisteredSW(_url, reg) {
+      if (reg) setInterval(() => void reg.update(), 5 * 60_000);
+    },
+  });
+  return null;
+}
 
 export function App() {
   const token = useAuthToken();
   const resetToken = new URLSearchParams(window.location.search).get('token');
+
+  // Request permanent, non-evictable storage so mobile browser never purges IndexedDB
+  useEffect(() => {
+    void requestPersistentStorage();
+  }, []);
 
   // Reached via an emailed link, whether signed in or not — always let it through.
   if (window.location.pathname === '/reset-password' && resetToken) {
@@ -37,15 +58,18 @@ export function App() {
     <>
       <ScrollToTop />
       <div id="app">{token ? <SignedIn /> : <LoginScreen />}</div>
-      {/* The service-worker update prompt is a PWA concept — a Capacitor app already ships its
-          assets in the native bundle, and iOS WKWebView's service worker support is unreliable. */}
-      {!Capacitor.isNativePlatform() && <UpdatePrompt />}
+      {/* Silent background PWA updates without any user prompts */}
+      {!Capacitor.isNativePlatform() && <SilentPwaUpdater />}
     </>
   );
 }
 
 function SignedIn() {
-  useEffect(() => startSyncLoop(), []);
+  useEffect(() => {
+    const stop = startSyncLoop();
+    void processPhotoQueue();
+    return stop;
+  }, []);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f4f6f9' }}>
       <TopNav />
