@@ -164,6 +164,14 @@ async function pull(): Promise<void> {
             await db.vessels.update(vId, { deletedAt: null });
           }
         }
+
+        // Clean up any unregistered vessels whose inspections are no longer active
+        const unregisteredVessels = await db.vessels.filter((v) => (v as any).registrationStatus === 'unregistered' && !v.deletedAt).toArray();
+        for (const uv of unregisteredVessels) {
+          if (!activeVesselIds.has(uv.id) && !pendingIds.has(uv.id)) {
+            await db.vessels.update(uv.id, { deletedAt: nowIso });
+          }
+        }
       }
       return;
     }

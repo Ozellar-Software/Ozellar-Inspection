@@ -77,46 +77,16 @@ export function HomePage() {
 
   const isLoading = inspections === undefined;
 
-  // Auto-sync if local database is empty on load and device is online
+  // Trigger sync on mount if online to reconcile active inspections
   useEffect(() => {
-    if (inspections && inspections.length === 0 && navigator.onLine) {
+    if (navigator.onLine) {
       void syncNow();
     }
-  }, [inspections]);
-
-  // Self-heal: resurrect any local inspections created by the current user that were erroneously
-  // soft-deleted by previous sync cycles if they are not in outbox with an explicit delete mutation
-  useEffect(() => {
-    if (!me.data?.id) return;
-    const myId = me.data.id.toLowerCase().trim();
-    void (async () => {
-      try {
-        const myDeleted = await db.inspections.filter((i) =>
-          Boolean(i.deletedAt && i.createdBy && i.createdBy.toLowerCase().trim() === myId)
-        ).toArray();
-        if (!myDeleted.length) return;
-        const outboxMutations = await db.outbox.toArray();
-        for (const d of myDeleted) {
-          const isQueuedDelete = outboxMutations.some((m) => m.entityId === d.id && m.op === 'delete');
-          if (!isQueuedDelete) {
-            await db.inspections.update(d.id, { deletedAt: null });
-            if (d.vesselId) {
-              const v = await db.vessels.get(d.vesselId);
-              if (v && v.deletedAt) {
-                await db.vessels.update(d.vesselId, { deletedAt: null });
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[HomePage] Auto-heal inspections notice:', err);
-      }
-    })();
-  }, [me.data?.id]);
+  }, []);
 
   // TM and VM should only see inspections for their assigned vessels, PLUS any inspection they created themselves
   const visibleInspections = useMemo(() => {
-    const inspList = inspections ?? [];
+    const inspList = (inspections ?? []).filter((i) => !i.deletedAt);
     const role = me.data?.role;
     const myId = me.data?.id?.toLowerCase().trim();
     const vesselStatusById = new Map((vessels ?? []).map((v) => [v.id, (v as any).registrationStatus ?? 'registered']));
