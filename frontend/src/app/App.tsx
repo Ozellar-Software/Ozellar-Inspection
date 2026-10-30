@@ -15,13 +15,31 @@ import { ReportPage } from '../features/report/ReportPage';
 import { UsersPage } from '../features/users/UsersPage';
 import { RegisterUserPage } from '../features/users/RegisterUserPage';
 import { ChecklistPage } from '../features/checklist/ChecklistPage';
-import { UpdatePrompt } from './UpdatePrompt';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 import { requestPersistentStorage } from '../offline/db';
 import { processPhotoQueue } from '../offline/photoQueue';
 import { ScrollToTop } from './ScrollToTop';
 import { TopNav } from './TopNav';
 
 
+
+/**
+ * Invisible Service Worker registrar that automatically checks for server updates
+ * every 60 seconds and auto-activates them in the background with zero user prompts.
+ */
+function SilentPwaUpdater() {
+  useRegisterSW({
+    immediate: true,
+    onRegisteredSW(_url, reg) {
+      if (!reg) return;
+      setInterval(() => void reg.update(), 60_000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void reg.update();
+      });
+    },
+  });
+  return null;
+}
 
 export function App() {
   const token = useAuthToken();
@@ -47,7 +65,7 @@ export function App() {
       <ScrollToTop />
       <div id="app">{token ? <SignedIn /> : <LoginScreen />}</div>
       {/* Silent background PWA updates without any user prompts */}
-      {!Capacitor.isNativePlatform() && <UpdatePrompt />}
+      {!Capacitor.isNativePlatform() && <SilentPwaUpdater />}
     </>
   );
 }

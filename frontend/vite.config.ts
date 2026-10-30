@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',               // shows 'tap to update' prompt when new version is available
+      registerType: 'autoUpdate',           // silently updates in background without prompting user
       includeAssets: [
         'favicon.svg',
         'favicon.ico',
@@ -38,6 +38,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
         navigateFallback: '/index.html',
         runtimeCaching: [
           { // photos (SAS URLs) cached for offline viewing
