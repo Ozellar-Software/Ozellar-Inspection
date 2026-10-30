@@ -3,25 +3,30 @@ import { DefaultAzureCredential } from '@azure/identity';
 
 /**
  * PostgreSQL pool. In Azure the Function App's managed identity signs in to
- * Postgres with an Entra token (no password). Locally you can set PG_PASSWORD.
+ * Postgres with an Entra token (no password). Locally or on Linux VM you set PG_PASSWORD.
  */
 const credential = new DefaultAzureCredential();
 const PG_SCOPE = 'https://ossrdbms-aad.database.windows.net/.default';
 
 async function password(): Promise<string> {
   if (process.env.PG_PASSWORD) return process.env.PG_PASSWORD;
+  const host = process.env.PG_HOST ?? 'localhost';
+  const isLocal = host === 'localhost' || host === '127.0.0.1';
+  if (isLocal) {
+    return '';
+  }
   const token = await credential.getToken(PG_SCOPE);
   if (!token) throw new Error('Could not get Postgres token');
   return token.token;
 }
 
 export const pool = new pg.Pool({
-  host: process.env.PG_HOST,
-  database: process.env.PG_DB ?? 'vir',
-  user: process.env.PG_USER,
+  host: process.env.PG_HOST ?? 'localhost',
+  database: process.env.PG_DB ?? (process.env.NODE_ENV === 'production' ? 'inspection' : 'vir'),
+  user: process.env.PG_USER ?? 'postgres',
   password, // pg calls this for every new connection → token stays fresh
   port: Number(process.env.PG_PORT ?? 5432),
-  ssl: process.env.PG_SSL === 'false' ? false : { rejectUnauthorized: true },
+  ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: true } : false,
   max: 25,
   connectionTimeoutMillis: 10_000,
   idleTimeoutMillis: 30_000,
@@ -29,29 +34,25 @@ export const pool = new pg.Pool({
 
 export type Tx = pg.PoolClient;
 
-const origConnect = pool.connect.bind(pool);
-const origQuery = pool.query.bind(pool);
-
 let schemaEnsured = false;
-let schemaTried = false;
 let schemaPromise: Promise<void> | null = null;
 
 /**
  * Automatically applies non-destructive, idempotent column and sequence migrations
- * so existing databases self-heal upon service startup without requiring manual psql intervention.
+ * so existing databases self-heal upon service startup without blocking incoming HTTP requests.
  */
 export async function ensureSchema(): Promise<void> {
   if (schemaEnsured) return;
-  // If a previous attempt already failed, don't retry on every request — let it wait for next cold start.
-  if (schemaTried && !schemaEnsured) return;
   if (!schemaPromise) {
-    schemaTried = true;
     schemaPromise = (async () => {
       let client: pg.PoolClient | null = null;
       try {
-        client = await origConnect();
+        client = await pool.connect();
+        // Prevent migrations from waiting on locks: fail fast if table is busy
+        await client.query("SET lock_timeout = '2s'; SET statement_timeout = '5s';");
         const statements = [
           `create sequence if not exists sync_seq;`,
+          `create index if not exists approval_events_rv_idx on approval_events (row_version);`,
           `alter table if exists users add column if not exists password_hash text;`,
           `alter table if exists template_sections add column if not exists photo_only boolean not null default false;`,
           `alter table if exists template_sections add column if not exists vessel_types text[] not null default '{}'::text[];`,
@@ -71,12 +72,12 @@ export async function ensureSchema(): Promise<void> {
           try {
             await client.query(sql);
           } catch (stmtErr) {
-            console.warn('[DB Auto-migration statement notice]:', sql.trim(), (stmtErr as Error)?.message);
+            console.warn('[DB Auto-migration statement notice]:', sql.trim().slice(0, 50), (stmtErr as Error)?.message);
           }
         }
         schemaEnsured = true;
       } catch (err) {
-        console.error('[DB] Schema auto-migration connect notice:', err);
+        console.warn('[DB] Schema auto-migration connect notice:', (err as Error)?.message);
       } finally {
         if (client) client.release();
         schemaPromise = null;
@@ -86,18 +87,7 @@ export async function ensureSchema(): Promise<void> {
   return schemaPromise;
 }
 
-// Hook connect and query so schema is verified before handling requests
-(pool as any).connect = async function (...args: any[]) {
-  await ensureSchema();
-  return (origConnect as any)(...args);
-};
-
-(pool as any).query = async function (...args: any[]) {
-  await ensureSchema();
-  return (origQuery as any)(...args);
-};
-
-// Kick off schema check in background on module load
+// Kick off schema check in background on module load without blocking requests
 void ensureSchema().catch(() => {});
 
 /** Run fn inside a transaction. */

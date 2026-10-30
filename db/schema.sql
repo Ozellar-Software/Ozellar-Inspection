@@ -317,3 +317,5 @@ create index if not exists tsec_rv_idx         on template_sections (row_version
 create index if not exists tq_rv_idx           on template_questions (row_version);
 create index if not exists users_rv_idx        on users (row_version);
 create index if not exists insp_q_rv_idx       on inspection_questions (row_version);
+
+create index if not exists approval_events_rv_idx on approval_events (row_version);
