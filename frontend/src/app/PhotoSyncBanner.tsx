@@ -7,36 +7,37 @@ export function PhotoSyncBanner() {
   const [progress, setProgress] = useState<PhotoSyncProgress>({ pending: 0, total: 0, isUploading: false });
   const [justCompleted, setJustCompleted] = useState(false);
 
-  // Live count of photos in the local device queue that need uploading
-  const queueCount = useLiveQuery(
-    () => db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').count(),
-    []
-  );
+  // Live dynamic counts directly from device database — never hardcoded
+  const counts = useLiveQuery(async () => {
+    const missingCount = await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').count();
+    const uploadedCount = await db.photoQueue.where('status').equals('committed').count();
+    return { missing: missingCount, uploaded: uploadedCount };
+  }, []);
 
   useEffect(() => {
     return subscribePhotoSync((p) => {
       setProgress(p);
       if (p.isUploading && p.pending === 0 && p.total > 0) {
         setJustCompleted(true);
-        setTimeout(() => setJustCompleted(false), 6000);
+        setTimeout(() => setJustCompleted(false), 7000);
       }
     });
   }, []);
 
-  const pending = progress.isUploading ? progress.pending : (queueCount ?? 0);
-  const total = progress.total > 0 ? progress.total : pending;
-  const completed = Math.max(0, total - pending);
-  const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+  const missing = progress.isUploading ? progress.pending : (counts?.missing ?? 0);
+  const total = progress.total > 0 ? progress.total : ((counts?.uploaded ?? 0) + missing);
+  const uploaded = progress.isUploading ? Math.max(0, progress.total - progress.pending) : (counts?.uploaded ?? 0);
+  const percent = total > 0 ? Math.min(100, Math.round((uploaded / total) * 100)) : 0;
 
-  // Show banner if photos are in queue or just completed
-  if (!justCompleted && pending === 0) {
+  // Nothing missing and not recently finished — don't show banner
+  if (!justCompleted && missing === 0) {
     return null;
   }
 
   return (
     <div
       style={{
-        background: justCompleted ? '#10b981' : progress.isUploading ? '#0284c7' : '#f59e0b',
+        background: justCompleted ? '#059669' : progress.isUploading ? '#0284c7' : '#d97706',
         color: '#ffffff',
         padding: '10px 16px',
         fontSize: '13px',
@@ -68,12 +69,12 @@ export function PhotoSyncBanner() {
 
           <span>
             {justCompleted
-              ? `All ${total} offline photos successfully uploaded to cloud!`
+              ? `All ${uploaded} offline photos uploaded to cloud successfully!`
               : progress.isUploading
-              ? `Uploading photos to cloud: ${completed} of ${total} uploaded (${pending} remaining)`
+              ? `Syncing photos: ${uploaded} uploaded, ${missing} missing / uploading…`
               : navigator.onLine
-              ? `${pending} offline photo${pending !== 1 ? 's' : ''} queued — starting upload…`
-              : `Offline: ${pending} photo${pending !== 1 ? 's' : ''} stored safely on device. Will upload when connected.`}
+              ? `${missing} photo${missing !== 1 ? 's' : ''} missing from cloud (${uploaded} already uploaded) — starting sync…`
+              : `Offline mode: ${missing} photo${missing !== 1 ? 's' : ''} stored safely on device. Will auto-sync when online.`}
           </span>
         </div>
 
@@ -86,7 +87,7 @@ export function PhotoSyncBanner() {
               background: 'rgba(255,255,255,0.2)',
               border: '1px solid rgba(255,255,255,0.4)',
               color: '#ffffff',
-              padding: '4px 10px',
+              padding: '4px 12px',
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 700,
@@ -94,19 +95,19 @@ export function PhotoSyncBanner() {
               whiteSpace: 'nowrap',
             }}
           >
-            {progress.isUploading ? 'Uploading…' : 'Upload Now'}
+            {progress.isUploading ? 'Uploading…' : 'Sync Photos Now'}
           </button>
         )}
       </div>
 
       {!justCompleted && total > 0 && progress.isUploading && (
-        <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.3)', borderRadius: '2px', overflow: 'hidden' }}>
+        <div style={{ width: '100%', height: '5px', background: 'rgba(255,255,255,0.3)', borderRadius: '3px', overflow: 'hidden' }}>
           <div
             style={{
               height: '100%',
               width: `${percent}%`,
               background: '#ffffff',
-              borderRadius: '2px',
+              borderRadius: '3px',
               transition: 'width 0.3s ease',
             }}
           />
