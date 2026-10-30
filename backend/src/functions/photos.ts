@@ -59,11 +59,11 @@ export const photosCommitHandler = handler(async (req) => {
       await pool.query(
         `insert into photos (
            id, inspection_id, vessel_id, target, inspection_section_id, response_id, finding_id,
-           is_defect, position, blob_path, content_type, size_bytes, uploaded, created_by, updated_at
+           is_defect, position, blob_path, content_type, size_bytes, uploaded, created_by, updated_at, row_version
          ) values (
-           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'image/jpeg', $11, true, $12, now()
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'image/jpeg', $11, true, $12, now(), nextval('sync_seq')
          )
-         on conflict (id) do update set uploaded = true, updated_at = now()`,
+         on conflict (id) do update set uploaded = true, updated_at = now(), row_version = nextval('sync_seq')`,
         [
           photoId, inspectionId, vesselId, b.target || 'question',
           b.inspectionSectionId || null, b.responseId || null, b.findingId || null,
@@ -77,7 +77,7 @@ export const photosCommitHandler = handler(async (req) => {
 
   await checkEditable(user, p.inspection_id, p.vessel_id);
   if (!(await blobExists(p.blob_path))) throw fail('VALIDATION', 'Upload not found');
-  await pool.query(`update photos set uploaded = true where id = $1`, [p.id]);
+  await pool.query(`update photos set uploaded = true, updated_at = now(), row_version = nextval('sync_seq') where id = $1`, [p.id]);
   return { ok: true };
 });
 app.http('photos-commit', {
@@ -115,19 +115,20 @@ export const photosUploadDirectHandler = handler(async (req) => {
   // 1. Upload buffer to Azure Blob Storage
   await uploadBlobData(blobPath, buffer, 'image/jpeg');
 
-  // 2. Ensure photo row is in PostgreSQL with uploaded = true
+  // 2. Ensure photo row is in PostgreSQL with uploaded = true and bumped row_version
   await pool.query(
     `insert into photos (
        id, inspection_id, vessel_id, target, inspection_section_id, response_id, finding_id,
-       is_defect, position, blob_path, content_type, size_bytes, uploaded, created_by, updated_at
+       is_defect, position, blob_path, content_type, size_bytes, uploaded, created_by, updated_at, row_version
      ) values (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'image/jpeg', $11, true, $12, now()
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'image/jpeg', $11, true, $12, now(), nextval('sync_seq')
      )
      on conflict (id) do update set
        uploaded = true,
        blob_path = excluded.blob_path,
        size_bytes = excluded.size_bytes,
-       updated_at = now()`,
+       updated_at = now(),
+       row_version = nextval('sync_seq')`,
     [
       photoId,
       inspectionId,

@@ -26,7 +26,7 @@ The backend runs continuously in the background using Linux's `systemd`. It auto
 
 ### 3. Frontend & Web Server (Nginx)
 Nginx handles incoming internet traffic. It serves the built React/Vite files directly and acts as a "Reverse Proxy" to forward `/api/` traffic to the backend service.
-- **Current Domains:** `martrust.ozellar.com` (and `inspection.ozellar.com`)
+- **Application Domain:** `https://inspection.ozellar.com`
 - **Restart Command:** `sudo systemctl restart nginx`
 - **Test Config Command:** `sudo nginx -t`
 

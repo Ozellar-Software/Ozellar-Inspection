@@ -177,6 +177,10 @@ export function processPhotoQueue(): Promise<void> {
           const insp = await db.inspections.get(it.inspectionId);
           if (insp?.deletedAt) { await db.photoQueue.delete(it.photoId); continue; }
         }
+        if (photoRow?.uploaded) {
+          await db.photoQueue.update(it.photoId, { status: 'committed' });
+          continue;
+        }
         uploadable.push(it);
       }
 
@@ -247,6 +251,8 @@ export function processPhotoQueue(): Promise<void> {
                   },
                 });
                 await db.photoQueue.update(it.photoId, { status: 'committed' });
+                await db.photos.update(it.photoId, { uploaded: true });
+                await db.outbox.filter((m) => m.entity === 'photos' && m.entityId === it.photoId).delete().catch(() => {});
                 successfulCount++;
                 continue;
               } catch (commitErr) {
@@ -279,6 +285,8 @@ export function processPhotoQueue(): Promise<void> {
             }
 
             await db.photoQueue.update(it.photoId, { status: 'committed' });
+            await db.photos.update(it.photoId, { uploaded: true });
+            await db.outbox.filter((m) => m.entity === 'photos' && m.entityId === it.photoId).delete().catch(() => {});
             successfulCount++;
           } catch (e) {
             console.error('[PhotoQueue] Upload failed for', it.photoId, e);

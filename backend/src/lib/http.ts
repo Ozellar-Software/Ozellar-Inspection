@@ -14,10 +14,10 @@ export const fail = (code: ErrorCode, message: string) => new HttpError(STATUS[c
 function corsHeaders(req: HttpRequest): Record<string, string> {
   const allowed = (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   const origin = req.headers.get('origin') ?? '';
-  if (!origin || !allowed.includes(origin)) return {};
+  const isAllowed = !origin || allowed.length === 0 || allowed.includes('*') || allowed.includes(origin) || origin.endsWith('ozellar.com') || origin.includes('localhost');
   return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Allow-Origin': isAllowed && origin ? origin : (allowed[0] || '*'),
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, x-ms-blob-type, x-inspection-id, x-vessel-id, x-target, x-section-id, x-response-id, x-finding-id, x-is-defect, x-position',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
     Vary: 'Origin',
   };

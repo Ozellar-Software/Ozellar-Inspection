@@ -242,7 +242,7 @@ export function scheduleSync(delayMs = 500): void {
 /** Start on app launch: sync now, every 60 s while open, and whenever connection state changes. */
 export function startSyncLoop(): () => void {
   void syncNow();
-  const t = setInterval(() => void syncNow(), 60_000);
+  const t = setInterval(() => void syncNow(), 20_000);
   // Independent photo retry every 2 minutes — covers cases where syncNow runs but photo uploads fail or skip
   const photoTimer = setInterval(() => {
     if (navigator.onLine) void processPhotoQueue();
