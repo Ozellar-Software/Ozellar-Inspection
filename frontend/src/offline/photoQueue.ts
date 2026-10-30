@@ -175,10 +175,6 @@ export function processPhotoQueue(): Promise<void> {
           const insp = await db.inspections.get(it.inspectionId);
           if (insp?.deletedAt) { await db.photoQueue.delete(it.photoId); continue; }
         }
-        if (!photoRow) {
-          // If metadata is still catching up, keep image blob safely in queue — NEVER auto-delete!
-          continue;
-        }
         uploadable.push(it);
       }
 
