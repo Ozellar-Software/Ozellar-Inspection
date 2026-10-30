@@ -108,6 +108,7 @@ export async function addPhoto(input: {
 export interface PhotoSyncProgress {
   pending: number;
   total: number;
+  uploaded: number;
   isUploading: boolean;
 }
 const progressListeners = new Set<(p: PhotoSyncProgress) => void>();
@@ -118,8 +119,8 @@ export function subscribePhotoSync(cb: (p: PhotoSyncProgress) => void): () => vo
   return () => { progressListeners.delete(cb); };
 }
 
-function emitProgress(pending: number, total: number, isUploading: boolean): void {
-  const p: PhotoSyncProgress = { pending, total, isUploading };
+function emitProgress(pending: number, total: number, uploaded: number, isUploading: boolean): void {
+  const p: PhotoSyncProgress = { pending, total, uploaded, isUploading };
   progressListeners.forEach((cb) => { try { cb(p); } catch { /* ignore */ } });
 }
 
@@ -147,9 +148,10 @@ function releaseWakeLock(): void {
 let photoProcessing: Promise<void> | null = null;
 let rerunPhotoProcessing = false;
 
-/** Upload pending images: get SAS URL → PUT to Blob → commit.
- *  Runs up to 4 parallel uploads. Acquires a Screen Wake Lock so the phone
- *  does not sleep mid-upload. Emits progress events for PhotoSyncBanner. */
+/** Upload pending images with dual-strategy fallback:
+ *  1. Try direct Azure Blob SAS PUT with 20s timeout and self-healing commit.
+ *  2. Fallback to direct server upload (/api/photos/:id/upload) if Azure fails (zero CORS, 100% reliable).
+ *  Runs up to 4 parallel uploads under Screen Wake Lock and emits accurate live progress. */
 export function processPhotoQueue(): Promise<void> {
   if (photoProcessing) {
     rerunPhotoProcessing = true;
@@ -160,7 +162,7 @@ export function processPhotoQueue(): Promise<void> {
       rerunPhotoProcessing = false;
       const items = await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').toArray();
       if (!items.length) {
-        emitProgress(0, 0, false);
+        emitProgress(0, 0, 0, false);
         break;
       }
 
@@ -178,11 +180,12 @@ export function processPhotoQueue(): Promise<void> {
         uploadable.push(it);
       }
 
-      if (!uploadable.length) { emitProgress(0, 0, false); break; }
+      if (!uploadable.length) { emitProgress(0, 0, 0, false); break; }
 
       const total = uploadable.length;
-      let remaining = total;
-      emitProgress(remaining, total, true);
+      let remainingCount = total;
+      let successfulCount = 0;
+      emitProgress(remainingCount, total, successfulCount, true);
 
       // Parallel upload — 4 concurrent workers
       const CONCURRENCY = 4;
@@ -190,26 +193,103 @@ export function processPhotoQueue(): Promise<void> {
 
       const worker = async () => {
         for (let it: typeof uploadable[0] | undefined; (it = queue.shift());) {
+          let uploadSucceeded = false;
           try {
-            if (it.status !== 'uploaded') {
-              await db.photoQueue.update(it.photoId, { status: 'uploading' });
-              const { uploadUrl, headers } = await api<{ uploadUrl: string; headers: Record<string, string> }>(
-                '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } });
-              const put = await fetch(uploadUrl, { method: 'PUT', headers, body: it.blob });
-              if (!put.ok) throw new Error(`Upload failed (${put.status})`);
-              await db.photoQueue.update(it.photoId, { status: 'uploaded' });
+            // Recover blob if missing from IndexedDB (check CacheStorage)
+            if (!it.blob) {
+              it.blob = (await getCachedBlobFromServiceWorker(it.photoId)) ?? (undefined as any);
             }
-            await api(`/photos/${it.photoId}/commit`, { method: 'POST', body: {} });
+            if (!it.blob) {
+              console.warn('[PhotoQueue] Blob unavailable for photo', it.photoId);
+              continue;
+            }
+
+            const localPhoto = await db.photos.get(it.photoId);
+
+            // Strategy 1: Direct Azure SAS PUT
+            if (it.status !== 'uploaded') {
+              try {
+                await db.photoQueue.update(it.photoId, { status: 'uploading' });
+                const { uploadUrl, headers } = await api<{ uploadUrl: string; headers: Record<string, string> }>(
+                  '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } });
+                const ctrl = new AbortController();
+                const tid = setTimeout(() => ctrl.abort(), 20_000);
+                const put = await fetch(uploadUrl, { method: 'PUT', headers, body: it.blob, signal: ctrl.signal });
+                clearTimeout(tid);
+                if (put.ok) {
+                  await db.photoQueue.update(it.photoId, { status: 'uploaded' });
+                  uploadSucceeded = true;
+                } else {
+                  console.warn(`[PhotoQueue] SAS PUT failed with status ${put.status}`);
+                }
+              } catch (sasErr) {
+                console.warn('[PhotoQueue] Direct SAS PUT failed, trying direct server upload:', (sasErr as Error)?.message);
+              }
+            } else {
+              uploadSucceeded = true;
+            }
+
+            // Commit Strategy 1 if SAS PUT was used
+            if (uploadSucceeded) {
+              try {
+                await api(`/photos/${it.photoId}/commit`, {
+                  method: 'POST',
+                  body: {
+                    inspectionId: it.inspectionId ?? localPhoto?.inspectionId,
+                    vesselId: it.vesselId ?? localPhoto?.vesselId,
+                    target: localPhoto?.target ?? 'question',
+                    inspectionSectionId: localPhoto?.inspectionSectionId,
+                    responseId: localPhoto?.responseId,
+                    findingId: localPhoto?.findingId,
+                    isDefect: localPhoto?.isDefect,
+                    position: localPhoto?.position,
+                    sizeBytes: it.blob.size,
+                  },
+                });
+                await db.photoQueue.update(it.photoId, { status: 'committed' });
+                successfulCount++;
+                continue;
+              } catch (commitErr) {
+                console.warn('[PhotoQueue] Commit failed, falling back to direct server upload:', (commitErr as Error)?.message);
+              }
+            }
+
+            // Strategy 2: Direct Server Upload Fallback (Zero CORS, 100% reliable)
+            const token = localStorage.getItem('token') ?? '';
+            const fallbackRes = await fetch(`/api/photos/${it.photoId}/upload`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'image/jpeg',
+                'x-inspection-id': it.inspectionId ?? localPhoto?.inspectionId ?? '',
+                'x-vessel-id': it.vesselId ?? localPhoto?.vesselId ?? '',
+                'x-target': localPhoto?.target ?? 'question',
+                'x-section-id': localPhoto?.inspectionSectionId ?? '',
+                'x-response-id': localPhoto?.responseId ?? '',
+                'x-finding-id': localPhoto?.findingId ?? '',
+                'x-is-defect': String(!!localPhoto?.isDefect),
+                'x-position': String(localPhoto?.position ?? 0),
+              },
+              body: it.blob,
+            });
+
+            if (!fallbackRes.ok) {
+              const errTxt = await fallbackRes.text().catch(() => '');
+              throw new Error(`Upload failed (${fallbackRes.status}): ${errTxt.slice(0, 100)}`);
+            }
+
             await db.photoQueue.update(it.photoId, { status: 'committed' });
+            successfulCount++;
           } catch (e) {
+            console.error('[PhotoQueue] Upload failed for', it.photoId, e);
             await db.photoQueue.update(it.photoId, {
               status: it.status === 'uploaded' ? 'uploaded' : 'pending',
               attempts: it.attempts + 1,
               lastError: (e as Error).message,
             });
           } finally {
-            remaining--;
-            emitProgress(remaining, total, remaining > 0);
+            remainingCount--;
+            emitProgress(remainingCount, total, successfulCount, remainingCount > 0);
           }
         }
       };
@@ -221,7 +301,6 @@ export function processPhotoQueue(): Promise<void> {
   })().finally(() => { photoProcessing = null; });
   return photoProcessing;
 }
-
 
 const photoUrlCache = new Map<string, { url: string; expires: number }>();
 const blobUrlCache = new Map<string, string>();

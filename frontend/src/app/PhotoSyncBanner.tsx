@@ -4,7 +4,7 @@ import { db } from '../offline/db';
 import { processPhotoQueue, subscribePhotoSync, type PhotoSyncProgress } from '../offline/photoQueue';
 
 export function PhotoSyncBanner() {
-  const [progress, setProgress] = useState<PhotoSyncProgress>({ pending: 0, total: 0, isUploading: false });
+  const [progress, setProgress] = useState<PhotoSyncProgress>({ pending: 0, total: 0, uploaded: 0, isUploading: false });
   const [justCompleted, setJustCompleted] = useState(false);
 
   // Live dynamic counts directly from device database — never hardcoded
@@ -17,7 +17,7 @@ export function PhotoSyncBanner() {
   useEffect(() => {
     return subscribePhotoSync((p) => {
       setProgress(p);
-      if (p.isUploading && p.pending === 0 && p.total > 0) {
+      if (p.isUploading && p.pending === 0 && p.total > 0 && p.uploaded > 0) {
         setJustCompleted(true);
         setTimeout(() => setJustCompleted(false), 7000);
       }
@@ -26,7 +26,7 @@ export function PhotoSyncBanner() {
 
   const missing = progress.isUploading ? progress.pending : (counts?.missing ?? 0);
   const total = progress.total > 0 ? progress.total : ((counts?.uploaded ?? 0) + missing);
-  const uploaded = progress.isUploading ? Math.max(0, progress.total - progress.pending) : (counts?.uploaded ?? 0);
+  const uploaded = progress.isUploading ? progress.uploaded : (counts?.uploaded ?? 0);
   const percent = total > 0 ? Math.min(100, Math.round((uploaded / total) * 100)) : 0;
 
   // Nothing missing and not recently finished — don't show banner
@@ -71,9 +71,9 @@ export function PhotoSyncBanner() {
             {justCompleted
               ? `All ${uploaded} offline photos uploaded to cloud successfully! (100%)`
               : progress.isUploading
-              ? `Syncing photos (${percent}%): ${uploaded} of ${total} uploaded, ${missing} missing / uploading…`
+              ? `Syncing photos (${percent}%): ${uploaded} of ${total} uploaded, ${missing} remaining…`
               : navigator.onLine
-              ? `${missing} photo${missing !== 1 ? 's' : ''} missing from cloud (${uploaded} already uploaded) — starting sync…`
+              ? `${missing} photo${missing !== 1 ? 's' : ''} pending upload (${uploaded} already uploaded) — starting sync…`
               : `Offline mode: ${missing} photo${missing !== 1 ? 's' : ''} stored safely on device. Will auto-sync when online.`}
           </span>
         </div>

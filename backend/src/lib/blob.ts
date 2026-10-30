@@ -77,6 +77,14 @@ export const uploadUrl = (blobPath: string) => sasUrl(blobPath, 'cw', 15);
 /** Read only, 60 minutes. */
 export const readUrl = (blobPath: string) => sasUrl(blobPath, 'r', 60);
 
+export async function uploadBlobData(blobPath: string, buffer: Buffer, contentType = 'image/jpeg'): Promise<void> {
+  const { service } = getStorage();
+  const client = service.getContainerClient(container).getBlockBlobClient(blobPath);
+  await client.uploadData(buffer, {
+    blobHTTPHeaders: { blobContentType: contentType },
+  });
+}
+
 export async function blobExists(blobPath: string): Promise<boolean> {
   try {
     return await getStorage().service.getContainerClient(container).getBlockBlobClient(blobPath).exists();
@@ -99,4 +107,3 @@ export async function deleteBlob(blobPath: string): Promise<void> {
 export function photoBlobPath(p: { id: string; inspectionId?: string | null; vesselId?: string | null }): string {
   return p.inspectionId ? `inspections/${p.inspectionId}/${p.id}.jpg` : `vessels/${p.vesselId}/${p.id}.jpg`;
 }
-
