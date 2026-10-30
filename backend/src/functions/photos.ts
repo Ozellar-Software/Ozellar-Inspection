@@ -10,9 +10,11 @@ async function checkEditable(user: User, inspectionId: string | null, vesselId: 
     const i = (await pool.query(`select vessel_id, status, created_by from inspections where id = $1 and deleted_at is null`, [inspectionId])).rows[0];
     if (!i) throw fail('NOT_FOUND', 'Inspection not found');
     const insp = { vesselId: i.vessel_id, status: i.status, createdBy: i.created_by } as Pick<Inspection, 'vesselId' | 'status' | 'createdBy'>;
+    const isCreator = Boolean(user.id && i.created_by && user.id === i.created_by);
     const isPendingApproval = insp.status === 'pending_tm' || insp.status === 'pending_director';
-    const allowPendingPhotoSync = isPendingApproval && user.role !== 'director' && can(user, 'inspection.view', { inspection: insp });
-    if (!can(user, 'inspection.edit', { inspection: insp }) && !allowPendingPhotoSync) {
+    // Allow offline photos to finish syncing even if the report was already submitted or approved
+    const allowPhotoSync = (isPendingApproval || isCreator || user.role === 'admin') && can(user, 'inspection.view', { inspection: insp });
+    if (!can(user, 'inspection.edit', { inspection: insp }) && !allowPhotoSync) {
       throw fail('LOCKED', "This inspection can't be changed now");
     }
   } else if (vesselId) {

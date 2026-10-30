@@ -9,6 +9,7 @@ import { getCachedUser, setCachedUser } from '../../auth/session';
 import { useCurrentUser } from '../../auth/useCurrentUser';
 import { db } from '../../offline/db';
 import { onSyncStatus, syncNow, type SyncStatus } from '../../offline/sync';
+import { processPhotoQueue } from '../../offline/photoQueue';
 import { useLightMode } from './useLightMode';
 import { PlusIcon, SearchIcon, XIcon, CameraIcon, MenuIcon, CheckIcon, WifiIcon, WarningIcon, TrashIcon } from '../../icons';
 import { DeleteInspectionModal } from '../inspections/DeleteInspectionModal';
@@ -172,7 +173,7 @@ export function HomePage() {
                 <span className="sync-widget-sub">{syncText}</span>
               </div>
             </div>
-            <button className="sync-widget-btn" onClick={() => void syncNow()}>
+            <button className="sync-widget-btn" onClick={() => { void syncNow(); void processPhotoQueue(); }}>
               Sync Now
             </button>
           </div>

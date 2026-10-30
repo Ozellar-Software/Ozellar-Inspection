@@ -198,6 +198,8 @@ export function syncNow(): Promise<void> {
     }
     emit({ state: 'syncing', pending: await db.outbox.count() });
     try {
+      // Kick off photo uploads in background immediately without waiting for pull()
+      void processPhotoQueue();
       do {
         rerunRequested = false;
         await push();
@@ -206,8 +208,6 @@ export function syncNow(): Promise<void> {
         await pull();
       } while (rerunRequested && navigator.onLine);
       emit({ state: 'idle', lastSyncAt: new Date().toISOString(), pending: await db.outbox.count(), message: undefined });
-      // Process photo uploads in background (after photo metadata rows are pushed)
-      void processPhotoQueue();
     } catch (e) {
       const pending = await db.outbox.count();
       if (!navigator.onLine) {
@@ -215,6 +215,9 @@ export function syncNow(): Promise<void> {
       } else {
         emit({ state: 'error', message: (e as Error).message, pending });
       }
+    } finally {
+      // Ensure photo uploads run even if text sync threw a 504 error
+      if (navigator.onLine) void processPhotoQueue();
     }
   })().finally(() => { running = null; });
   return running;
