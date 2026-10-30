@@ -22,7 +22,8 @@ export const pool = new pg.Pool({
   password, // pg calls this for every new connection → token stays fresh
   port: Number(process.env.PG_PORT ?? 5432),
   ssl: process.env.PG_SSL === 'false' ? false : { rejectUnauthorized: true },
-  max: 5,
+  max: 25,
+  connectionTimeoutMillis: 10_000,
   idleTimeoutMillis: 30_000,
 });
 
