@@ -240,18 +240,26 @@ export function scheduleSync(delayMs = 500): void {
 export function startSyncLoop(): () => void {
   void syncNow();
   const t = setInterval(() => void syncNow(), 60_000);
-  const onOnline = () => void syncNow();
+  // Independent photo retry every 2 minutes — covers cases where syncNow runs but photo uploads fail or skip
+  const photoTimer = setInterval(() => {
+    if (navigator.onLine) void processPhotoQueue();
+  }, 2 * 60_000);
+  const onOnline = () => { void syncNow(); void processPhotoQueue(); };
   const onOffline = () => {
     void db.outbox.count().then((pending) => emit({ state: 'offline', pending }));
   };
   const onVis = () => {
-    if (document.visibilityState === 'visible') void syncNow();
+    if (document.visibilityState === 'visible') {
+      void syncNow();
+      if (navigator.onLine) void processPhotoQueue();
+    }
   };
   window.addEventListener('online', onOnline);
   window.addEventListener('offline', onOffline);
   document.addEventListener('visibilitychange', onVis);
   return () => {
     clearInterval(t);
+    clearInterval(photoTimer);
     window.removeEventListener('online', onOnline);
     window.removeEventListener('offline', onOffline);
     document.removeEventListener('visibilitychange', onVis);
