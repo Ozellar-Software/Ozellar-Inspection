@@ -2,20 +2,30 @@ import { useEffect, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { db } from '../offline/db';
 import { processPhotoQueue } from '../offline/photoQueue';
+import { syncNow } from '../offline/sync';
 
 /**
  * PWA update banner shown when a new service-worker version is waiting.
  *
- * If the user has pending photo uploads in their local queue, we warn them
- * and kick off the upload automatically when they tap "Update now" so the
- * photos are safely in the cloud before the service-worker swaps in.
+ * When the user taps "tap to update", it automatically triggers syncNow()
+ * and processPhotoQueue(), activates the waiting service worker, reloads
+ * the page with the latest code, and resumes background sync.
  */
 export function UpdatePrompt() {
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
-    onRegisteredSW(_url, reg) { if (reg) setInterval(() => void reg.update(), 10 * 60_000); },
+    onRegisteredSW(_url, reg) {
+      if (!reg) return;
+      // Check for server updates every 60 seconds
+      setInterval(() => void reg.update(), 60_000);
+      // Check immediately when returning to the tab
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void reg.update();
+      });
+    },
   });
 
   const [pendingPhotos, setPendingPhotos] = useState(0);
+  const [updating, setUpdating] = useState(false);
 
   // Count pending photos whenever the banner becomes visible
   useEffect(() => {
@@ -29,13 +39,16 @@ export function UpdatePrompt() {
   if (!needRefresh) return null;
 
   const handleUpdate = () => {
-    // Kick off photo upload in background first — it will survive the page reload
-    // because IndexedDB persists across page navigations.
-    if (pendingPhotos > 0) {
+    setUpdating(true);
+    // 1. Kick off immediate data sync and photo uploads before reload
+    if (navigator.onLine) {
+      void syncNow();
       void processPhotoQueue();
     }
-    // Small delay so the queue has a moment to start before the SW activates
-    setTimeout(() => updateServiceWorker(true), pendingPhotos > 0 ? 1500 : 0);
+    // 2. Allow requests a brief moment to dispatch, then activate SW and reload page
+    setTimeout(() => {
+      void updateServiceWorker(true);
+    }, pendingPhotos > 0 ? 1200 : 400);
   };
 
   return (
@@ -65,10 +78,33 @@ export function UpdatePrompt() {
           Stay connected after tapping Update — they will sync automatically in the background.
         </div>
       )}
-      <button className="btn btn-primary btn-block" onClick={handleUpdate}>
-        {pendingPhotos > 0
-          ? `Update now & upload ${pendingPhotos} pending photo${pendingPhotos !== 1 ? 's' : ''}`
-          : 'A new version of the app is available — tap to update'}
+      <button
+        className="btn btn-primary btn-block"
+        onClick={handleUpdate}
+        disabled={updating}
+        style={{
+          boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+          padding: '12px 18px',
+          fontWeight: 700,
+          borderRadius: 10,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+        }}
+      >
+        {updating ? (
+          <>
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/>
+            </svg>
+            <span>Syncing & updating…</span>
+          </>
+        ) : pendingPhotos > 0 ? (
+          `Update now & sync ${pendingPhotos} pending photo${pendingPhotos !== 1 ? 's' : ''}`
+        ) : (
+          'A new version of the app is available — tap to update'
+        )}
       </button>
     </div>
   );
