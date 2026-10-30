@@ -1,0 +1,117 @@
+import React, { useEffect, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../offline/db';
+import { processPhotoQueue, subscribePhotoSync, type PhotoSyncProgress } from '../offline/photoQueue';
+
+export function PhotoSyncBanner() {
+  const [progress, setProgress] = useState<PhotoSyncProgress>({ pending: 0, total: 0, isUploading: false });
+  const [justCompleted, setJustCompleted] = useState(false);
+
+  // Live count of photos in the local device queue that need uploading
+  const queueCount = useLiveQuery(
+    () => db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').count(),
+    []
+  );
+
+  useEffect(() => {
+    return subscribePhotoSync((p) => {
+      setProgress(p);
+      if (p.isUploading && p.pending === 0 && p.total > 0) {
+        setJustCompleted(true);
+        setTimeout(() => setJustCompleted(false), 6000);
+      }
+    });
+  }, []);
+
+  const pending = progress.isUploading ? progress.pending : (queueCount ?? 0);
+  const total = progress.total > 0 ? progress.total : pending;
+  const completed = Math.max(0, total - pending);
+  const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+
+  // Show banner if photos are in queue or just completed
+  if (!justCompleted && pending === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        background: justCompleted ? '#10b981' : progress.isUploading ? '#0284c7' : '#f59e0b',
+        color: '#ffffff',
+        padding: '10px 16px',
+        fontSize: '13px',
+        fontWeight: 600,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        zIndex: 999,
+        transition: 'all 0.3s ease',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {justCompleted ? (
+            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : progress.isUploading ? (
+            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67" />
+            </svg>
+          ) : (
+            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+              <polyline points="12 13 12 9 14 11" />
+            </svg>
+          )}
+
+          <span>
+            {justCompleted
+              ? `All ${total} offline photos successfully uploaded to cloud!`
+              : progress.isUploading
+              ? `Uploading photos to cloud: ${completed} of ${total} uploaded (${pending} remaining)`
+              : navigator.onLine
+              ? `${pending} offline photo${pending !== 1 ? 's' : ''} queued — starting upload…`
+              : `Offline: ${pending} photo${pending !== 1 ? 's' : ''} stored safely on device. Will upload when connected.`}
+          </span>
+        </div>
+
+        {!justCompleted && navigator.onLine && (
+          <button
+            type="button"
+            onClick={() => void processPhotoQueue()}
+            disabled={progress.isUploading}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: '1px solid rgba(255,255,255,0.4)',
+              color: '#ffffff',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: progress.isUploading ? 'default' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {progress.isUploading ? 'Uploading…' : 'Upload Now'}
+          </button>
+        )}
+      </div>
+
+      {!justCompleted && total > 0 && progress.isUploading && (
+        <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.3)', borderRadius: '2px', overflow: 'hidden' }}>
+          <div
+            style={{
+              height: '100%',
+              width: `${percent}%`,
+              background: '#ffffff',
+              borderRadius: '2px',
+              transition: 'width 0.3s ease',
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}

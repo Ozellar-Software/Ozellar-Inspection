@@ -20,6 +20,7 @@ import { requestPersistentStorage } from '../offline/db';
 import { processPhotoQueue } from '../offline/photoQueue';
 import { ScrollToTop } from './ScrollToTop';
 import { TopNav } from './TopNav';
+import { PhotoSyncBanner } from './PhotoSyncBanner';
 
 
 
@@ -79,6 +80,7 @@ function SignedIn() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f4f6f9' }}>
       <TopNav />
+      <PhotoSyncBanner />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Routes>
           <Route path="/" element={<HomePage />} />
