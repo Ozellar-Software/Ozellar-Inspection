@@ -5,6 +5,7 @@ import { photoSrc, addPhoto } from '../../offline/photoQueue';
 import { localDelete, localWrite } from '../../offline/outbox';
 import {
   CameraIcon,
+  EditIcon,
   UploadIcon,
   XIcon,
   EyeIcon,
@@ -599,7 +600,7 @@ export function PhotoStrip({
   };
 
   // Save handler for CameraCaptureModal
-  const handleSavePhotosFromCamera = async (newPhotos: { file: File; isDefect: boolean }[]): Promise<string[]> => {
+  const handleSavePhotosFromCamera = async (newPhotos: { file: File; isDefect: boolean; description?: string }[]): Promise<string[]> => {
     let position = photos.reduce((max, p) => Math.max(max, (p.position ?? 0) + 1), 0);
     const addedIds: string[] = [];
     for (const item of newPhotos) {
@@ -612,6 +613,7 @@ export function PhotoStrip({
         findingId,
         position: position++,
         isDefect: item.isDefect,
+        description: item.description ?? '',
       });
       addedIds.push(id);
     }
@@ -900,11 +902,28 @@ export function PhotoStrip({
                   ? isSelected
                     ? 'Selected - click to deselect'
                     : 'Click to select photo'
+                  : p.description
+                  ? `${p.description} (Click to view)`
                   : target === 'section'
                   ? 'Click to view, double-click or hold for options (normal/defect, move section)'
                   : 'Click to view, double-click or hold for options'
               }
             >
+                            {/* Defect Indicator Badge */}
+              {p.isDefect && (
+                <div className="thumb-defect-badge" title="Flagged as Defect">
+                  <WarningIcon style={{ width: 8.5, height: 8.5 }} />
+                  <span>DEFECT</span>
+                </div>
+              )}
+
+              {/* Photo description badge */}
+              {p.description && !isSelectMode && (
+                <div className="thumb-desc-badge" title={`Description: ${p.description}`}>
+                  <EditIcon style={{ width: 9, height: 9 }} />
+                </div>
+              )}
+
               {/* Selection Checkbox Badge when in Select Mode */}
               {isSelectMode && (
                 <div

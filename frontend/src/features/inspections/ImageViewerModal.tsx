@@ -31,6 +31,7 @@ export interface ImageViewerModalProps {
   title?: string;
   initialUrls?: Record<string, string>;
   onPhotoToggled?: (photoId: string, isDefect: boolean) => void;
+  onPhotoUpdated?: (photoId: string, updates: Partial<Photo>) => void;
   allSections?: InspectionSection[];
   currentSectionId?: string;
   onMoveToSection?: (photoId: string, targetSectionId: string) => Promise<void> | void;
@@ -46,6 +47,7 @@ export function ImageViewerModal({
   title,
   initialUrls,
   onPhotoToggled,
+  onPhotoUpdated,
   allSections = [],
   currentSectionId,
   onMoveToSection,
@@ -60,6 +62,12 @@ export function ImageViewerModal({
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [descMap, setDescMap] = useState<Record<string, string>>({});
+  const [descText, setDescText] = useState('');
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [isSavingDesc, setIsSavingDesc] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
   const activeThumbRef = useRef<HTMLDivElement>(null);
 
   // Sync index when initialIndex or activePhotos change
@@ -88,6 +96,34 @@ export function ImageViewerModal({
   }, [initialUrls]);
 
   const currentPhoto = activePhotos[index];
+
+  // Sync description when photo changes
+  useEffect(() => {
+    if (currentPhoto) {
+      setDescText(descMap[currentPhoto.id] ?? currentPhoto.description ?? '');
+      setIsEditingDesc(false);
+      setSaveSuccess(false);
+    }
+  }, [currentPhoto?.id]);
+
+  const handleSaveDescription = async () => {
+    if (locked || !currentPhoto || isSavingDesc) return;
+    const trimmed = descText.trim();
+    setIsSavingDesc(true);
+    try {
+      await localWrite('photos', currentPhoto.id, { description: trimmed });
+      setDescMap((prev) => ({ ...prev, [currentPhoto.id]: trimmed }));
+      currentPhoto.description = trimmed;
+      onPhotoUpdated?.(currentPhoto.id, { description: trimmed });
+      setIsEditingDesc(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to save photo description', err);
+    } finally {
+      setIsSavingDesc(false);
+    }
+  };
 
   // High-priority load for individual photo (current and adjacent)
   const loadPhoto = useCallback((photoId: string) => {
@@ -157,17 +193,23 @@ export function ImageViewerModal({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isInput = (e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA';
       if (e.key === 'Escape') {
+        if (isEditingDesc) {
+          setIsEditingDesc(false);
+          setDescText(descMap[currentPhoto?.id || ''] ?? currentPhoto?.description ?? '');
+          return;
+        }
         onClose();
-      } else if (e.key === 'ArrowLeft') {
+      } else if (!isInput && e.key === 'ArrowLeft') {
         goPrev();
-      } else if (e.key === 'ArrowRight') {
+      } else if (!isInput && e.key === 'ArrowRight') {
         goNext();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, activePhotos.length]);
+  }, [isOpen, activePhotos.length, isEditingDesc, currentPhoto?.id, descMap]);
 
   if (!isOpen || !currentPhoto || activePhotos.length === 0) {
     return null;
@@ -377,6 +419,87 @@ export function ImageViewerModal({
             <span>{downloadProgress}</span>
           </div>
         )}
+
+                {/* ── Photo Description Bar ── */}
+        <div className="ivm-desc-bar" onClick={(e) => e.stopPropagation()}>
+          {isEditingDesc ? (
+            <div className="ivm-desc-edit-wrap">
+              <input
+                type="text"
+                className="ivm-desc-input"
+                value={descText}
+                onChange={(e) => setDescText(e.target.value)}
+                placeholder="Enter photo description..."
+                autoFocus
+                maxLength={500}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleSaveDescription();
+                  }
+                }}
+              />
+              <div className="ivm-desc-actions">
+                <button
+                  type="button"
+                  className="ivm-desc-btn save"
+                  onClick={handleSaveDescription}
+                  disabled={isSavingDesc}
+                  title="Save description"
+                >
+                  <CheckIcon style={{ width: 13, height: 13 }} />
+                  <span>{isSavingDesc ? 'Saving...' : 'Save'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="ivm-desc-btn cancel"
+                  onClick={() => {
+                    setIsEditingDesc(false);
+                    setDescText(descMap[currentPhoto.id] ?? currentPhoto.description ?? '');
+                  }}
+                  disabled={isSavingDesc}
+                  title="Cancel editing"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="ivm-desc-display-wrap">
+              <div
+                className={`ivm-desc-content ${!locked ? 'clickable' : ''}`}
+                onClick={() => !locked && setIsEditingDesc(true)}
+                title={!locked ? 'Click to edit description' : undefined}
+              >
+                <span className="ivm-desc-label">Description:</span>
+                {(descMap[currentPhoto.id] ?? currentPhoto.description) ? (
+                  <span className="ivm-desc-text">
+                    {descMap[currentPhoto.id] ?? currentPhoto.description}
+                  </span>
+                ) : (
+                  <span className="ivm-desc-placeholder">
+                    {!locked ? '+ Add description for this photo...' : 'No description'}
+                  </span>
+                )}
+                {saveSuccess && (
+                  <span className="ivm-desc-saved">
+                    <CheckIcon style={{ width: 12, height: 12 }} /> Saved
+                  </span>
+                )}
+              </div>
+              {!locked && (
+                <button
+                  type="button"
+                  className="ivm-desc-edit-btn"
+                  onClick={() => setIsEditingDesc(true)}
+                  title={(descMap[currentPhoto.id] ?? currentPhoto.description) ? 'Edit photo description' : 'Add photo description'}
+                >
+                  {(descMap[currentPhoto.id] ?? currentPhoto.description) ? 'Edit Description' : '+ Add Description'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ── Bottom Action Toolbar ── */}
         <div className="ivm-bottom-bar">

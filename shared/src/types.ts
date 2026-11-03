@@ -170,6 +170,7 @@ export interface Photo {
   isDefect: boolean;
   position: number;
   uploaded: boolean;
+  description?: string;
 }
 
 export interface Approval {

@@ -82,7 +82,7 @@ export async function compressImage(file: Blob, maxSide = 1600, quality = 0.8): 
 export async function addPhoto(input: {
   file: Blob; target: PhotoTarget; inspectionId?: string | null; vesselId?: string | null;
   inspectionSectionId?: string | null; responseId?: string | null; findingId?: string | null;
-  isDefect?: boolean; position: number;
+  isDefect?: boolean; position: number; description?: string;
 }): Promise<string> {
   const photoId = crypto.randomUUID();
   const blob = await compressImage(input.file);
@@ -101,6 +101,7 @@ export async function addPhoto(input: {
     inspectionSectionId: input.inspectionSectionId ?? null, responseId: input.responseId ?? null,
     findingId: input.findingId ?? null, isDefect: !!input.isDefect, position: input.position,
     contentType: 'image/jpeg', sizeBytes: blob.size,
+    description: input.description ?? '',
   });
   return photoId;
 }
@@ -282,6 +283,7 @@ export function processPhotoQueue(): Promise<void> {
                     isDefect: localPhoto?.isDefect,
                     position: localPhoto?.position,
                     sizeBytes: it.blob.size,
+                    description: localPhoto?.description ?? '',
                   },
                 }), 20_000, 'Saving photo record');
                 await db.photoQueue.update(it.photoId, { status: 'committed' });
@@ -313,6 +315,7 @@ export function processPhotoQueue(): Promise<void> {
                 'x-finding-id': localPhoto?.findingId ?? '',
                 'x-is-defect': String(!!localPhoto?.isDefect),
                 'x-position': String(localPhoto?.position ?? 0),
+                'x-description': encodeURIComponent(localPhoto?.description ?? ''),
               },
               body: it.blob,
             }).catch((e) => {

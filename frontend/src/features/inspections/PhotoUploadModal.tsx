@@ -7,6 +7,7 @@ import {
   WarningIcon,
   CheckIcon,
   PlusIcon,
+  EditIcon,
 } from '../../icons';
 import './PhotoUploadModal.css';
 
@@ -17,6 +18,7 @@ export interface PendingPhotoItem {
   isDefect: boolean;
   name: string;
   sizeFormatted: string;
+  description?: string;
 }
 
 export interface PhotoUploadModalProps {
@@ -71,6 +73,7 @@ export function PhotoUploadModal({
           isDefect: false,
           name: file.name,
           sizeFormatted: formatBytes(file.size),
+          description: '',
         }));
       setItems(newItems);
     } else {
@@ -98,6 +101,7 @@ export function PhotoUploadModal({
       isDefect: false,
       name: file.name,
       sizeFormatted: formatBytes(file.size),
+      description: '',
     }));
 
     setItems((prev) => [...prev, ...newItems]);
@@ -123,6 +127,10 @@ export function PhotoUploadModal({
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       appendFiles(e.dataTransfer.files);
     }
+  };
+
+  const updateItemDescription = (id: string, description: string) => {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, description } : it)));
   };
 
   // Bulk set all to normal or defect
@@ -175,6 +183,7 @@ export function PhotoUploadModal({
           findingId,
           position: position++,
           isDefect: item.isDefect,
+          description: item.description?.trim() || undefined,
         });
       }
 
@@ -300,51 +309,93 @@ export function PhotoUploadModal({
                     key={it.id}
                     className={`pum-item-card ${it.isDefect ? 'is-defect' : 'is-normal'}`}
                   >
-                    <div className="pum-item-thumb-wrap">
-                      <img src={it.previewUrl} alt={it.name} className="pum-item-thumb" />
-                      <span className="pum-item-index">{idx + 1}</span>
+                    <div className="pum-item-card-top">
+                      <div className="pum-item-thumb-wrap">
+                        <img src={it.previewUrl} alt={it.name} className="pum-item-thumb" />
+                        <span className="pum-item-index">{idx + 1}</span>
+                      </div>
+
+                      <div className="pum-item-info">
+                        <div className="pum-item-name" title={it.name}>
+                          {it.name}
+                        </div>
+                        <div className="pum-item-meta">
+                          <span className="pum-item-size">{it.sizeFormatted}</span>
+                        </div>
+
+                        {/* Defect vs Normal Segmented Switch */}
+                        <div className="pum-item-type-switch">
+                          <button
+                            type="button"
+                            className={`pum-type-btn normal ${!it.isDefect ? 'active' : ''}`}
+                            onClick={() => toggleItemDefect(it.id)}
+                            disabled={isUploading}
+                          >
+                            <CheckIcon style={{ width: 11, height: 11 }} />
+                            Normal
+                          </button>
+
+                          <button
+                            type="button"
+                            className={`pum-type-btn defect ${it.isDefect ? 'active' : ''}`}
+                            onClick={() => toggleItemDefect(it.id)}
+                            disabled={isUploading}
+                          >
+                            <WarningIcon style={{ width: 11, height: 11 }} />
+                            Defect
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="pum-item-remove-btn"
+                        onClick={() => removeItem(it.id)}
+                        disabled={isUploading}
+                        aria-label="Remove this photo"
+                        title="Remove photo"
+                      >
+                        <XIcon style={{ width: 13, height: 13 }} />
+                      </button>
                     </div>
 
-                    <div className="pum-item-info">
-                      <div className="pum-item-name" title={it.name}>
-                        {it.name}
+                    {/* Description Field */}
+                    <div className="pum-item-desc-section">
+                      <div className="pum-item-desc-header">
+                        <EditIcon style={{ width: 12, height: 12 }} />
+                        <label htmlFor={`pum-desc-${it.id}`} className="pum-item-desc-label">
+                          Description
+                        </label>
+                        <span className="pum-desc-optional-tag">Optional</span>
                       </div>
-                      <div className="pum-item-size">{it.sizeFormatted}</div>
-
-                      {/* Defect vs Normal Segmented Switch */}
-                      <div className="pum-item-type-switch">
-                        <button
-                          type="button"
-                          className={`pum-type-btn normal ${!it.isDefect ? 'active' : ''}`}
-                          onClick={() => toggleItemDefect(it.id)}
+                      <div className="pum-item-desc-field">
+                        <textarea
+                          id={`pum-desc-${it.id}`}
+                          className="pum-item-desc-textarea"
+                          rows={2}
+                          placeholder="Add notes or observations about this photo..."
+                          value={it.description || ''}
+                          onChange={(e) => updateItemDescription(it.id, e.target.value)}
                           disabled={isUploading}
-                        >
-                          <CheckIcon style={{ width: 12, height: 12 }} />
-                          Normal
-                        </button>
-
-                        <button
-                          type="button"
-                          className={`pum-type-btn defect ${it.isDefect ? 'active' : ''}`}
-                          onClick={() => toggleItemDefect(it.id)}
-                          disabled={isUploading}
-                        >
-                          <WarningIcon style={{ width: 12, height: 12 }} />
-                          Defect
-                        </button>
+                          maxLength={500}
+                        />
+                        {it.description ? (
+                          <button
+                            type="button"
+                            className="pum-clear-desc-btn"
+                            onClick={() => updateItemDescription(it.id, '')}
+                            disabled={isUploading}
+                            aria-label="Clear description"
+                            title="Clear description"
+                          >
+                            <XIcon style={{ width: 11, height: 11 }} />
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="pum-item-desc-footer">
+                        <span className="pum-desc-char-count">{(it.description || '').length} / 500</span>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      className="pum-item-remove-btn"
-                      onClick={() => removeItem(it.id)}
-                      disabled={isUploading}
-                      aria-label="Remove this photo"
-                      title="Remove photo"
-                    >
-                      <XIcon style={{ width: 14, height: 14 }} />
-                    </button>
                   </div>
                 ))}
               </div>

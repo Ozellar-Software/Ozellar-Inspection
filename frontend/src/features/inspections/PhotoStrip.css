@@ -824,3 +824,59 @@
 
 
 
+
+/* ── Photo Note Indicator Badge ── */
+.thumb-desc-badge {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+  border-radius: 4px;
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  z-index: 2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+
+/* ── Defect vs Normal Thumbnail UI ── */
+.photostrip-wrap .thumb.defect,
+.thumb.defect {
+  border: 2.5px solid #dc2626 !important;
+  box-shadow: 0 0 0 1px #dc2626, 0 3px 8px rgba(220, 38, 38, 0.3) !important;
+}
+
+.thumb.defect::before {
+  display: none !important;
+}
+
+.thumb-defect-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  background: #dc2626;
+  color: #ffffff;
+  border-radius: 4px;
+  padding: 1px 4.5px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  z-index: 4;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.thumb-defect-badge svg {
+  width: 9px;
+  height: 9px;
+  stroke-width: 2.5;
+}

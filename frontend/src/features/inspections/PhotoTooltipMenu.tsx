@@ -119,6 +119,12 @@ export function PhotoTooltipMenu({
           <span className="ptt-header-hint">Quick Options</span>
         </div>
 
+        {photo.description && (
+          <div className="ptt-desc-preview" title={photo.description}>
+            &ldquo;{photo.description}&rdquo;
+          </div>
+        )}
+
         {/* Action 1: Toggle Normal / Defect */}
         {!locked && (
           <button

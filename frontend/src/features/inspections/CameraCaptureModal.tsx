@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   CameraIcon,
+  EditIcon,
   XIcon,
   CheckIcon,
   WarningIcon,
@@ -15,12 +16,13 @@ export interface CapturedPhoto {
   file: File;
   previewUrl: string;
   isDefect: boolean;
+  description?: string;
 }
 
 export interface CameraCaptureModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSavePhotos: (photos: { file: File; isDefect: boolean }[]) => Promise<string[] | void>;
+  onSavePhotos: (photos: { file: File; isDefect: boolean; description?: string }[]) => Promise<string[] | void>;
   title?: string;
 }
 
@@ -38,6 +40,8 @@ export function CameraCaptureModal({
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [isSaving, setIsSaving] = useState(false);
   const [shutterFlash, setShutterFlash] = useState(false);
+  const [preCaptureDesc, setPreCaptureDesc] = useState('');
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -46,6 +50,7 @@ export function CameraCaptureModal({
   const isMountedRef = useRef(true);
   const capturedRef = useRef(capturedPhotos);
   capturedRef.current = capturedPhotos;
+  const descDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Stop camera stream completely and release hardware pipeline
   const stopStream = useCallback(() => {
@@ -203,6 +208,9 @@ export function CameraCaptureModal({
 
     return () => {
       isMountedRef.current = false;
+      if (descDebounceTimerRef.current) {
+        clearTimeout(descDebounceTimerRef.current);
+      }
       stopStream();
       capturedRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl));
     };
@@ -261,16 +269,20 @@ export function CameraCaptureModal({
 
         // Store photo immediately!
         setIsSaving(true);
+        const photoDesc = preCaptureDesc.trim();
         try {
-          const ids = await onSavePhotos([{ file, isDefect: isDefectPhoto }]);
+          const ids = await onSavePhotos([{ file, isDefect: isDefectPhoto, description: photoDesc }]);
           const photoId = (ids && ids[0]) || crypto.randomUUID();
           const newPhoto: CapturedPhoto = {
             id: photoId,
             file,
             previewUrl,
             isDefect: isDefectPhoto,
+            description: photoDesc,
           };
           setCapturedPhotos((prev) => [...prev, newPhoto]);
+          setSelectedPhotoId(photoId);
+          setPreCaptureDesc('');
         } catch (err: any) {
           URL.revokeObjectURL(previewUrl);
           console.error('Failed to store captured photo:', err);
@@ -290,22 +302,43 @@ export function CameraCaptureModal({
     const list = Array.from(files).filter((f) => f.type.startsWith('image/'));
     if (!list.length) return;
     const isDefectPhoto = captureMode === 'defect';
+    const photoDesc = preCaptureDesc.trim();
     setIsSaving(true);
     try {
-      const ids = await onSavePhotos(list.map((file) => ({ file, isDefect: isDefectPhoto })));
+      const ids = await onSavePhotos(list.map((file) => ({ file, isDefect: isDefectPhoto, description: photoDesc })));
       const newPhotos: CapturedPhoto[] = list.map((file, idx) => ({
         id: (ids && ids[idx]) || crypto.randomUUID(),
         file,
         previewUrl: URL.createObjectURL(file),
         isDefect: isDefectPhoto,
+        description: photoDesc,
       }));
       setCapturedPhotos((prev) => [...prev, ...newPhotos]);
+      if (newPhotos.length > 0) setSelectedPhotoId(newPhotos[newPhotos.length - 1].id);
+      setPreCaptureDesc('');
     } catch (err: any) {
       console.error('Failed to store fallback captured photos:', err);
       alert(`Failed to save photos: ${err.message || 'Unknown error'}`);
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Update description on captured photo (updates React state immediately, debounces DB write)
+  const updatePhotoDescription = (id: string, description: string) => {
+    setCapturedPhotos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, description } : p))
+    );
+    if (descDebounceTimerRef.current) {
+      clearTimeout(descDebounceTimerRef.current);
+    }
+    descDebounceTimerRef.current = setTimeout(async () => {
+      try {
+        await localWrite('photos', id, { description });
+      } catch (err) {
+        console.error('Failed to update photo description:', err);
+      }
+    }, 350);
   };
 
   // Toggle defect on captured photo (updates DB directly)
@@ -317,10 +350,7 @@ export function CameraCaptureModal({
       prev.map((p) => (p.id === id ? { ...p, isDefect: nextDefect } : p))
     );
     try {
-      const existing = await db.photos.get(id);
-      if (existing) {
-        await localWrite('photos', id, { ...existing, isDefect: nextDefect });
-      }
+      await localWrite('photos', id, { isDefect: nextDefect });
     } catch (err) {
       console.error('Failed to update photo defect status:', err);
     }
@@ -331,7 +361,11 @@ export function CameraCaptureModal({
     setCapturedPhotos((prev) => {
       const target = prev.find((p) => p.id === id);
       if (target) URL.revokeObjectURL(target.previewUrl);
-      return prev.filter((p) => p.id !== id);
+      const remaining = prev.filter((p) => p.id !== id);
+      if (selectedPhotoId === id) {
+        setSelectedPhotoId(remaining.length > 0 ? remaining[remaining.length - 1].id : null);
+      }
+      return remaining;
     });
     try {
       await localDelete('photos', id);
@@ -348,6 +382,9 @@ export function CameraCaptureModal({
   };
 
   const defectCount = capturedPhotos.filter((p) => p.isDefect).length;
+  const descCount = capturedPhotos.filter((p) => !!p.description?.trim()).length;
+  const activePhoto = capturedPhotos.find((p) => p.id === selectedPhotoId) || capturedPhotos[capturedPhotos.length - 1] || null;
+  const activeIndex = activePhoto ? capturedPhotos.findIndex((p) => p.id === activePhoto.id) : -1;
 
   return (
     <div className="ccm-overlay" onClick={handleClose}>
@@ -433,6 +470,29 @@ export function CameraCaptureModal({
             <div className="ccm-fallback-prompt">
               <CameraIcon style={{ width: 44, height: 44, color: '#0284c7' }} />
               <p className="ccm-error-text">{cameraError}</p>
+              <div className="ccm-fallback-desc-box">
+                <EditIcon style={{ width: 14, height: 14, color: '#94a3b8', flexShrink: 0 }} />
+                <input
+                  type="text"
+                  className="ccm-fallback-desc-input"
+                  placeholder="Photo description (optional)..."
+                  value={preCaptureDesc}
+                  onChange={(e) => setPreCaptureDesc(e.target.value)}
+                  maxLength={500}
+                />
+                {preCaptureDesc && (
+                  <button
+                    type="button"
+                    className="ccm-pre-desc-clear"
+                    onClick={() => setPreCaptureDesc('')}
+                    title="Clear description"
+                    aria-label="Clear description"
+                  >
+                    <XIcon style={{ width: 12, height: 12 }} />
+                  </button>
+                )}
+              </div>
+
               <button
                 type="button"
                 className="btn btn-primary"
@@ -469,6 +529,33 @@ export function CameraCaptureModal({
                 </button>
               </div>
 
+              <div className="ccm-pre-desc-container">
+                <div className="ccm-pre-desc-box">
+                  <EditIcon style={{ width: 14, height: 14, color: '#94a3b8', flexShrink: 0 }} />
+                  <input
+                    type="text"
+                    id="ccm-pre-desc-input"
+                    className="ccm-pre-desc-input"
+                    placeholder="Description for next snap (optional)..."
+                    value={preCaptureDesc}
+                    onChange={(e) => setPreCaptureDesc(e.target.value)}
+                    maxLength={500}
+                    disabled={isSaving}
+                  />
+                  {preCaptureDesc && (
+                    <button
+                      type="button"
+                      className="ccm-pre-desc-clear"
+                      onClick={() => setPreCaptureDesc('')}
+                      title="Clear description"
+                      aria-label="Clear description"
+                    >
+                      <XIcon style={{ width: 12, height: 12 }} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="ccm-shutter-row">
                 <button
                   type="button"
@@ -503,49 +590,156 @@ export function CameraCaptureModal({
                 ) : (
                   'All Normal'
                 )}
+                {descCount > 0 && (
+                  <span className="ccm-desc-count-text">
+                    <EditIcon style={{ width: 10, height: 10 }} />
+                    {descCount} with notes
+                  </span>
+                )}
               </span>
             </div>
 
+            {/* Filmstrip Chips */}
             <div className="ccm-photos-row">
-              {capturedPhotos.map((p, idx) => (
-                <div
-                  key={p.id}
-                  className={`ccm-photo-chip ${p.isDefect ? 'is-defect' : 'is-normal'}`}
-                >
-                  <img src={p.previewUrl} alt={`Captured ${idx + 1}`} className="ccm-photo-thumb" />
-                  <span className="ccm-photo-idx">{idx + 1}</span>
+              {capturedPhotos.map((p, idx) => {
+                const isSelected = activePhoto?.id === p.id;
+                return (
+                  <div
+                    key={p.id}
+                    className={`ccm-photo-chip ${p.isDefect ? 'is-defect' : 'is-normal'} ${isSelected ? 'is-selected' : ''}`}
+                    onClick={() => setSelectedPhotoId(p.id)}
+                    title={`Photo #${idx + 1} - Tap to select & edit description`}
+                  >
+                    <img src={p.previewUrl} alt={`Captured ${idx + 1}`} className="ccm-photo-thumb" />
+                    <span className="ccm-photo-idx">{idx + 1}</span>
 
-                  <div className="ccm-chip-controls">
+                    <div className="ccm-chip-controls" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        className={`ccm-type-toggle ${p.isDefect ? 'defect' : 'normal'}`}
+                        onClick={() => toggleDefect(p.id)}
+                        title={p.isDefect ? 'Click to mark as Normal' : 'Click to mark as Defect'}
+                      >
+                        {p.isDefect ? (
+                          <>
+                            <WarningIcon style={{ width: 10, height: 10 }} />
+                            Defect
+                          </>
+                        ) : (
+                          <>
+                            <CheckIcon style={{ width: 10, height: 10 }} />
+                            Normal
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="ccm-chip-del"
+                        onClick={() => removePhoto(p.id)}
+                        title="Delete photo"
+                      >
+                        <TrashIcon style={{ width: 11, height: 11 }} />
+                      </button>
+                    </div>
+
+                    <div className="ccm-chip-desc-tag-wrap">
+                      {p.description ? (
+                        <span className="ccm-chip-desc-tag has-desc" title={`Description: ${p.description}`}>
+                          <EditIcon style={{ width: 9, height: 9 }} />
+                          <span>Description</span>
+                        </span>
+                      ) : (
+                        <span className="ccm-chip-desc-tag empty" title="Tap to add description">
+                          + Description
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Active Selected Photo Detail Card (Spacious Multi-line Description Editor) */}
+            {activePhoto && (
+              <div className="ccm-active-photo-panel">
+                <div className="ccm-active-header">
+                  <div className="ccm-active-meta">
+                    <span className="ccm-active-badge">
+                      Photo #{activeIndex + 1}
+                    </span>
+                    <span className="ccm-auto-save-hint">
+                      <CheckIcon style={{ width: 11, height: 11 }} /> Auto-saved
+                    </span>
+                  </div>
+
+                  <div className="ccm-active-type-toggle">
                     <button
                       type="button"
-                      className={`ccm-type-toggle ${p.isDefect ? 'defect' : 'normal'}`}
-                      onClick={() => toggleDefect(p.id)}
-                      title={p.isDefect ? 'Click to mark as Normal' : 'Click to mark as Defect'}
+                      className={`ccm-active-pill normal ${!activePhoto.isDefect ? 'active' : ''}`}
+                      onClick={() => toggleDefect(activePhoto.id)}
+                      title="Mark this photo as Normal"
                     >
-                      {p.isDefect ? (
-                        <>
-                          <WarningIcon style={{ width: 10, height: 10 }} />
-                          Defect
-                        </>
-                      ) : (
-                        <>
-                          <CheckIcon style={{ width: 10, height: 10 }} />
-                          Normal
-                        </>
-                      )}
+                      <CheckIcon style={{ width: 11, height: 11 }} />
+                      Normal
                     </button>
                     <button
                       type="button"
-                      className="ccm-chip-del"
-                      onClick={() => removePhoto(p.id)}
-                      title="Delete photo"
+                      className={`ccm-active-pill defect ${activePhoto.isDefect ? 'active' : ''}`}
+                      onClick={() => toggleDefect(activePhoto.id)}
+                      title="Mark this photo as Defect"
                     >
-                      <TrashIcon style={{ width: 11, height: 11 }} />
+                      <WarningIcon style={{ width: 11, height: 11 }} />
+                      Defect
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
+
+                <div className="ccm-active-desc-group">
+                  <div className="ccm-active-desc-label-row">
+                    <EditIcon style={{ width: 11, height: 11 }} />
+                    <span>Description</span>
+                  </div>
+                  <textarea
+                    id="ccm-active-desc-input"
+                    className="ccm-active-desc-textarea"
+                    rows={2}
+                    placeholder="Add description or observations for this photo..."
+                    value={activePhoto.description || ''}
+                    onChange={(e) => updatePhotoDescription(activePhoto.id, e.target.value)}
+                    onBlur={(e) => {
+                      if (descDebounceTimerRef.current) {
+                        clearTimeout(descDebounceTimerRef.current);
+                      }
+                      void localWrite('photos', activePhoto.id, { description: e.target.value.trim() });
+                    }}
+                    maxLength={500}
+                  />
+                  <div className="ccm-active-desc-footer">
+                    <span className="ccm-char-count">
+                      {(activePhoto.description || '').length} / 500
+                    </span>
+                    {activePhoto.description && (
+                      <button
+                        type="button"
+                        className="ccm-clear-active-desc-btn"
+                        onClick={() => {
+                          if (descDebounceTimerRef.current) {
+                            clearTimeout(descDebounceTimerRef.current);
+                          }
+                          updatePhotoDescription(activePhoto.id, '');
+                          void localWrite('photos', activePhoto.id, { description: '' });
+                        }}
+                        aria-label="Clear description"
+                        title="Clear description"
+                      >
+                        <XIcon style={{ width: 10, height: 10 }} />
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

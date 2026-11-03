@@ -40,6 +40,42 @@ app.http('vessels-upsert', {
   handler: vesselsUpsertHandler,
 });
 
+export const vesselsUpdateParticularsHandler = handler(async (req) => {
+    const user = await requireUser(req);
+    const vesselId = req.params.id;
+    if (!vesselId) throw fail('VALIDATION', 'Vessel id is required');
+    const b = await jsonBody<{ particulars?: Record<string, string> }>(req);
+    const particulars = Object.fromEntries(
+      Object.entries(b.particulars ?? {}).filter(
+        ([k, v]) => (VESSEL_PARTICULAR_KEYS as readonly string[]).includes(k) && v != null && String(v).trim() !== ''));
+    if (Object.keys(particulars).length === 0) throw fail('VALIDATION', 'No particulars provided');
+
+    if (!can(user, 'vessels.manage')) {
+      // Let the creator or authorized reviewers/managers of a Pre Purchase / Take Over report fill in
+      // the vessel's missing technical particulars from the report export flow, without granting full vessel-management rights.
+      const allowed = await pool.query(
+        `select 1 from inspections
+          where vessel_id = $1 and report_category <> 'inspection' and deleted_at is null
+            and (created_by = $2 or $1 = any($3::uuid[]) or $4 in ('techManager', 'director', 'admin')) limit 1`,
+        [vesselId, user.id, (user.vesselIds ?? []).filter(Boolean), user.role]);
+      if (!allowed.rowCount) throw fail('FORBIDDEN', 'You do not have permission to update this vessel');
+    }
+
+    const r = await pool.query(
+      `update vessels set particulars = coalesce(particulars, '{}'::jsonb) || $2::jsonb,
+         updated_at = now(),
+         row_version = nextval('sync_seq')
+         where id = $1 and deleted_at is null
+       returning *`,
+      [vesselId, JSON.stringify(particulars)]);
+    if (!r.rowCount) throw fail('NOT_FOUND', 'Vessel not found');
+    return camel(r.rows[0]);
+  });
+app.http('vessels-update-particulars', {
+  route: 'vessels/{id}/particulars', methods: ['POST', 'PATCH', 'OPTIONS'], authLevel: 'anonymous',
+  handler: vesselsUpdateParticularsHandler,
+});
+
 export const vesselsDeleteHandler = handler(async (req) => {
     const user = await requireUser(req);
     if (!can(user, 'vessels.manage')) throw fail('FORBIDDEN', 'Only an Admin can manage vessels');

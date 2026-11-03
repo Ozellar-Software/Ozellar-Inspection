@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { can, isEditable, ROLE_LABELS, STATUS_LABELS, type ApprovalEvent, type InspectionStatus, type User } from '@ozellar/shared';
+import { can, isEditable, ROLE_LABELS, STATUS_LABELS, type ApprovalEvent, type InspectionStatus, type User, type Vessel, type VesselParticularKey } from '@ozellar/shared';
 import { api, ApiError } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite, localDelete } from '../../offline/outbox';
@@ -12,6 +12,7 @@ import { queueApprovalAction } from '../../offline/approvalQueue';
 import { BackIcon, WarningIcon, LockIcon, CheckIcon, UploadIcon, XIcon, EyeIcon } from '../../icons';
 import { loadReportData, type ReportData } from './reportData';
 import { generateInspectionPdf } from './pdf';
+import { VesselParticularsModal } from './VesselParticularsModal';
 import './ReportPage.css';
 
 interface Approver { id: string; email: string; name: string; designation: string; role: string }
@@ -19,6 +20,10 @@ interface HistoryResponse { approval: { stage: string; tmUserId: string | null; 
 
 function fmtDateTime(d: string): string {
   return new Date(d).toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function hasVesselParticulars(p?: Partial<Record<VesselParticularKey, string>> | null): boolean {
+  return !!p && Object.values(p).some((v) => !!v && String(v).trim() !== '');
 }
 
 // ─── Mock report stats (shown when real report hasn't loaded yet) ──────────
@@ -151,6 +156,106 @@ function actionColor(action: string) {
   return { bg: 'var(--na-tint)', text: 'var(--na)', border: 'var(--na)' };
 }
 
+// ─── Observation photo strip ───────────────────────────────────────────────
+function ObservationPhotoStrip({
+  photoIds,
+  onPhotoClick,
+}: {
+  photoIds: string[];
+  onPhotoClick: (photoId: string) => void;
+}) {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [meta, setMeta] = useState<Record<string, { isDefect?: boolean; description?: string }>>({});
+
+  useEffect(() => {
+    let alive = true;
+    for (const id of photoIds) {
+      if (!urls[id]) {
+        void photoSrc(id).then((src) => {
+          if (alive && src) setUrls((prev) => ({ ...prev, [id]: src }));
+        });
+      }
+      if (!meta[id]) {
+        void db.photos.get(id).then((p) => {
+          if (alive && p) {
+            setMeta((prev) => ({
+              ...prev,
+              [id]: { isDefect: !!p.isDefect, description: p.description },
+            }));
+          }
+        });
+      }
+    }
+    return () => { alive = false; };
+  }, [photoIds]);
+
+  if (!photoIds || photoIds.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', gap: 8, marginTop: 8, overflowX: 'auto', paddingBottom: 2 }}>
+      {photoIds.map((id, pIdx) => {
+        const src = urls[id];
+        const isDef = !!meta[id]?.isDefect;
+        const desc = meta[id]?.description;
+        return (
+          <div
+            key={id}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPhotoClick(id);
+            }}
+            title={desc ? `${desc} (${isDef ? 'Defect' : 'Normal'} photo - click to view)` : `${isDef ? 'Defect' : 'Normal'} photo - click to view`}
+            style={{
+              position: 'relative',
+              width: 62,
+              height: 62,
+              borderRadius: 6,
+              overflow: 'hidden',
+              background: '#f1f5f9',
+              border: isDef ? '2px solid #ef4444' : '1.5px solid #cbd5e1',
+              boxShadow: isDef ? '0 0 0 1px #ef4444, 0 2px 6px rgba(239, 68, 68, 0.25)' : '0 1px 3px rgba(0,0,0,0.06)',
+              flexShrink: 0,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {src ? (
+              <img src={src} alt={`Photo ${pIdx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <CameraIcon color="#94a3b8" />
+            )}
+            {isDef && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  right: 2,
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  borderRadius: 3,
+                  padding: '1px 3px',
+                  fontSize: 7.5,
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  zIndex: 2,
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
+                }}
+              >
+                <WarningIcon style={{ width: 7, height: 7 }} />
+                DEFECT
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 import { useCurrentUser } from '../../auth/useCurrentUser';
 
 export function ReportPage() {
@@ -217,6 +322,20 @@ export function ReportPage() {
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isCoverViewerOpen, setIsCoverViewerOpen] = useState(false);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const [viewingObservationPhotoId, setViewingObservationPhotoId] = useState<string | null>(null);
+  const [viewingObservationPhotoUrl, setViewingObservationPhotoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!viewingObservationPhotoId) {
+      setViewingObservationPhotoUrl(null);
+      return;
+    }
+    let alive = true;
+    void photoSrc(viewingObservationPhotoId).then((src) => {
+      if (alive && src) setViewingObservationPhotoUrl(src);
+    });
+    return () => { alive = false; };
+  }, [viewingObservationPhotoId]);
 
   useEffect(() => {
     let alive = true;
@@ -274,6 +393,11 @@ export function ReportPage() {
     [inspectionId],
   ) ?? null;
   const [exporting, setExporting] = useState(false);
+  const [particularsModalOpen, setParticularsModalOpen] = useState(false);
+  const [particularsDraft, setParticularsDraft] = useState<Partial<Record<VesselParticularKey, string>>>({});
+  const [savingParticulars, setSavingParticulars] = useState(false);
+  const [particularsError, setParticularsError] = useState<string | null>(null);
+  const pendingExportModeRef = useRef<'full' | 'photo'>('full');
 
   const isMock = !inspection && inspectionId?.startsWith('mock');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -308,10 +432,8 @@ export function ReportPage() {
     photoSectionExtraFindings: 0,
   };
 
-  async function onExportPdf(overrideMode?: 'full' | 'photo') {
-    if (!canExport) return;
+  async function runExportPdf(mode: 'full' | 'photo', vesselOverride?: Vessel) {
     setExporting(true); setError(null);
-    const mode = overrideMode || reportMode;
     try {
       let exportData = report;
       if (!exportData && isMock) {
@@ -319,11 +441,13 @@ export function ReportPage() {
           inspection: dispInspection,
           sections: [],
           observations: [],
-          stats: EMPTY_STATS
+          stats: EMPTY_STATS,
+          photos: [],
         };
       }
       const blob = await generateInspectionPdf({
         ...exportData!,
+        vessel: vesselOverride ?? exportData!.vessel,
         approvalHistory: history.data?.history,
         reportType: mode === 'photo' ? 'photo_only' : 'full',
       });
@@ -339,6 +463,52 @@ export function ReportPage() {
       setError('Could not generate the PDF — try again.');
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function onExportPdf(overrideMode?: 'full' | 'photo') {
+    if (!canExport) return;
+    const mode = overrideMode || reportMode;
+
+    // Pre Purchase / Take Over reports lead with Vessel Technical Particulars — prompt for them
+    // once up front instead of letting the PDF go out with a "not registered" placeholder.
+    if (isSpecialCategory && report?.vessel && !hasVesselParticulars(report.vessel.particulars)) {
+      setParticularsDraft(report.vessel.particulars ?? {});
+      pendingExportModeRef.current = mode;
+      setParticularsError(null);
+      setParticularsModalOpen(true);
+      return;
+    }
+
+    await runExportPdf(mode);
+  }
+
+  async function onSaveVesselParticulars() {
+    const vessel = report?.vessel;
+    if (!vessel?.id) { setParticularsModalOpen(false); return; }
+    if (!navigator.onLine) {
+      setParticularsError("You're offline — connect to save, or use Skip & Download to export without saving.");
+      return;
+    }
+    setSavingParticulars(true); setParticularsError(null);
+    try {
+      const cleaned = Object.fromEntries(
+        Object.entries(particularsDraft).filter(([, v]) => !!v && String(v).trim() !== ''));
+      await api(`/vessels/${vessel.id}/particulars`, { method: 'POST', body: { particulars: cleaned } });
+      const mergedVessel: Vessel = {
+        ...vessel,
+        particulars: { ...(vessel.particulars ?? {}), ...cleaned },
+        updatedAt: new Date().toISOString(),
+      };
+      // Write straight to the local cache (no outbox entry): the server already has this change via the
+      // particulars endpoint above, and queuing a full-vessel sync mutation would need vessels.manage.
+      await db.vessels.put(mergedVessel);
+      setParticularsModalOpen(false);
+      await runExportPdf(pendingExportModeRef.current, mergedVessel);
+    } catch (err: any) {
+      setParticularsError(err instanceof ApiError ? err.message : (err?.message || 'Failed to save vessel particulars'));
+    } finally {
+      setSavingParticulars(false);
     }
   }
 
@@ -1097,7 +1267,7 @@ export function ReportPage() {
                   accentText={stats.photoSectionDefectCount ? "var(--bad)" : "var(--muted)"} />
               </div>
               <div className="stats-grid-bottom" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                <StatTile value={stats.photoSectionExtraFindings ?? 0} label="Extra Observations"
+                <StatTile value={stats.photoSectionExtraFindings ?? 0} label="Section Observations"
                   icon={<ListIcon color="var(--accent-dark)" />}
                   accentBg="var(--accent-tint)" accentText="var(--accent-dark)" />
                 <StatTile value={STATUS_LABELS[dispInspection.status as import('@ozellar/shared').InspectionStatus] || dispInspection.status} label="Inspection State"
@@ -1128,7 +1298,7 @@ export function ReportPage() {
                 <StatTile value={stats.photoCount} label="Photos"
                   icon={<CameraIcon color="#1F5C99" />}
                   accentBg="#E6F0FA" accentText="#1F5C99" />
-                <StatTile value={stats.extraFindings} label="Extra Findings"
+                <StatTile value={stats.extraFindings} label="Section Observations"
                   icon={<ListIcon color="var(--accent-dark)" />}
                   accentBg="var(--accent-tint)" accentText="var(--accent-dark)" />
               </div>
@@ -1217,6 +1387,25 @@ export function ReportPage() {
               <img
                 src={coverPhotoUrl}
                 alt="Inspection cover"
+                className="cover-photo-viewer-img"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
+
+          {viewingObservationPhotoUrl && (
+            <div className="cover-photo-viewer-backdrop" onClick={() => setViewingObservationPhotoId(null)}>
+              <button
+                type="button"
+                className="cover-photo-viewer-close"
+                aria-label="Close"
+                onClick={() => setViewingObservationPhotoId(null)}
+              >
+                <XIcon width={18} height={18} />
+              </button>
+              <img
+                src={viewingObservationPhotoUrl}
+                alt="Observation photo"
                 className="cover-photo-viewer-img"
                 onClick={(e) => e.stopPropagation()}
               />
@@ -1731,40 +1920,58 @@ export function ReportPage() {
         )}
 
         {/* ── Observations list ── */}
-        <div className="report-section-header" style={{ margin: '8px 16px 10px' }}>
-          Observations ({report?.observations.length ?? 0})
-        </div>
-        {!report?.observations.length ? (
-          <p className="extras-hint report-empty-hint" style={{ margin: '0 16px 16px' }}>No observations recorded.</p>
-        ) : report.observations.map((o, i) => (
-          <div
-            key={i}
-            className="observation-row-card"
-            onClick={() => nav(`/inspections/${inspectionId}/sections/${o.sectionId}`)}
-            style={{
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-              borderLeft: '4px solid var(--bad)',
-              borderRadius: 'var(--radius)',
-              padding: '12px 14px',
-              cursor: 'pointer',
-              boxShadow: '0 1px 4px rgba(11,33,56,0.05)',
-              transition: 'box-shadow 0.15s ease',
-            }}
-            onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 3px 12px rgba(11,33,56,0.10)'}
-            onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(11,33,56,0.05)'}
-          >
-            <div style={{
-              fontSize: 10.5, fontWeight: 800, color: 'var(--bad)',
-              textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 4,
-            }}>
-              {o.sectionName} — {o.ref}
-            </div>
-            <div style={{ fontSize: 13.5, color: 'var(--ink)' }}>
-              {o.text || '(no description)'}
-            </div>
-          </div>
-        ))}
+        {(() => {
+          const photoSectionIdSet = new Set(
+            report?.sections.filter((s) => s.section.photoOnly).map((s) => s.section.id) ?? []
+          );
+          const dispObservations = (report?.observations ?? []).filter((o) =>
+            reportMode === 'photo' ? photoSectionIdSet.has(o.sectionId) : true
+          );
+          return (
+            <>
+              <div className="report-section-header" style={{ margin: '8px 16px 10px' }}>
+                Observations ({dispObservations.length})
+              </div>
+              {!dispObservations.length ? (
+                <p className="extras-hint report-empty-hint" style={{ margin: '0 16px 16px' }}>No observations recorded.</p>
+              ) : dispObservations.map((o, i) => (
+                <div
+                  key={i}
+                  className="observation-row-card"
+                  onClick={() => nav(`/inspections/${inspectionId}/sections/${o.sectionId}`)}
+                  style={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderLeft: '4px solid var(--bad)',
+                    borderRadius: 'var(--radius)',
+                    padding: '12px 14px',
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 4px rgba(11,33,56,0.05)',
+                    transition: 'box-shadow 0.15s ease',
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 3px 12px rgba(11,33,56,0.10)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(11,33,56,0.05)'}
+                >
+                  <div style={{
+                    fontSize: 11, fontWeight: 800, color: 'var(--bad)',
+                    letterSpacing: '0.3px', marginBottom: 4,
+                  }}>
+                    {o.ref.startsWith('Observation') ? `${o.ref} • ${o.sectionName}` : `${o.sectionName} — Question ${o.ref}`}
+                  </div>
+                  <div style={{ fontSize: 13.5, color: 'var(--ink)' }}>
+                    {o.text || '(no description)'}
+                  </div>
+                  {o.photoIds && o.photoIds.length > 0 && (
+                    <ObservationPhotoStrip
+                      photoIds={o.photoIds}
+                      onPhotoClick={(pId) => setViewingObservationPhotoId(pId)}
+                    />
+                  )}
+                </div>
+              ))}
+            </>
+          );
+        })()}
 
         {/* ── Approval history ── */}
         <div className="report-section-header" style={{
@@ -1847,6 +2054,27 @@ export function ReportPage() {
 
         <div style={{ height: 24 }} />
       </div>
+
+      <VesselParticularsModal
+        isOpen={particularsModalOpen}
+        vesselName={report?.vessel?.name || dispInspection.vesselName}
+        reportCategoryLabel={isSpecialTakeOver ? 'Take Over' : 'Pre Purchase'}
+        values={particularsDraft}
+        onChange={(key, value) => setParticularsDraft((prev) => ({ ...prev, [key]: value }))}
+        saving={savingParticulars}
+        error={particularsError}
+        onCancel={() => { setParticularsModalOpen(false); setParticularsError(null); }}
+        onSkip={() => {
+          setParticularsModalOpen(false);
+          const draftCleaned = Object.fromEntries(
+            Object.entries(particularsDraft).filter(([, v]) => !!v && String(v).trim() !== ''));
+          const tempVessel: Vessel | undefined = report?.vessel
+            ? { ...report.vessel, particulars: { ...(report.vessel.particulars ?? {}), ...draftCleaned } }
+            : undefined;
+          void runExportPdf(pendingExportModeRef.current, tempVessel);
+        }}
+        onSave={() => void onSaveVesselParticulars()}
+      />
     </>
   );
 }

@@ -209,6 +209,7 @@ create table if not exists photos (
   is_defect              boolean not null default false,
   position               int not null default 0,
   uploaded               boolean not null default false,   -- true once the blob upload is committed
+  description            text not null default '',
   created_by             uuid references users(id),
   created_at             timestamptz not null default now(),
   updated_at             timestamptz not null default now(),
@@ -223,6 +224,7 @@ create table if not exists photos (
   )
 );
 create index if not exists photos_insp_idx on photos (inspection_id);
+alter table photos add column if not exists description text not null default '';
 
 -- ---------- Approvals ----------
 create table if not exists approvals (

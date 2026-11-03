@@ -45,11 +45,11 @@ app.http('photos-upload-url', {
 export const photosCommitHandler = handler(async (req) => {
   const user = await requireUser(req);
   const photoId = req.params.id;
+  const b = (await jsonBody<Record<string, any>>(req).catch(() => ({}))) as Record<string, any>;
   let p = (await pool.query(`select id, inspection_id, vessel_id, blob_path from photos where id = $1`, [photoId])).rows[0];
 
   // Self-heal: If metadata row hasn't synced via outbox yet, upsert row from client fallback payload
   if (!p) {
-    const b = (await jsonBody<Record<string, any>>(req).catch(() => ({}))) as Record<string, any>;
     const inspectionId = b.inspectionId || null;
     const vesselId = b.vesselId || null;
     if (inspectionId || vesselId) {
@@ -59,15 +59,19 @@ export const photosCommitHandler = handler(async (req) => {
       await pool.query(
         `insert into photos (
            id, inspection_id, vessel_id, target, inspection_section_id, response_id, finding_id,
-           is_defect, position, blob_path, content_type, size_bytes, uploaded, created_by, updated_at, row_version
+           is_defect, position, blob_path, content_type, size_bytes, uploaded, created_by, updated_at, row_version, description
          ) values (
-           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'image/jpeg', $11, true, $12, now(), nextval('sync_seq')
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'image/jpeg', $11, true, $12, now(), nextval('sync_seq'), $13
          )
-         on conflict (id) do update set uploaded = true, updated_at = now(), row_version = nextval('sync_seq')`,
+         on conflict (id) do update set
+           uploaded = true,
+           description = case when excluded.description <> '' then excluded.description else photos.description end,
+           updated_at = now(),
+           row_version = nextval('sync_seq')`,
         [
           photoId, inspectionId, vesselId, b.target || 'question',
           b.inspectionSectionId || null, b.responseId || null, b.findingId || null,
-          !!b.isDefect, Number(b.position || 0), blobPath, Number(b.sizeBytes || 0), user.id,
+          !!b.isDefect, Number(b.position || 0), blobPath, Number(b.sizeBytes || 0), user.id, String(b.description || '')
         ]
       );
       return { ok: true };
@@ -77,7 +81,16 @@ export const photosCommitHandler = handler(async (req) => {
 
   await checkEditable(user, p.inspection_id, p.vessel_id);
   if (!(await blobExists(p.blob_path))) throw fail('VALIDATION', 'Upload not found');
-  await pool.query(`update photos set uploaded = true, updated_at = now(), row_version = nextval('sync_seq') where id = $1`, [p.id]);
+  const descParam = typeof b.description === 'string' && b.description.trim() !== '' ? b.description.trim() : null;
+  await pool.query(
+    `update photos
+        set uploaded = true,
+            description = coalesce($2, description),
+            updated_at = now(),
+            row_version = nextval('sync_seq')
+      where id = $1`,
+    [p.id, descParam]
+  );
   return { ok: true };
 });
 app.http('photos-commit', {
@@ -107,6 +120,11 @@ export const photosUploadDirectHandler = handler(async (req) => {
   const findingId = req.headers.get('x-finding-id') || null;
   const isDefect = req.headers.get('x-is-defect') === 'true';
   const position = Number(req.headers.get('x-position') || 0);
+  const rawDesc = req.headers.get('x-description');
+  let description = '';
+  if (rawDesc) {
+    try { description = decodeURIComponent(rawDesc); } catch { description = rawDesc; }
+  }
 
   await checkEditable(user, inspectionId, vesselId);
 
@@ -119,14 +137,15 @@ export const photosUploadDirectHandler = handler(async (req) => {
   await pool.query(
     `insert into photos (
        id, inspection_id, vessel_id, target, inspection_section_id, response_id, finding_id,
-       is_defect, position, blob_path, content_type, size_bytes, uploaded, created_by, updated_at, row_version
+       is_defect, position, blob_path, content_type, size_bytes, uploaded, created_by, updated_at, row_version, description
      ) values (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'image/jpeg', $11, true, $12, now(), nextval('sync_seq')
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'image/jpeg', $11, true, $12, now(), nextval('sync_seq'), $13
      )
      on conflict (id) do update set
        uploaded = true,
        blob_path = excluded.blob_path,
        size_bytes = excluded.size_bytes,
+       description = case when excluded.description <> '' then excluded.description else photos.description end,
        updated_at = now(),
        row_version = nextval('sync_seq')`,
     [
@@ -140,8 +159,7 @@ export const photosUploadDirectHandler = handler(async (req) => {
       isDefect,
       position,
       blobPath,
-      buffer.length,
-      user.id,
+      buffer.length, user.id, description
     ]
   );
 

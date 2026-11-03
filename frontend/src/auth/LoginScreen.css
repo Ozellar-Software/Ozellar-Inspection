@@ -754,10 +754,10 @@ body:has(.login-root) {
   width: 100%; min-height: 56px; resize: vertical; border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 10px 11px; font-size: 14px; color: var(--ink); background: #fff; font-family: inherit;
 }
-.observation-block { margin-top: 12px; padding: 12px; background: #F7F9FA; border: 1px solid var(--border); border-radius: 8px; }
+.observation-block { margin-top: 12px; padding: 0 16px 14px; background: transparent; border: none; }
 .observation-block .seg-label { margin-top: 0; }
 .corrective-preventive-block {
-  margin-top: 12px; padding: 12px; background: var(--bad-tint); border: 1px solid var(--bad); border-radius: 8px;
+  margin-top: 10px; padding: 0 16px 14px; background: transparent; border: none;
 }
 .corrective-preventive-block .seg-label { margin-top: 0; color: var(--bad); }
 .corrective-preventive-block .seg-label:not(:first-child) { margin-top: 12px; }

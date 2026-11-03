@@ -115,11 +115,11 @@ export function SectionDetailPage() {
   const photosByFinding = new Map<string, Photo[]>();
   const sectionPhotos: Photo[] = [];
   for (const p of photos) {
-    if (p.target === 'question' && p.responseId)
-      (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p);
-    else if (p.target === 'finding' && p.findingId)
+    if (p.findingId)
       (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p);
-    else if (p.target === 'section' && p.inspectionSectionId === sectionId)
+    else if (p.responseId)
+      (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p);
+    else if (p.inspectionSectionId === sectionId)
       sectionPhotos.push(p);
   }
 
@@ -143,7 +143,7 @@ export function SectionDetailPage() {
   async function addFinding() {
     const id = crypto.randomUUID();
     await localWrite('findings', id, {
-      inspectionId, inspectionSectionId: sectionId, text: '', answer: null,
+      inspectionId, inspectionSectionId: sectionId, text: '', answer: 'no',
       correctiveAction: '', preventiveAction: '', position: findings.length,
     });
   }
@@ -434,10 +434,10 @@ export function SectionDetailPage() {
           </div>
         )}
 
-        {/* Additional findings heading */}
+        {/* Observations & Findings heading */}
         <div className="findings-header">
           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.5px', flex: 1 }}>
-            Additional Findings
+            Observations & Findings
           </div>
           {findings.length > 0 && (
             <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'var(--warn-tint)', color: 'var(--warn)' }}>
@@ -451,10 +451,12 @@ export function SectionDetailPage() {
             : 'Anything not covered by the checklist above — describe it and mark Yes/No.'}
         </p>
 
-        {findings.map((f) => (
+        {findings.map((f, idx) => (
           <FindingCard
             key={f.id}
             finding={f}
+            index={idx + 1}
+            sectionName={dispSection.name}
             photos={photosByFinding.get(f.id) ?? []}
             locked={locked}
             allSections={dispAllSections}

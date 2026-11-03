@@ -69,6 +69,8 @@
 
 .qcard .observation-block,
 .qcard .corrective-preventive-block {
+  background: transparent;
+  border: none;
   padding: 0 16px 14px;
 }
 .qcard .observation-block textarea,

@@ -287,6 +287,166 @@
   animation: ivmFadeIn 0.2s ease-out;
 }
 
+/* ── Photo Description Bar ── */
+.ivm-desc-bar {
+  padding: 8px 20px;
+  background: rgba(15, 23, 42, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+}
+
+.ivm-desc-display-wrap {
+  width: 100%;
+  max-width: 840px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ivm-desc-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #f1f5f9;
+}
+
+.ivm-desc-content.clickable {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.ivm-desc-content.clickable:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ivm-desc-label {
+  font-weight: 700;
+  color: #94a3b8;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: none;
+}
+
+.ivm-desc-text {
+  color: #f8fafc;
+  word-break: break-word;
+}
+
+.ivm-desc-placeholder {
+  color: #64748b;
+  font-style: italic;
+}
+
+.ivm-desc-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #34d399;
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 8px;
+  flex: none;
+  animation: ivmFadeIn 0.2s ease;
+}
+
+.ivm-desc-edit-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  flex: none;
+  transition: all 0.15s ease;
+}
+
+.ivm-desc-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.ivm-desc-edit-wrap {
+  width: 100%;
+  max-width: 840px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ivm-desc-input {
+  flex: 1;
+  background: rgba(2, 6, 23, 0.85);
+  border: 1.5px solid #38bdf8;
+  color: #ffffff;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
+.ivm-desc-input::placeholder {
+  color: #64748b;
+}
+
+.ivm-desc-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.ivm-desc-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.ivm-desc-btn.save {
+  background: #0284c7;
+  color: #fff;
+}
+
+.ivm-desc-btn.save:hover:not(:disabled) {
+  background: #0369a1;
+}
+
+.ivm-desc-btn.cancel {
+  background: rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+}
+
+.ivm-desc-btn.cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.ivm-desc-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Bottom Action Toolbar ── */
 .ivm-bottom-bar {
   display: flex;

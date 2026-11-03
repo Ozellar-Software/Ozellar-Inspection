@@ -63,6 +63,7 @@ export async function ensureSchema(): Promise<void> {
           `alter table if exists vessels add column if not exists registration_status text not null default 'registered';`,
           `alter table if exists vessels add column if not exists created_by uuid;`,
           `alter table if exists inspections add column if not exists report_category text not null default 'inspection';`,
+          `alter table if exists photos add column if not exists description text not null default '';`,
           `delete from user_vessels where vessel_id in (select id from vessels where deleted_at is not null or registration_status = 'unregistered');`,
           `delete from user_vessels where vessel_id not in (select id from vessels);`,
           `update vessels v set created_by = i.created_by from inspections i where v.id = i.vessel_id and v.created_by is null and i.created_by is not null;`,

@@ -1,4 +1,4 @@
-import type { ApprovalEvent, Finding, Inspection, InspectionQuestion, InspectionSection, Response, Vessel } from '@ozellar/shared';
+import type { ApprovalEvent, Finding, Inspection, InspectionQuestion, InspectionSection, Photo, Response, Vessel } from '@ozellar/shared';
 import { db } from '../../offline/db';
 
 export type QuestionState = 'ok' | 'bad' | 'na' | 'pending';
@@ -12,8 +12,7 @@ export function questionState(r?: Response): QuestionState {
 }
 export function findingState(f: Finding): QuestionState {
   if (f.answer === 'yes') return 'ok';
-  if (f.answer === 'no') return 'bad';
-  return 'pending';
+  return 'bad';
 }
 
 export interface SectionReport {
@@ -39,6 +38,7 @@ export interface ReportStats {
 }
 
 export interface Observation {
+  id?: string;
   kind: 'question' | 'finding';
   sectionId: string;
   sectionName: string;
@@ -47,6 +47,7 @@ export interface Observation {
   remarks: string;
   correctiveAction: string;
   preventiveAction: string;
+  photoIds: string[];
 }
 
 export interface ReportData {
@@ -56,6 +57,7 @@ export interface ReportData {
   stats: ReportStats;
   observations: Observation[];
   approvalHistory?: ApprovalEvent[];
+  photos: Photo[];
 }
 
 export async function loadReportData(inspectionId: string): Promise<ReportData | null> {
@@ -75,9 +77,9 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
   const photosByFinding = new Map<string, string[]>();
   const photosBySection = new Map<string, string[]>();
   for (const p of photos) {
-    if (p.target === 'question' && p.responseId) (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p.id);
-    else if (p.target === 'finding' && p.findingId) (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p.id);
-    else if (p.target === 'section' && p.inspectionSectionId) (photosBySection.get(p.inspectionSectionId) ?? photosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
+    if (p.findingId) (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p.id);
+    else if (p.responseId) (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p.id);
+    else if (p.inspectionSectionId) (photosBySection.get(p.inspectionSectionId) ?? photosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
   }
 
   const defectPhotoCount = photos.filter((p) => p.isDefect).length;
@@ -118,29 +120,39 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
         else if (state === 'bad') stats.observations++;
         else if (state === 'na') stats.na++;
         else stats.pending++;
+        const qPhotoIds = photosByResponse.get(response?.id ?? '') ?? [];
         if (state === 'bad') {
           observations.push({
+            id: response?.id,
             kind: 'question', sectionId: section.id, sectionName: section.name, ref: question.ref, text: question.text,
             remarks: response?.remarks ?? '', correctiveAction: response?.correctiveAction ?? '', preventiveAction: response?.preventiveAction ?? '',
+            photoIds: qPhotoIds,
           });
         }
       }
       return { question, response, state, photoIds: photosByResponse.get(response?.id ?? '') ?? [] };
     });
 
-    const fRows = sectionFindings.map((finding) => {
+    const fRows = sectionFindings.map((finding, fIdx) => {
       const state = findingState(finding);
+      const fPhotoIds = photosByFinding.get(finding.id) ?? [];
       if (state === 'bad') {
         observations.push({
-          kind: 'finding', sectionId: section.id, sectionName: section.name, ref: 'Extra', text: finding.text,
+          id: finding.id,
+          kind: 'finding', sectionId: section.id, sectionName: section.name, ref: `Observation ${fIdx + 1}`, text: finding.text,
           remarks: '', correctiveAction: finding.correctiveAction, preventiveAction: finding.preventiveAction,
+          photoIds: fPhotoIds,
         });
       }
-      return { finding, state, photoIds: photosByFinding.get(finding.id) ?? [] };
+      return { finding, state, photoIds: fPhotoIds };
     });
 
     sections.push({ section, questions: qRows, findings: fRows, sectionPhotoIds: photosBySection.get(section.id) ?? [] });
   }
 
-  return { inspection, vessel, sections, stats, observations };
+  stats.observations = observations.length;
+  stats.extraFindings = findings.filter((f) => f.answer !== 'yes').length;
+  stats.photoSectionExtraFindings = observations.filter((o) => photoSectionIdSet.has(o.sectionId)).length;
+
+  return { inspection, vessel, sections, stats, observations, photos };
 }

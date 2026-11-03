@@ -259,7 +259,14 @@ class Doc {
 export async function generateInspectionPdf(data: ReportData & { reportType?: 'full' | 'photo_only' }): Promise<Blob> {
   const { inspection, vessel, sections = [], observations = [], stats, approvalHistory = [] } = data;
   const isPhotoOnly = data.reportType === 'photo_only';
+  const photoSectionsOnly = sections.filter((s) => !!s.section.photoOnly);
   const doc = new Doc();
+
+  const photoMap = new Map((data.photos ?? []).map((p) => [p.id, p]));
+  const getPhotoDoc = async (id?: string | null) => {
+    if (!id) return null;
+    return photoMap.get(id) ?? await db.photos.get(id).catch(() => null);
+  };
 
   const svgRingData = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg width="400" height="400" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ozellar-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f1592a" /><stop offset="100%" stopColor="#e04e22" /></linearGradient></defs><circle cx="50" cy="50" r="36" fill="none" stroke="url(#ozellar-grad)" strokeWidth="20" /></svg>');
 
@@ -267,12 +274,218 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     loadAssetImage(brandLogoSrc)
   ]);
 
-  // Compute overall stats
-  const totalQuestions = stats?.totalQuestions || 0;
-  const satisfactory = stats?.satisfactory || 0;
-  const obsCount = stats?.observations || 0;
-  const photoCount = stats?.photoCount || 0;
-  const compliancePct = totalQuestions > 0 ? Math.round((satisfactory / totalQuestions) * 100) : 100;
+    // ─── High-Impact Professional Photo Card Renderer (Defect vs Normal UI) ──
+  const drawPhotoCard = (
+    px: number,
+    py: number,
+    pW: number,
+    pH: number,
+    img: LoadedImage | null,
+    docPhoto: any,
+    label: string
+  ) => {
+    const isDef = !!docPhoto?.isDefect;
+    const desc = docPhoto?.description ? String(docPhoto.description).trim() : '';
+
+    // 1. Outer Card Container
+    if (isDef) {
+      // DEFECT: High-visibility crimson border and soft tinted background
+      doc.roundedBox(px, py, pW, pH, [255, 245, 245], [220, 38, 38], 2);
+      // Solid crimson left accent stripe
+      doc.setFill([220, 38, 38]);
+      doc.pdf.rect(px, py, 3.2, pH, 'F');
+    } else {
+      // NORMAL: Crisp executive slate surface and subtle border
+      doc.roundedBox(px, py, pW, pH, SLATE_BG, BORDER_DARK, 2);
+      // Subtle navy left accent stripe
+      doc.setFill(NAVY);
+      doc.pdf.rect(px, py, 2.5, pH, 'F');
+    }
+
+    // 2. Image Viewport (Upper area of card)
+    const bannerH = 15;
+    const imgAreaH = pH - bannerH - 1;
+    if (img) {
+      const sc = Math.min((pW - 7) / img.w, (imgAreaH - 4) / img.h);
+      const iw = img.w * sc, ih = img.h * sc;
+      const imgX = px + 3.5 + (pW - 7 - iw) / 2;
+      const imgY = py + (imgAreaH - ih) / 2 + 1;
+      doc.pdf.addImage(img.dataUrl, 'JPEG', imgX, imgY, iw, ih);
+    } else {
+      doc.setFill(WHITE);
+      doc.pdf.rect(px + 4, py + 4, pW - 8, imgAreaH - 6, 'F');
+      doc.pdf.setFont('helvetica', 'italic').setFontSize(7);
+      doc.setTextColor(TEXT_MUTED);
+      doc.pdf.text('Photo stored offline / unavailable', px + (pW / 2), py + (imgAreaH / 2), { align: 'center' });
+    }
+
+    // 3. Top-Right Status Pill Badge with Defect Warning Icon
+    if (isDef) {
+      const badgeW = 24;
+      const badgeH = 5.2;
+      const badgeX = px + pW - badgeW - 2.5;
+      const badgeY = py + 2.5;
+
+      // Dark Crimson Fill
+      doc.setFill([220, 38, 38]);
+      doc.pdf.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.2, 1.2, 'F');
+
+      // Warning Triangle Icon (White polygon with inner exclamation point)
+      const triX = badgeX + 3.5;
+      const triY = badgeY + 1.1;
+      doc.setFill(WHITE);
+      doc.setDraw(WHITE);
+      doc.pdf.triangle(triX, triY, triX - 1.9, triY + 3.0, triX + 1.9, triY + 3.0, 'FD');
+      // Exclamation stem (crimson inside white triangle)
+      doc.setFill([220, 38, 38]);
+      doc.pdf.rect(triX - 0.25, triY + 1.0, 0.5, 1.0, 'F');
+      doc.pdf.circle(triX, triY + 2.5, 0.22, 'F');
+
+      // Badge Text
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
+      doc.setTextColor(WHITE);
+      doc.pdf.text('DEFECT', badgeX + 6.8, badgeY + 3.8);
+    } else {
+      const badgeW = 22;
+      const badgeH = 4.8;
+      const badgeX = px + pW - badgeW - 2.5;
+      const badgeY = py + 2.5;
+
+      // Soft Emerald Tint Fill
+      doc.setFill([236, 253, 245]);
+      doc.pdf.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.2, 1.2, 'F');
+      doc.setDraw([167, 243, 208]);
+      doc.pdf.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.2, 1.2, 'S');
+
+      // Badge Text
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.2);
+      doc.setTextColor([6, 95, 70]);
+      doc.pdf.text('[✓] NORMAL', badgeX + 2.5, badgeY + 3.5);
+    }
+
+    // 4. Bottom Sleek Caption & Multi-Line Description Banner
+    const capY = py + pH - bannerH;
+    if (isDef) {
+      doc.setFill([254, 242, 242]); // light red background
+      doc.pdf.rect(px + 3.2, capY, pW - 3.7, bannerH - 0.5, 'F');
+      doc.setDraw([252, 165, 165]); // soft red divider
+      doc.pdf.line(px + 3.2, capY, px + pW - 0.5, capY);
+    } else {
+      doc.setFill(WHITE);
+      doc.pdf.rect(px + 2.5, capY, pW - 3, bannerH - 0.5, 'F');
+      doc.setDraw(BORDER);
+      doc.pdf.line(px + 2.5, capY, px + pW - 0.5, capY);
+    }
+
+    // Line 1: Header Label (e.g. PHOTO #1) & Status Subtitle
+    const labelY = capY + 4.2;
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
+    if (isDef) {
+      doc.setTextColor([185, 28, 28]);
+      doc.pdf.text(label, px + 5, labelY);
+
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.2);
+      doc.setTextColor([220, 38, 38]);
+      const labelW = doc.pdf.getTextWidth(label);
+      doc.pdf.text('• DEFECT DETECTED', px + 6 + labelW, labelY);
+    } else {
+      doc.setTextColor(NAVY);
+      doc.pdf.text(label, px + 5, labelY);
+
+      doc.pdf.setFont('helvetica', 'normal').setFontSize(6.2);
+      doc.setTextColor(TEXT_MUTED);
+      const labelW = doc.pdf.getTextWidth(label);
+      doc.pdf.text('• Satisfactory', px + 6 + labelW, labelY);
+    }
+
+    // Line 2 & Line 3: Multi-Line Clean Description
+    const descMaxW = pW - 10;
+    if (desc) {
+      doc.pdf.setFont('helvetica', 'normal').setFontSize(6.6);
+      doc.setTextColor(isDef ? [127, 29, 29] : TEXT_DARK);
+      const splitLines = doc.pdf.splitTextToSize(desc, descMaxW) as string[];
+      if (splitLines.length > 0) {
+        doc.pdf.text(splitLines[0], px + 5, labelY + 4.2);
+      }
+      if (splitLines.length > 1) {
+        let line2 = splitLines[1];
+        if (splitLines.length > 2) {
+          while (line2.length > 5 && doc.pdf.getTextWidth(line2 + '...') > descMaxW) {
+            line2 = line2.slice(0, -1);
+          }
+          line2 += '...';
+        }
+        doc.pdf.text(line2, px + 5, labelY + 7.8);
+      }
+    } else {
+      doc.pdf.setFont('helvetica', 'italic').setFontSize(6.2);
+      doc.setTextColor(TEXT_FAINT);
+      doc.pdf.text(
+        isDef ? 'Defect identified during survey inspection' : 'Visual record logged for section survey',
+        px + 5,
+        labelY + 4.5
+      );
+    }
+  };
+
+  // ─── Professional 8-Image per Page Grid Renderer ──────────────────────────
+  const renderPhotoGrid8 = async (
+    photoIds: string[],
+    sectionName: string,
+    zone: string,
+    gridTitle = 'SECTION PHOTOGRAPHS & VISUAL EVIDENCE'
+  ) => {
+    if (!photoIds.length) return;
+
+    doc.ensure(30);
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(gridTitle, MARGIN_LEFT, doc.y + 4);
+    doc.y += 8;
+
+    const pW = (CONTENT_W - 6) / 2;
+    const pH = 53;
+    const rowH = pH + 4;
+    let photosOnCurrentPage = 0;
+
+    for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
+      if (photosOnCurrentPage >= 8 || doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
+        doc.newPage();
+        doc.sectionHeader(
+          sectionName,
+          zone || 'Visual Evidence',
+          `Photographs (Cont.)`
+        );
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+        doc.setTextColor(TEXT_MUTED);
+        doc.pdf.text(gridTitle + ' (CONTINUED)', MARGIN_LEFT, doc.y + 4);
+        doc.y += 8;
+        photosOnCurrentPage = 0;
+      }
+
+      const id1 = photoIds[pIdx];
+      const id2 = photoIds[pIdx + 1];
+
+      const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
+        loadImage(id1),
+        id2 ? loadImage(id2) : Promise.resolve(null),
+        getPhotoDoc(id1),
+        getPhotoDoc(id2),
+      ]);
+
+      const curRowY = doc.y;
+      if (img1) {
+        drawPhotoCard(MARGIN_LEFT, curRowY, pW, pH, img1, photoDoc1, `PHOTO #${pIdx + 1}`);
+        photosOnCurrentPage++;
+      }
+      if (img2) {
+        drawPhotoCard(MARGIN_LEFT + pW + 6, curRowY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2}`);
+        photosOnCurrentPage++;
+      }
+
+      doc.y += rowH;
+    }
+  };
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 1: EXECUTIVE COVER PAGE
@@ -430,65 +643,10 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   rowY = detailsY + 18;
   doc.kvLine('Lead Surveyor', inspection.inspector || '-', col2X, rowY, 36);
   rowY += 7.5;
-  doc.kvLine('Company', inspection.company || 'Ozellar Marine', col2X, rowY, 36);
-  rowY += 7.5;
-  const photoSectionsOnly = sections.filter((s) => !!s.section.photoOnly);
-  const photoSecsCount = photoSectionsOnly.length;
-  const photoSecPhotoCount = stats?.photoSectionPhotosCount ?? photoSectionsOnly.flatMap((s) => s.sectionPhotoIds).length;
-  const photoSecDefectCount = stats?.photoSectionDefectCount ?? 0;
-  const photoSecNormalCount = Math.max(photoSecPhotoCount - photoSecDefectCount, 0);
-  const photoSecObsCount = stats?.photoSectionExtraFindings ?? 0;
-
-  doc.kvLine('Checklist Scope', isPhotoOnly ? `${photoSecsCount} Photo Sections` : `${sections.length} Maritime Sections`, col2X, rowY, 36);
-  rowY += 7.5;
   doc.kvLine('Report Ref', `VIR-${inspection.id.slice(0, 8).toUpperCase()}`, col2X, rowY, 36);
 
-  // Executive Metric KPI Ribbon (4 Metric Cards)
-  const kpiY = detailsY + detailsH + 6;
-  const kpiH = 26;
-  const kpiW = (CONTENT_W - 3 * 4) / 4; // 4 cards with 4mm gap
-
-  const defectPhotoCount = stats?.defectPhotoCount || 0;
-  const normalPhotoCount = Math.max(photoCount - defectPhotoCount, 0);
-
-  const kpis = isPhotoOnly ? [
-    { label: 'Photos Audited', val: `${photoSecPhotoCount}`, sub: `${photoSecNormalCount} Normal Photos`, color: TEAL },
-    { label: 'Photo Sections', val: `${photoSecsCount}`, sub: 'Sections Surveyed', color: NAVY },
-    { label: 'Defect Photos', val: `${photoSecDefectCount}`, sub: photoSecDefectCount > 0 ? 'Deficiencies Flagged' : 'Zero Defect Photos', color: (photoSecDefectCount > 0 ? [239, 68, 68] : [16, 185, 129]) as [number, number, number] },
-    { label: 'Observations', val: `${photoSecObsCount}`, sub: photoSecObsCount > 0 ? 'Findings Logged' : 'No Extra Findings', color: [30, 122, 75] as [number, number, number] },
-  ] : [
-    { label: 'Total Audited', val: `${totalQuestions}`, sub: 'Checklist Items', color: NAVY },
-    { label: 'Compliance', val: `${compliancePct}%`, sub: `${satisfactory} Satisfactory`, color: [16, 185, 129] as [number, number, number] },
-    { label: 'Observations', val: `${obsCount}`, sub: obsCount > 0 ? 'Deficiencies Found' : 'Zero Deficiencies', color: (obsCount > 0 ? [239, 68, 68] : [16, 185, 129]) as [number, number, number] },
-    { label: 'Visual Evidence', val: `${photoCount}`, sub: 'Photos Captured', color: TEAL },
-  ];
-
-  kpis.forEach((kpi, idx) => {
-    const kx = MARGIN_LEFT + idx * (kpiW + 4);
-    doc.roundedBox(kx, kpiY, kpiW, kpiH, WHITE, BORDER, 2.5);
-
-    // Accent line at top of card
-    doc.setFill(kpi.color);
-    doc.pdf.rect(kx + 4, kpiY + 2.5, kpiW - 8, 1.2, 'F');
-
-    // Value
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(14.5);
-    doc.setTextColor(kpi.color);
-    doc.pdf.text(kpi.val, kx + 5, kpiY + 12);
-
-    // Label
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-    doc.setTextColor(TEXT_DARK);
-    doc.pdf.text(kpi.label, kx + 5, kpiY + 18);
-
-    // Subtitle
-    doc.pdf.setFont('helvetica', 'normal').setFontSize(6.5);
-    doc.setTextColor(TEXT_MUTED);
-    doc.pdf.text(kpi.sub, kx + 5, kpiY + 22.5);
-  });
-
   // Cover Footer Certification Box
-  const certY = kpiY + kpiH + 6;
+  const certY = detailsY + detailsH + 6;
   const certH = 17;
   doc.roundedBox(MARGIN_LEFT, certY, CONTENT_W, certH, TEAL_TINT, [180, 220, 225], 2);
 
@@ -642,58 +800,14 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         doc.y += remBoxH + 6;
       }
 
-      // Section Level Photos
+      // Section Level Photos (8 per page grid)
       if (s.sectionPhotoIds.length > 0) {
-        doc.ensure(30);
-        doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
-        doc.setTextColor(TEXT_MUTED);
-        doc.pdf.text('SECTION PHOTOGRAPHS & VISUAL EVIDENCE', MARGIN_LEFT, doc.y + 4);
-        doc.y += 8;
-
-        const pW = (CONTENT_W - 6) / 2;
-        const pH = 56;
-        for (let pIdx = 0; pIdx < s.sectionPhotoIds.length; pIdx += 2) {
-          doc.ensure(pH + 14);
-          const id1 = s.sectionPhotoIds[pIdx];
-          const id2 = s.sectionPhotoIds[pIdx + 1];
-
-          const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
-            loadImage(id1),
-            id2 ? loadImage(id2) : Promise.resolve(null),
-            db.photos.get(id1).catch(() => null),
-            id2 ? db.photos.get(id2).catch(() => null) : Promise.resolve(null),
-          ]);
-
-          if (img1) {
-            const px1 = MARGIN_LEFT;
-            doc.roundedBox(px1, doc.y, pW, pH, SLATE_BG, BORDER, 2);
-            const sc = Math.min((pW - 4) / img1.w, (pH - 12) / img1.h);
-            const iw = img1.w * sc, ih = img1.h * sc;
-            doc.pdf.addImage(img1.dataUrl, 'JPEG', px1 + (pW - iw) / 2, doc.y + (pH - 12 - ih) / 2 + 2, iw, ih);
-
-            const isDef = !!photoDoc1?.isDefect;
-            doc.setFill(isDef ? [254, 242, 242] : [240, 253, 244]);
-            doc.pdf.rect(px1 + 1, doc.y + pH - 9, pW - 2, 8, 'F');
-            doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
-            doc.setTextColor(isDef ? [185, 28, 28] : [21, 128, 61]);
-            doc.pdf.text(isDef ? `! DEFECT #${pIdx + 1}` : `[+] PHOTO #${pIdx + 1}`, px1 + 4, doc.y + pH - 3.5);
-          }
-          if (img2) {
-            const px2 = MARGIN_LEFT + pW + 6;
-            doc.roundedBox(px2, doc.y, pW, pH, SLATE_BG, BORDER, 2);
-            const sc = Math.min((pW - 4) / img2.w, (pH - 12) / img2.h);
-            const iw = img2.w * sc, ih = img2.h * sc;
-            doc.pdf.addImage(img2.dataUrl, 'JPEG', px2 + (pW - iw) / 2, doc.y + (pH - 12 - ih) / 2 + 2, iw, ih);
-
-            const isDef = !!photoDoc2?.isDefect;
-            doc.setFill(isDef ? [254, 242, 242] : [240, 253, 244]);
-            doc.pdf.rect(px2 + 1, doc.y + pH - 9, pW - 2, 8, 'F');
-            doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
-            doc.setTextColor(isDef ? [185, 28, 28] : [21, 128, 61]);
-            doc.pdf.text(isDef ? `! DEFECT #${pIdx + 2}` : `[+] PHOTO #${pIdx + 2}`, px2 + 4, doc.y + pH - 3.5);
-          }
-          doc.y += pH + 8;
-        }
+        await renderPhotoGrid8(
+          s.sectionPhotoIds,
+          s.section.name,
+          s.section.zone || 'General',
+          'SECTION PHOTOGRAPHS & VISUAL EVIDENCE'
+        );
       } else {
         doc.ensure(20);
         doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, 14, SLATE_BG, BORDER, 2);
@@ -711,19 +825,84 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
         doc.y += 8;
 
-        for (const fRow of s.findings) {
-          doc.ensure(22);
+        for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
+          const fRow = s.findings[fIdx];
+          const textLines = doc.pdf.splitTextToSize(fRow.finding.text || 'Observation logged', CONTENT_W - 16) as string[];
+          let caLines: string[] = [];
+          if (fRow.finding.correctiveAction) {
+            caLines = doc.pdf.splitTextToSize(`Corrective Action: ${fRow.finding.correctiveAction}`, CONTENT_W - 16) as string[];
+          }
+          let paLines: string[] = [];
+          if (fRow.finding.preventiveAction) {
+            paLines = doc.pdf.splitTextToSize(`Preventive Action: ${fRow.finding.preventiveAction}`, CONTENT_W - 16) as string[];
+          }
+
+          const contentLinesCount = textLines.length + caLines.length + paLines.length;
+          let cardH = Math.max(18, contentLinesCount * 4.2 + 10);
+
+          const photoIds = fRow.photoIds || [];
+          const photoRows = Math.ceil(photoIds.length / 2);
+          if (photoRows > 0) {
+            cardH += photoRows * 54 + 4;
+          }
+
+          doc.ensure(cardH + 4);
           const cardY = doc.y;
-          doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, 18, WHITE, BORDER, 2);
+          doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, BORDER, 2);
           doc.setFill([239, 68, 68]);
-          doc.pdf.rect(MARGIN_LEFT, cardY, 2.5, 18, 'F');
+          doc.pdf.rect(MARGIN_LEFT, cardY, 2.5, cardH, 'F');
+
           doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
           doc.setTextColor([185, 28, 28]);
-          doc.pdf.text('! OBSERVATION', MARGIN_LEFT + 8, cardY + 6);
+          doc.pdf.text(`OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()}`, MARGIN_LEFT + 8, cardY + 5.5);
+
+          let curY = cardY + 11;
           doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
           doc.setTextColor(TEXT_DARK);
-          doc.pdf.text(doc.pdf.splitTextToSize(fRow.finding.text || 'Observation logged', CONTENT_W - 16) as string[], MARGIN_LEFT + 8, cardY + 11.5);
-          doc.y += 22;
+          doc.pdf.text(textLines, MARGIN_LEFT + 8, curY);
+          curY += textLines.length * 4.2;
+
+          if (caLines.length > 0) {
+            doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+            doc.setTextColor([185, 28, 28]);
+            doc.pdf.text(caLines, MARGIN_LEFT + 8, curY);
+            curY += caLines.length * 4.2;
+          }
+
+          if (paLines.length > 0) {
+            doc.pdf.setFont('helvetica', 'italic').setFontSize(7.5);
+            doc.setTextColor(TEXT_MUTED);
+            doc.pdf.text(paLines, MARGIN_LEFT + 8, curY);
+            curY += paLines.length * 4.2;
+          }
+
+          if (photoIds.length > 0) {
+            curY += 2;
+            const pW = (CONTENT_W - 22) / 2;
+            const pH = 50;
+            for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
+              const id1 = photoIds[pIdx];
+              const id2 = photoIds[pIdx + 1];
+
+              const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
+                loadImage(id1),
+                id2 ? loadImage(id2) : Promise.resolve(null),
+                getPhotoDoc(id1),
+                getPhotoDoc(id2),
+              ]);
+
+              if (img1) {
+                drawPhotoCard(MARGIN_LEFT + 8, curY, pW, pH, img1, photoDoc1, `PHOTO #${pIdx + 1} • OBS ${fIdx + 1}`);
+              }
+              if (img2) {
+                drawPhotoCard(MARGIN_LEFT + 8 + pW + 6, curY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2} • OBS ${fIdx + 1}`);
+              }
+
+              curY += pH + 4;
+            }
+          }
+
+          doc.y += cardH + 4;
         }
       }
 
@@ -737,38 +916,14 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       `${s.questions.length} Items Evaluated`
     );
 
-    // Section Level Photos (if any)
+    // Section Level Photos (if any, 8 per page grid)
     if (s.sectionPhotoIds.length > 0) {
-      doc.ensure(40);
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
-      doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text('SECTION OVERVIEW PHOTOGRAPHS', MARGIN_LEFT, doc.y + 4);
-      doc.y += 8;
-
-      const pW = (CONTENT_W - 6) / 2;
-      const pH = 52;
-      for (let pIdx = 0; pIdx < s.sectionPhotoIds.length; pIdx += 2) {
-        doc.ensure(pH + 10);
-        const id1 = s.sectionPhotoIds[pIdx];
-        const id2 = s.sectionPhotoIds[pIdx + 1];
-
-        const [img1, img2] = await Promise.all([loadImage(id1), id2 ? loadImage(id2) : Promise.resolve(null)]);
-
-        if (img1) {
-          doc.roundedBox(MARGIN_LEFT, doc.y, pW, pH, SLATE_BG, BORDER, 2);
-          const sc = Math.min((pW - 4) / img1.w, (pH - 4) / img1.h);
-          const iw = img1.w * sc, ih = img1.h * sc;
-          doc.pdf.addImage(img1.dataUrl, 'JPEG', MARGIN_LEFT + (pW - iw) / 2, doc.y + (pH - ih) / 2, iw, ih);
-        }
-        if (img2) {
-          const px2 = MARGIN_LEFT + pW + 6;
-          doc.roundedBox(px2, doc.y, pW, pH, SLATE_BG, BORDER, 2);
-          const sc = Math.min((pW - 4) / img2.w, (pH - 4) / img2.h);
-          const iw = img2.w * sc, ih = img2.h * sc;
-          doc.pdf.addImage(img2.dataUrl, 'JPEG', px2 + (pW - iw) / 2, doc.y + (pH - ih) / 2, iw, ih);
-        }
-        doc.y += pH + 8;
-      }
+      await renderPhotoGrid8(
+        s.sectionPhotoIds,
+        s.section.name,
+        s.section.zone || 'Overview',
+        'SECTION OVERVIEW PHOTOGRAPHS'
+      );
     }
 
     // Questions List
@@ -872,32 +1027,18 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
           const id1 = photoIds[pIdx];
           const id2 = photoIds[pIdx + 1];
 
-          const [img1, img2] = await Promise.all([loadImage(id1), id2 ? loadImage(id2) : Promise.resolve(null)]);
+          const [img1, img2, qPhotoDoc1, qPhotoDoc2] = await Promise.all([
+            loadImage(id1),
+            id2 ? loadImage(id2) : Promise.resolve(null),
+            getPhotoDoc(id1),
+            getPhotoDoc(id2),
+          ]);
 
           if (img1) {
-            const px1 = MARGIN_LEFT + 6;
-            doc.roundedBox(px1, innerY, pW, pH, SLATE_BG, BORDER, 2);
-            const sc = Math.min((pW - 4) / img1.w, (pH - 8) / img1.h);
-            const iw = img1.w * sc, ih = img1.h * sc;
-            doc.pdf.addImage(img1.dataUrl, 'JPEG', px1 + (pW - iw) / 2, innerY + (pH - 6 - ih) / 2, iw, ih);
-
-            // Caption
-            doc.pdf.setFont('helvetica', 'normal').setFontSize(6.5);
-            doc.setTextColor(TEXT_MUTED);
-            doc.pdf.text(`Photo ${pIdx + 1} | ${question.ref}`, px1 + 4, innerY + pH - 2);
+            drawPhotoCard(MARGIN_LEFT + 6, innerY, pW, pH, img1, qPhotoDoc1, `PHOTO #${pIdx + 1} • ${question.ref}`);
           }
-
           if (img2) {
-            const px2 = MARGIN_LEFT + 6 + pW + 6;
-            doc.roundedBox(px2, innerY, pW, pH, SLATE_BG, BORDER, 2);
-            const sc = Math.min((pW - 4) / img2.w, (pH - 8) / img2.h);
-            const iw = img2.w * sc, ih = img2.h * sc;
-            doc.pdf.addImage(img2.dataUrl, 'JPEG', px2 + (pW - iw) / 2, innerY + (pH - 6 - ih) / 2, iw, ih);
-
-            // Caption
-            doc.pdf.setFont('helvetica', 'normal').setFontSize(6.5);
-            doc.setTextColor(TEXT_MUTED);
-            doc.pdf.text(`Photo ${pIdx + 2} | ${question.ref}`, px2 + 4, innerY + pH - 2);
+            drawPhotoCard(MARGIN_LEFT + 6 + pW + 6, innerY, pW, pH, img2, qPhotoDoc2, `PHOTO #${pIdx + 2} • ${question.ref}`);
           }
 
           innerY += pH + 4;
@@ -907,14 +1048,21 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       doc.y += cardH + 4;
     }
 
-    // Section Extra Findings (if any)
-    for (const fRow of s.findings) {
-      doc.ensure(34);
-      doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, 28, SLATE_BG, BORDER, 2.5);
+    // Section Observations (if any)
+    for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
+      const fRow = s.findings[fIdx];
+      const photoIds = fRow.photoIds || [];
+      const photoRows = Math.ceil(photoIds.length / 2);
+      let cardH = 28;
+      if (fRow.finding.correctiveAction) cardH += 6;
+      if (photoRows > 0) cardH += photoRows * 50 + 4;
+
+      doc.ensure(cardH + 4);
+      doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, cardH, SLATE_BG, BORDER, 2.5);
 
       doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
       doc.setTextColor(NAVY);
-      doc.pdf.text('ADDITIONAL OBSERVATION / FINDING', MARGIN_LEFT + 6, doc.y + 6);
+      doc.pdf.text(`OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()}`, MARGIN_LEFT + 6, doc.y + 6);
 
       doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
       const fStatusStr = fRow.state === 'ok' ? '[+]  SATISFACTORY' : fRow.state === 'bad' ? '!  OBSERVATION' : fRow.state === 'na' ? '-  N / A' : '[?]  PENDING';
@@ -926,13 +1074,41 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       doc.setTextColor(TEXT_BODY);
       doc.pdf.text(doc.pdf.splitTextToSize(fRow.finding.text || '-', CONTENT_W - 16) as string[], MARGIN_LEFT + 6, doc.y + 13);
 
+      let curY = doc.y + 20;
       if (fRow.finding.correctiveAction) {
         doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
         doc.setTextColor([185, 28, 28]);
-        doc.pdf.text(`Action: ${fRow.finding.correctiveAction}`, MARGIN_LEFT + 6, doc.y + 22);
+        doc.pdf.text(`Action: ${fRow.finding.correctiveAction}`, MARGIN_LEFT + 6, curY);
+        curY += 6;
       }
 
-      doc.y += 32;
+      if (photoIds.length > 0) {
+        curY += 2;
+        const pW = (CONTENT_W - 22) / 2;
+        const pH = 46;
+        for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
+          const id1 = photoIds[pIdx];
+          const id2 = photoIds[pIdx + 1];
+
+          const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
+            loadImage(id1),
+            id2 ? loadImage(id2) : Promise.resolve(null),
+            getPhotoDoc(id1),
+            getPhotoDoc(id2),
+          ]);
+
+          if (img1) {
+            drawPhotoCard(MARGIN_LEFT + 8, curY, pW, pH, img1, photoDoc1, `PHOTO #${pIdx + 1} • OBS ${fIdx + 1}`);
+          }
+          if (img2) {
+            drawPhotoCard(MARGIN_LEFT + 8 + pW + 6, curY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2} • OBS ${fIdx + 1}`);
+          }
+
+          curY += pH + 4;
+        }
+      }
+
+      doc.y += cardH + 4;
     }
   }
 

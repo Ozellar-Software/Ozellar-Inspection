@@ -133,7 +133,7 @@ const WRITABLE: Partial<Record<SyncEntity, string[]>> = {
   responses: ['inspectionId', 'inspectionQuestionId', 'applicable', 'answer', 'remarks', 'correctiveAction', 'preventiveAction'],
   findings: ['inspectionId', 'inspectionSectionId', 'text', 'answer', 'correctiveAction', 'preventiveAction', 'position'],
   photos: ['inspectionId', 'target', 'inspectionSectionId', 'responseId', 'findingId', 'vesselId', 'isDefect', 'position',
-    'contentType', 'sizeBytes', 'width', 'height'],
+    'contentType', 'sizeBytes', 'width', 'height', 'description'],
 };
 const SOFT_DELETE: Partial<Record<SyncEntity, true>> = { vessels: true, inspections: true, inspectionSections: true, findings: true, photos: true };
 
