@@ -28,9 +28,10 @@ export function PhotoSyncBanner() {
     });
   }, []);
 
-  const missing = progress.isUploading ? progress.pending : (counts?.missing ?? 0);
-  const total = progress.total > 0 ? progress.total : ((counts?.uploaded ?? 0) + missing);
-  const uploaded = progress.isUploading ? progress.uploaded : (counts?.uploaded ?? 0);
+  // Overall totals straight from the device queue, so the bar keeps climbing across sync runs instead of restarting at 0
+  const missing = counts?.missing ?? 0;
+  const uploaded = counts?.uploaded ?? 0;
+  const total = uploaded + missing;
   const percent = total > 0 ? Math.min(100, Math.round((uploaded / total) * 100)) : 0;
 
   // Nothing missing and not recently finished — don't show banner
