@@ -229,6 +229,16 @@ export function processPhotoQueue(): Promise<void> {
               continue;
             }
 
+            // Safari can hand back a Blob from IndexedDB whose file is gone; fetch then fails with a bare "Load failed"
+            // before anything is sent. Read it into memory first (falling back to the CacheStorage copy) and upload that.
+            try {
+              it.blob = new Blob([await it.blob.arrayBuffer()], { type: 'image/jpeg' });
+            } catch {
+              const cached = await getCachedBlobFromServiceWorker(it.photoId);
+              if (!cached) throw new Error('The saved image can no longer be read from this device (storage was cleared by iOS)');
+              it.blob = new Blob([await cached.arrayBuffer()], { type: 'image/jpeg' });
+            }
+
             const localPhoto = await db.photos.get(it.photoId);
             let sasNote = '';
 
@@ -305,6 +315,8 @@ export function processPhotoQueue(): Promise<void> {
                 'x-position': String(localPhoto?.position ?? 0),
               },
               body: it.blob,
+            }).catch((e) => {
+              throw new Error(`${sasNote ? `${sasNote}; ` : ''}Server upload did not complete: ${(e as Error).message}`);
             }).finally(() => clearTimeout(fbTimer));
 
             if (!fallbackRes.ok) {
