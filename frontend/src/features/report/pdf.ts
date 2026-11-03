@@ -1132,14 +1132,15 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
     doc.setTextColor(WHITE);
     doc.pdf.text('#', MARGIN_LEFT + 4, doc.y + 5.2);
-    doc.pdf.text('SECTION & REF', MARGIN_LEFT + 14, doc.y + 5.2);
-    doc.pdf.text('DEFICIENCY DESCRIPTION', MARGIN_LEFT + 64, doc.y + 5.2);
-    doc.pdf.text('CORRECTIVE ACTION REQUIRED', MARGIN_LEFT + 124, doc.y + 5.2);
+    doc.pdf.text('SECTION & REF', MARGIN_LEFT + 12, doc.y + 5.2);
+    doc.pdf.text('DEFICIENCY DESCRIPTION', MARGIN_LEFT + 58, doc.y + 5.2);
+    doc.pdf.text('CORRECTIVE ACTION REQUIRED', MARGIN_LEFT + 114, doc.y + 5.2);
+    doc.pdf.text('EVIDENCE', MARGIN_LEFT + 162, doc.y + 5.2);
     doc.y += thH;
 
     displayObservations.forEach((obs, idx) => {
-      const descLines = doc.pdf.splitTextToSize(obs.text || obs.remarks || '-', 56) as string[];
-      const caLines = doc.pdf.splitTextToSize(obs.correctiveAction || 'Immediate remediation required', 52) as string[];
+      const descLines = doc.pdf.splitTextToSize(obs.text || obs.remarks || '-', 54) as string[];
+      const caLines = doc.pdf.splitTextToSize(obs.correctiveAction || 'Immediate remediation required', 46) as string[];
       const rH = Math.max(descLines.length, caLines.length) * 4.2 + 6;
 
       doc.ensure(rH);
@@ -1151,7 +1152,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
       // Red left indicator
       doc.setFill([239, 68, 68]);
-      doc.pdf.rect(MARGIN_LEFT, doc.y, 2, rH, 'F');
+      doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, rH, 'F');
 
       doc.setDraw(BORDER);
       doc.pdf.line(MARGIN_LEFT, doc.y + rH, PAGE_W - MARGIN_RIGHT, doc.y + rH);
@@ -1163,26 +1164,156 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
       doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
       doc.setTextColor(TEXT_DARK);
-      doc.pdf.text(obs.ref || 'OBS', MARGIN_LEFT + 14, doc.y + 5);
+      doc.pdf.text(obs.ref || 'OBS', MARGIN_LEFT + 12, doc.y + 5);
       doc.pdf.setFont('helvetica', 'normal').setFontSize(6.8);
       doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text(obs.sectionName.slice(0, 24), MARGIN_LEFT + 14, doc.y + 9);
+      doc.pdf.text(obs.sectionName.slice(0, 24), MARGIN_LEFT + 12, doc.y + 9);
 
       doc.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
       doc.setTextColor(TEXT_BODY);
-      doc.pdf.text(descLines, MARGIN_LEFT + 64, doc.y + 5);
-      doc.pdf.text(caLines, MARGIN_LEFT + 124, doc.y + 5);
+      doc.pdf.text(descLines, MARGIN_LEFT + 58, doc.y + 5);
+      doc.pdf.text(caLines, MARGIN_LEFT + 114, doc.y + 5);
+
+      // Evidence Photo Count Pill Badge
+      const pCount = obs.photoIds ? obs.photoIds.length : 0;
+      if (pCount > 0) {
+        doc.setFill([254, 242, 242]);
+        doc.pdf.roundedRect(MARGIN_LEFT + 160, doc.y + 2.5, 19, 5, 1, 1, 'F');
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
+        doc.setTextColor([185, 28, 28]);
+        doc.pdf.text(`[!] ${pCount} Photo${pCount > 1 ? 's' : ''}`, MARGIN_LEFT + 161.5, doc.y + 6);
+      } else {
+        doc.pdf.setFont('helvetica', 'normal').setFontSize(7);
+        doc.setTextColor(TEXT_FAINT);
+        doc.pdf.text('-', MARGIN_LEFT + 168, doc.y + 5.5);
+      }
 
       doc.y += rH;
     });
 
     doc.y += 10;
+
+    // ─── DEFICIENCY & OBSERVATION VISUAL EVIDENCE GRID (8 PHOTOS PER PAGE) ───
+    interface ObsEvidenceItem {
+      photoId: string;
+      label: string;
+      desc: string;
+      isDefect: boolean;
+      sectionName: string;
+      ref: string;
+    }
+    const evidencePhotos: ObsEvidenceItem[] = [];
+    const seenPhotoIds = new Set<string>();
+
+    // 1. Photos directly linked to observations
+    displayObservations.forEach((obs, obsIdx) => {
+      const pIds = obs.photoIds || [];
+      pIds.forEach((pId, pIdx) => {
+        if (!seenPhotoIds.has(pId)) {
+          seenPhotoIds.add(pId);
+          evidencePhotos.push({
+            photoId: pId,
+            label: `${obs.ref || `OBSERVATION ${obsIdx + 1}`} • PHOTO #${pIdx + 1}`,
+            desc: obs.text || obs.correctiveAction || 'Deficiency identified during survey inspection',
+            isDefect: true,
+            sectionName: obs.sectionName,
+            ref: obs.ref || `OBS ${obsIdx + 1}`,
+          });
+        }
+      });
+    });
+
+    // 2. Any additional photos in the inspection flagged as defect
+    (data.photos || []).forEach((p) => {
+      if (p.isDefect && !seenPhotoIds.has(p.id)) {
+        seenPhotoIds.add(p.id);
+        const sec = sections.find((s) => s.section.id === p.inspectionSectionId);
+        const secName = sec?.section.name || 'Deficiency Evidence';
+        evidencePhotos.push({
+          photoId: p.id,
+          label: `DEFECT EVIDENCE • ${secName.toUpperCase()}`,
+          desc: p.description || 'Defect flagged during visual survey inspection',
+          isDefect: true,
+          sectionName: secName,
+          ref: 'DEFECT',
+        });
+      }
+    });
+
+    if (evidencePhotos.length > 0) {
+      doc.newPage();
+      doc.sectionHeader(
+        'Deficiency & Observation Visual Evidence',
+        'Visual Evidence',
+        `${evidencePhotos.length} Defect Photographs`
+      );
+
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+      doc.setTextColor(TEXT_MUTED);
+      doc.pdf.text('HIGH-RESOLUTION PHOTOGRAPHIC EVIDENCE FOR DEFICIENCIES & OBSERVATIONS', MARGIN_LEFT, doc.y + 4);
+      doc.y += 8;
+
+      const pW = (CONTENT_W - 6) / 2;
+      const pH = 53;
+      const rowH = pH + 4;
+      let photosOnCurrentPage = 0;
+
+      for (let pIdx = 0; pIdx < evidencePhotos.length; pIdx += 2) {
+        if (photosOnCurrentPage >= 8 || doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
+          doc.newPage();
+          doc.sectionHeader(
+            'Deficiency & Observation Visual Evidence',
+            'Visual Evidence',
+            'Photographs (Cont.)'
+          );
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+          doc.setTextColor(TEXT_MUTED);
+          doc.pdf.text('DEFICIENCY & OBSERVATION VISUAL EVIDENCE (CONTINUED)', MARGIN_LEFT, doc.y + 4);
+          doc.y += 8;
+          photosOnCurrentPage = 0;
+        }
+
+        const item1 = evidencePhotos[pIdx];
+        const item2 = evidencePhotos[pIdx + 1];
+
+        const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
+          loadImage(item1.photoId),
+          item2 ? loadImage(item2.photoId) : Promise.resolve(null),
+          getPhotoDoc(item1.photoId),
+          item2 ? getPhotoDoc(item2.photoId) : Promise.resolve(null),
+        ]);
+
+        const curRowY = doc.y;
+        if (img1) {
+          const mergedDoc1 = {
+            ...photoDoc1,
+            isDefect: true,
+            description: photoDoc1?.description || item1.desc,
+          };
+          drawPhotoCard(MARGIN_LEFT, curRowY, pW, pH, img1, mergedDoc1, item1.label);
+          photosOnCurrentPage++;
+        }
+        if (img2 && item2) {
+          const mergedDoc2 = {
+            ...photoDoc2,
+            isDefect: true,
+            description: photoDoc2?.description || item2.desc,
+          };
+          drawPhotoCard(MARGIN_LEFT + pW + 6, curRowY, pW, pH, img2, mergedDoc2, item2.label);
+          photosOnCurrentPage++;
+        }
+
+        doc.y += rowH;
+      }
+
+      doc.y += 10;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // FORMAL AUDIT TRAIL & SIGN-OFF BLOCK
   // ═══════════════════════════════════════════════════════════════════════════
-  doc.ensure(54);
+  doc.newPage();
   doc.subSectionTitle('3. Formal Verification & Approval Sign-Off');
 
   const tmEvent = approvalHistory.find((e) => e.level === 'tm' && e.action === 'approved');
