@@ -13,6 +13,7 @@ export interface PhotoQueueItem {
   status: 'pending' | 'uploading' | 'uploaded' | 'committed';
   attempts: number;
   lastError?: string;
+  nextTryAt?: number;              // epoch ms; failed photos wait (backoff) instead of retrying on every sync
 }
 
 /**

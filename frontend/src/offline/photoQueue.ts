@@ -1,5 +1,6 @@
 import type { PhotoTarget } from '@ozellar/shared';
-import { api } from '../api/client';
+import { api, BASE } from '../api/client';
+import { getToken } from '../auth/session';
 import { db } from './db';
 import { localWrite } from './outbox';
 
@@ -145,6 +146,23 @@ function releaseWakeLock(): void {
   }
 }
 
+/** Rejects if a step hangs (iOS can leave requests pending forever), so one stuck photo never freezes the queue. */
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${what} timed out after ${ms / 1000}s`)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
+/** A photo that keeps failing is parked for a while (15 s, 30 s, 1 min … up to 30 min) instead of being retried on every sync. */
+const retryDelayMs = (attempts: number) => Math.min(30 * 60_000, 15_000 * 2 ** Math.max(0, attempts - 1));
+
+/** Manual "Sync Photos Now": ignore the backoff and try every waiting photo again. */
+export async function retryPhotosNow(): Promise<void> {
+  await db.photoQueue.toCollection().modify({ nextTryAt: 0 });
+  return processPhotoQueue();
+}
+
 let photoProcessing: Promise<void> | null = null;
 let rerunPhotoProcessing = false;
 
@@ -166,7 +184,8 @@ export function processPhotoQueue(): Promise<void> {
         break;
       }
 
-      await acquireWakeLock();
+      // Never wait on the wake lock: on iOS home-screen apps the request can hang and would freeze the whole queue.
+      void acquireWakeLock();
 
       // Filter out orphaned / soft-deleted entries first
       const uploadable: typeof items = [];
@@ -181,6 +200,7 @@ export function processPhotoQueue(): Promise<void> {
           await db.photoQueue.update(it.photoId, { status: 'committed' });
           continue;
         }
+        if (it.nextTryAt && it.nextTryAt > Date.now()) continue; // backing off after repeated failures
         uploadable.push(it);
       }
 
@@ -205,17 +225,19 @@ export function processPhotoQueue(): Promise<void> {
             }
             if (!it.blob) {
               console.warn('[PhotoQueue] Blob unavailable for photo', it.photoId);
+              await db.photoQueue.update(it.photoId, { lastError: 'Image data is missing on this device', nextTryAt: Date.now() + 30 * 60_000 });
               continue;
             }
 
             const localPhoto = await db.photos.get(it.photoId);
+            let sasNote = '';
 
             // Strategy 1: Direct Azure SAS PUT
             if (it.status !== 'uploaded') {
               try {
                 await db.photoQueue.update(it.photoId, { status: 'uploading' });
-                const { uploadUrl, headers } = await api<{ uploadUrl: string; headers: Record<string, string> }>(
-                  '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } });
+                const { uploadUrl, headers } = await withTimeout(api<{ uploadUrl: string; headers: Record<string, string> }>(
+                  '/photos/upload-url', { body: { photoId: it.photoId, inspectionId: it.inspectionId, vesselId: it.vesselId } }), 20_000, 'Getting upload address');
                 const ctrl = new AbortController();
                 const tid = setTimeout(() => ctrl.abort(), 20_000);
                 const put = await fetch(uploadUrl, { method: 'PUT', headers, body: it.blob, signal: ctrl.signal });
@@ -225,8 +247,10 @@ export function processPhotoQueue(): Promise<void> {
                   uploadSucceeded = true;
                 } else {
                   console.warn(`[PhotoQueue] SAS PUT failed with status ${put.status}`);
+                  sasNote = `Storage upload rejected (${put.status})`;
                 }
               } catch (sasErr) {
+                sasNote = `Storage upload failed: ${(sasErr as Error)?.message}`;
                 console.warn('[PhotoQueue] Direct SAS PUT failed, trying direct server upload:', (sasErr as Error)?.message);
               }
             } else {
@@ -236,7 +260,7 @@ export function processPhotoQueue(): Promise<void> {
             // Commit Strategy 1 if SAS PUT was used
             if (uploadSucceeded) {
               try {
-                await api(`/photos/${it.photoId}/commit`, {
+                await withTimeout(api(`/photos/${it.photoId}/commit`, {
                   method: 'POST',
                   body: {
                     inspectionId: it.inspectionId ?? localPhoto?.inspectionId,
@@ -249,21 +273,25 @@ export function processPhotoQueue(): Promise<void> {
                     position: localPhoto?.position,
                     sizeBytes: it.blob.size,
                   },
-                });
+                }), 20_000, 'Saving photo record');
                 await db.photoQueue.update(it.photoId, { status: 'committed' });
                 await db.photos.update(it.photoId, { uploaded: true });
                 await db.outbox.filter((m) => m.entity === 'photos' && m.entityId === it.photoId).delete().catch(() => {});
                 successfulCount++;
                 continue;
               } catch (commitErr) {
+                sasNote = `Saving photo record failed: ${(commitErr as Error)?.message}`;
                 console.warn('[PhotoQueue] Commit failed, falling back to direct server upload:', (commitErr as Error)?.message);
               }
             }
 
             // Strategy 2: Direct Server Upload Fallback (Zero CORS, 100% reliable)
-            const token = localStorage.getItem('token') ?? '';
-            const fallbackRes = await fetch(`/api/photos/${it.photoId}/upload`, {
+            const token = getToken() ?? '';
+            const fbCtrl = new AbortController();
+            const fbTimer = setTimeout(() => fbCtrl.abort(), 60_000);
+            const fallbackRes = await fetch(`${BASE}/photos/${it.photoId}/upload`, {
               method: 'POST',
+              signal: fbCtrl.signal,
               headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'image/jpeg',
@@ -277,11 +305,11 @@ export function processPhotoQueue(): Promise<void> {
                 'x-position': String(localPhoto?.position ?? 0),
               },
               body: it.blob,
-            });
+            }).finally(() => clearTimeout(fbTimer));
 
             if (!fallbackRes.ok) {
               const errTxt = await fallbackRes.text().catch(() => '');
-              throw new Error(`Upload failed (${fallbackRes.status}): ${errTxt.slice(0, 100)}`);
+              throw new Error(`${sasNote ? `${sasNote}; ` : ''}Server upload failed (${fallbackRes.status}): ${errTxt.slice(0, 100)}`);
             }
 
             await db.photoQueue.update(it.photoId, { status: 'committed' });
@@ -293,7 +321,8 @@ export function processPhotoQueue(): Promise<void> {
             await db.photoQueue.update(it.photoId, {
               status: it.status === 'uploaded' ? 'uploaded' : 'pending',
               attempts: it.attempts + 1,
-              lastError: (e as Error).message,
+              lastError: `${(e as Error).message}${(e as Error).name === 'AbortError' ? ' (request timed out)' : ''}`,
+              nextTryAt: Date.now() + retryDelayMs(it.attempts + 1),
             });
           } finally {
             remainingCount--;

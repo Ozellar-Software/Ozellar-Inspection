@@ -1,6 +1,6 @@
 import { apiToken, logout } from '../auth/session';
 
-const BASE = (import.meta.env.VITE_API_BASE as string) ?? '/api';
+export const BASE = (import.meta.env.VITE_API_BASE as string) ?? '/api';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
@@ -12,11 +12,17 @@ export class ApiError extends Error {
 export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const token = await apiToken();
   
+  // A request that never answers (common after iOS suspends a home-screen app) must fail, not spin forever.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 45_000);
   const res = await fetch(`${BASE}${path}`, {
     method: init.method ?? (init.body ? 'POST' : 'GET'),
     headers: { Authorization: `Bearer ${token}`, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
     body: init.body ? JSON.stringify(init.body) : undefined,
-  });
+    signal: ctrl.signal,
+  }).catch((e) => {
+    throw (e as Error).name === 'AbortError' ? new Error(`Request to ${path} timed out`) : e;
+  }).finally(() => clearTimeout(timer));
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     if ((res.status === 401 && (json?.error?.code === 'UNAUTHORIZED' || json?.error?.message?.includes('Sign in required') || json?.error?.message?.includes('Invalid or expired'))) ||

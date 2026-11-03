@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../offline/db';
-import { processPhotoQueue, subscribePhotoSync, type PhotoSyncProgress } from '../offline/photoQueue';
+import { retryPhotosNow, subscribePhotoSync, type PhotoSyncProgress } from '../offline/photoQueue';
 
 export function PhotoSyncBanner() {
   const [progress, setProgress] = useState<PhotoSyncProgress>({ pending: 0, total: 0, uploaded: 0, isUploading: false });
@@ -11,7 +11,11 @@ export function PhotoSyncBanner() {
   const counts = useLiveQuery(async () => {
     const missingCount = await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').count();
     const uploadedCount = await db.photoQueue.where('status').equals('committed').count();
-    return { missing: missingCount, uploaded: uploadedCount };
+    // Most recent failure reason, so a stuck upload names itself on screen (no browser console needed on a phone)
+    const failed = (await db.photoQueue.where('status').anyOf('pending', 'uploading', 'uploaded').toArray())
+      .filter((i) => i.lastError);
+    const last = failed.sort((a, b) => (b.attempts ?? 0) - (a.attempts ?? 0))[0];
+    return { missing: missingCount, uploaded: uploadedCount, failedCount: failed.length, lastError: last?.lastError, attempts: last?.attempts };
   }, []);
 
   useEffect(() => {
@@ -88,7 +92,7 @@ export function PhotoSyncBanner() {
             {navigator.onLine && (
               <button
                 type="button"
-                onClick={() => void processPhotoQueue()}
+                onClick={() => void retryPhotosNow()}
                 disabled={progress.isUploading}
                 style={{
                   background: 'rgba(255,255,255,0.2)',
@@ -108,6 +112,12 @@ export function PhotoSyncBanner() {
           </div>
         )}
       </div>
+
+      {!justCompleted && counts?.lastError && (
+        <div style={{ fontSize: '12px', fontWeight: 500, background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: '6px', wordBreak: 'break-word' }}>
+          {counts.failedCount} photo{counts.failedCount !== 1 ? 's' : ''} failed. Last error (after {counts.attempts} tries): {counts.lastError}
+        </div>
+      )}
 
       {!justCompleted && total > 0 && progress.isUploading && (
         <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.3)', borderRadius: '3px', overflow: 'hidden' }}>
