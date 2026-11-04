@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    NORMAL USED RICH TEXT EDITOR (WYSIWYG)
    Standard Microsoft Word / Google Docs Style • Universal Familiar Controls
+   On-Demand Toolbar via Right-Side Icon • Copy-Paste Any Text & Any Font
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .normal-word-editor {
@@ -25,6 +26,57 @@
   letter-spacing: 0.4px;
 }
 
+/* ── Discreet Format Toggle Icon on the Right Side ── */
+.editor-toggle-btn {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 6px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.editor-toggle-btn:hover {
+  background: #ffffff;
+  color: var(--accent, #0e7c86);
+  border-color: var(--accent, #0e7c86);
+  box-shadow: 0 1px 4px rgba(14, 124, 134, 0.18);
+}
+
+.editor-toggle-btn.active {
+  background: var(--accent, #0e7c86);
+  color: #ffffff;
+  border-color: var(--accent, #0e7c86);
+  box-shadow: 0 1px 3px rgba(14, 124, 134, 0.25);
+}
+
+.toggle-icon-aa {
+  font-weight: 800;
+  font-family: 'Times New Roman', serif;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.toggle-icon-arrow {
+  font-size: 8px;
+  line-height: 1;
+  opacity: 0.75;
+}
+
 /* ── Standard Word Formatting Ribbon ── */
 .normal-word-toolbar {
   display: flex;
@@ -38,7 +90,13 @@
   border-radius: 8px 8px 0 0;
   position: relative;
   z-index: 5;
+  animation: toolbarSlideIn 0.14s ease-out;
   transition: border-color 0.15s ease;
+}
+
+@keyframes toolbarSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .normal-word-editor:focus-within .normal-word-toolbar {
@@ -167,13 +225,28 @@
   background: #fee2e2;
 }
 
+.toolbar-btn.close-btn {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 11px;
+  height: 22px;
+  width: 22px;
+  min-width: 22px;
+  padding: 0;
+}
+
+.toolbar-btn.close-btn:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
 /* ── WYSIWYG ContentEditable Body ── */
 .normal-word-body {
   width: 100%;
   border: 1px solid var(--border, #e1e6e9);
-  border-top: none;
-  border-radius: 0 0 8px 8px;
+  border-radius: 8px;
   padding: 10px 12px;
+  padding-right: 48px; /* space so typed text doesn't overlap the right toggle icon */
   font-size: 14px;
   color: var(--ink, #0b2138);
   background: #ffffff;
@@ -185,6 +258,14 @@
   min-height: 70px;
   position: relative;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* When toolbar is open, seamlessly attach top of body */
+.normal-word-editor.toolbar-open .normal-word-body {
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-radius: 0 0 8px 8px;
 }
 
 .normal-word-editor:focus-within .normal-word-body {
@@ -206,7 +287,7 @@
   left: 12px;
 }
 
-/* Styled elements inside the editor */
+/* Styled elements inside the editor (preserves pasted fonts and styles) */
 .normal-word-body p {
   margin: 0 0 4px;
 }
@@ -263,6 +344,7 @@
   .normal-word-body {
     font-size: 13px;
     padding: 8px 10px;
+    padding-right: 44px;
   }
 
   .normal-word-body.is-empty:before {

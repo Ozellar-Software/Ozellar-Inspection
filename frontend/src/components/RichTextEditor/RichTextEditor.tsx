@@ -25,6 +25,30 @@ const POPULAR_FONTS = [
   { label: 'Consolas', value: 'Consolas, monospace' },
 ];
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Cleans Word MSO junk from copied text while strictly preserving font-family, bold, italic, underline, lists.
+ */
+function sanitizePastedHtml(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/gi, '')
+    .replace(/<xml[\s\S]*?<\/xml>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<meta[\s\S]*?>/gi, '')
+    .replace(/<link[\s\S]*?>/gi, '')
+    .replace(/<\/?(html|body|head|title)[^>]*>/gi, '')
+    .replace(/class=["'][^"']*mso[^"']*["']/gi, '')
+    .trim();
+}
+
 /**
  * Normalizes plain text or markdown from existing inspections into standard HTML.
  */
@@ -68,7 +92,7 @@ function toInitialHtml(val: string): string {
       blocks.push(`<li>${numMatch[3]}</li>`);
     } else {
       if (inUl) { blocks.push('</ul>'); inUl = false; }
-      if (inOl) { blocks.push('</ol>'); inOl = false; }
+      if (!inOl) { blocks.push('</ol>'); inOl = false; }
       blocks.push(`<p>${line}</p>`);
     }
   }
@@ -94,6 +118,7 @@ export function RichTextEditor({
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalUpdate = useRef(false);
 
+  const [isToolbarOpen, setIsToolbarOpen] = useState(false);
   const [activeFont, setActiveFont] = useState(POPULAR_FONTS[0].value);
   const [isBold, setIsBold] = useState(false);
   const [isItalic, setIsItalic] = useState(false);
@@ -125,7 +150,7 @@ export function RichTextEditor({
       setIsUl(document.queryCommandState('insertUnorderedList'));
       setIsOl(document.queryCommandState('insertOrderedList'));
     } catch {
-      // Safe fallback if command query not supported in test environments
+      // Safe fallback
     }
   }, [disabled]);
 
@@ -161,145 +186,194 @@ export function RichTextEditor({
     }
   };
 
+  // Allow copying and pasting ANY type of text, HTML, and ANY font family
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const html = e.clipboardData.getData('text/html');
+    const text = e.clipboardData.getData('text/plain');
+
+    if (html) {
+      e.preventDefault();
+      const clean = sanitizePastedHtml(html);
+      document.execCommand('insertHTML', false, clean);
+      handleInput();
+    } else if (text) {
+      e.preventDefault();
+      const lines = text.split(/\r?\n/);
+      const formatted = lines
+        .map((l) => (l.trim() ? `<p>${escapeHtml(l)}</p>` : '<p><br></p>'))
+        .join('');
+      document.execCommand('insertHTML', false, formatted);
+      handleInput();
+    }
+  };
+
   return (
     <div
-      className={`normal-word-editor ${className} ${disabled ? 'disabled' : ''}`}
+      className={`normal-word-editor ${className} ${disabled ? 'disabled' : ''} ${
+        isToolbarOpen ? 'toolbar-open' : 'toolbar-closed'
+      }`}
       style={style}
     >
       {label && <div className="normal-editor-label">{label}</div>}
 
-      {/* ── Standard Word-Style Formatting Ribbon ── */}
-      <div className="normal-word-toolbar">
-        {/* Font Family Selector */}
-        {showFontSelector && (
+      {/* ── Format Toggle Icon on the Right Side ── */}
+      {!disabled && (
+        <button
+          type="button"
+          className={`editor-toggle-btn ${isToolbarOpen ? 'active' : ''}`}
+          onClick={() => setIsToolbarOpen((prev) => !prev)}
+          title={isToolbarOpen ? 'Hide formatting toolbar' : 'Open text formatting & font tools'}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <span className="toggle-icon-aa">Aa</span>
+          <span className="toggle-icon-arrow">{isToolbarOpen ? '▲' : '▾'}</span>
+        </button>
+      )}
+
+      {/* ── Standard Word Formatting Ribbon (Opens when user clicks right-side icon) ── */}
+      {isToolbarOpen && (
+        <div className="normal-word-toolbar">
+          {/* Font Family Selector */}
+          {showFontSelector && (
+            <div className="toolbar-item">
+              <select
+                className="toolbar-select font-select"
+                value={activeFont}
+                onChange={handleFontChange}
+                disabled={disabled}
+                title="Font Family"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                {POPULAR_FONTS.map((f) => (
+                  <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Normal / Heading */}
           <div className="toolbar-item">
             <select
-              className="toolbar-select font-select"
-              value={activeFont}
-              onChange={handleFontChange}
+              className="toolbar-select block-select"
+              defaultValue="p"
+              onChange={handleBlockChange}
               disabled={disabled}
-              title="Font Family"
+              title="Text Style"
               onMouseDown={(e) => e.stopPropagation()}
             >
-              {POPULAR_FONTS.map((f) => (
-                <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
-                  {f.label}
-                </option>
-              ))}
+              <option value="p">Normal</option>
+              <option value="h2">Heading 2</option>
+              <option value="h3">Heading 3</option>
             </select>
           </div>
-        )}
 
-        {/* Normal / Heading */}
-        <div className="toolbar-item">
-          <select
-            className="toolbar-select block-select"
-            defaultValue="p"
-            onChange={handleBlockChange}
-            disabled={disabled}
-            title="Text Style"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <option value="p">Normal</option>
-            <option value="h2">Heading 2</option>
-            <option value="h3">Heading 3</option>
-          </select>
-        </div>
+          <div className="toolbar-sep" />
 
-        <div className="toolbar-sep" />
+          {/* Bold, Italic, Underline */}
+          <div className="toolbar-group">
+            <button
+              type="button"
+              className={`toolbar-btn bold-btn ${isBold ? 'active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); exec('bold'); }}
+              disabled={disabled}
+              title="Bold (Ctrl+B)"
+            >
+              <strong>B</strong>
+            </button>
+            <button
+              type="button"
+              className={`toolbar-btn italic-btn ${isItalic ? 'active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); exec('italic'); }}
+              disabled={disabled}
+              title="Italic (Ctrl+I)"
+            >
+              <em>I</em>
+            </button>
+            <button
+              type="button"
+              className={`toolbar-btn underline-btn ${isUnderline ? 'active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); exec('underline'); }}
+              disabled={disabled}
+              title="Underline (Ctrl+U)"
+            >
+              <u>U</u>
+            </button>
+          </div>
 
-        {/* Bold, Italic, Underline */}
-        <div className="toolbar-group">
+          <div className="toolbar-sep" />
+
+          {/* Bullet and Numbered Lists */}
+          <div className="toolbar-group">
+            <button
+              type="button"
+              className={`toolbar-btn list-btn ${isUl ? 'active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); exec('insertUnorderedList'); }}
+              disabled={disabled}
+              title="Bullet List"
+            >
+              <span style={{ fontSize: 13, marginRight: 2 }}>•</span> List
+            </button>
+            <button
+              type="button"
+              className={`toolbar-btn list-btn ${isOl ? 'active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); exec('insertOrderedList'); }}
+              disabled={disabled}
+              title="Numbered List"
+            >
+              <span style={{ fontSize: 11, marginRight: 2 }}>1.</span> List
+            </button>
+          </div>
+
+          <div className="toolbar-sep" />
+
+          {/* Quick Survey Symbols */}
+          <div className="toolbar-group">
+            <button
+              type="button"
+              className="toolbar-btn check-btn"
+              onMouseDown={(e) => { e.preventDefault(); exec('insertText', '✓ '); }}
+              disabled={disabled}
+              title="Insert Checkmark (✓)"
+            >
+              ✓
+            </button>
+            <button
+              type="button"
+              className="toolbar-btn defect-btn"
+              onMouseDown={(e) => { e.preventDefault(); exec('insertText', '▲ DEFECT: '); }}
+              disabled={disabled}
+              title="Insert Defect Tag (▲)"
+            >
+              ▲ Defect
+            </button>
+          </div>
+
+          {/* Clear formatting */}
+          <div className="toolbar-group">
+            <button
+              type="button"
+              className="toolbar-btn clear-btn"
+              onMouseDown={(e) => { e.preventDefault(); exec('removeFormat'); }}
+              disabled={disabled}
+              title="Clear Formatting"
+            >
+              T<span style={{ fontSize: 9 }}>x</span>
+            </button>
+          </div>
+
+          {/* Close Toolbar Button on Right */}
           <button
             type="button"
-            className={`toolbar-btn bold-btn ${isBold ? 'active' : ''}`}
-            onMouseDown={(e) => { e.preventDefault(); exec('bold'); }}
-            disabled={disabled}
-            title="Bold (Ctrl+B)"
+            className="toolbar-btn close-btn"
+            onMouseDown={(e) => { e.preventDefault(); setIsToolbarOpen(false); }}
+            title="Close formatting bar"
           >
-            <strong>B</strong>
-          </button>
-          <button
-            type="button"
-            className={`toolbar-btn italic-btn ${isItalic ? 'active' : ''}`}
-            onMouseDown={(e) => { e.preventDefault(); exec('italic'); }}
-            disabled={disabled}
-            title="Italic (Ctrl+I)"
-          >
-            <em>I</em>
-          </button>
-          <button
-            type="button"
-            className={`toolbar-btn underline-btn ${isUnderline ? 'active' : ''}`}
-            onMouseDown={(e) => { e.preventDefault(); exec('underline'); }}
-            disabled={disabled}
-            title="Underline (Ctrl+U)"
-          >
-            <u>U</u>
-          </button>
-        </div>
-
-        <div className="toolbar-sep" />
-
-        {/* Bullet and Numbered Lists */}
-        <div className="toolbar-group">
-          <button
-            type="button"
-            className={`toolbar-btn list-btn ${isUl ? 'active' : ''}`}
-            onMouseDown={(e) => { e.preventDefault(); exec('insertUnorderedList'); }}
-            disabled={disabled}
-            title="Bullet List"
-          >
-            <span style={{ fontSize: 13, marginRight: 2 }}>•</span> List
-          </button>
-          <button
-            type="button"
-            className={`toolbar-btn list-btn ${isOl ? 'active' : ''}`}
-            onMouseDown={(e) => { e.preventDefault(); exec('insertOrderedList'); }}
-            disabled={disabled}
-            title="Numbered List"
-          >
-            <span style={{ fontSize: 11, marginRight: 2 }}>1.</span> List
-          </button>
-        </div>
-
-        <div className="toolbar-sep" />
-
-        {/* Quick Survey Symbols */}
-        <div className="toolbar-group">
-          <button
-            type="button"
-            className="toolbar-btn check-btn"
-            onMouseDown={(e) => { e.preventDefault(); exec('insertText', '✓ '); }}
-            disabled={disabled}
-            title="Insert Checkmark (✓)"
-          >
-            ✓
-          </button>
-          <button
-            type="button"
-            className="toolbar-btn defect-btn"
-            onMouseDown={(e) => { e.preventDefault(); exec('insertText', '▲ DEFECT: '); }}
-            disabled={disabled}
-            title="Insert Defect Tag (▲)"
-          >
-            ▲ Defect
-          </button>
-        </div>
-
-        {/* Clear formatting */}
-        <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
-          <button
-            type="button"
-            className="toolbar-btn clear-btn"
-            onMouseDown={(e) => { e.preventDefault(); exec('removeFormat'); }}
-            disabled={disabled}
-            title="Clear Formatting"
-          >
-            T<span style={{ fontSize: 9 }}>x</span>
+            ✕
           </button>
         </div>
-      </div>
+      )}
 
       {/* ── Visual WYSIWYG Editor Body ── */}
       <div
@@ -308,6 +382,7 @@ export function RichTextEditor({
         className={`normal-word-body ${isEmpty ? 'is-empty' : ''}`}
         data-placeholder={placeholder}
         onInput={handleInput}
+        onPaste={handlePaste}
         onBlur={onBlur}
         onKeyUp={updateActiveStates}
         onMouseUp={updateActiveStates}

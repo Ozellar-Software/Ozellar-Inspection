@@ -24,7 +24,7 @@ export interface RichTextOptions {
  * Maps any web or system font family name to standard jsPDF supported fonts.
  */
 export function mapToPdfFont(fontName: string): SupportedFont {
-  const f = fontName.toLowerCase();
+  const f = fontName.replace(/['"]/g, '').toLowerCase().trim();
   if (
     f.includes('times') ||
     f.includes('georgia') ||
@@ -183,8 +183,10 @@ export function htmlToPdfLines(rawText: string): string {
     .replace(/<\/strong>/gi, '</b>')
     .replace(/<em[^>]*>/gi, '<i>')
     .replace(/<\/em>/gi, '</i>')
-    .replace(/<font\s+face=["']([^"']+)["'][^>]*>([\s\S]*?)<\/font>/gi, '[font:$1]$2[/font]')
-    .replace(/<span\s+style=["'][^"']*font-family:\s*([^;"']+)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, '[font:$1]$2[/font]');
+    .replace(/<font\s+[^>]*face=["']([^"']+)["'][^>]*>([\s\S]*?)<\/font>/gi, '[font:$1]$2[/font]')
+    .replace(/<span[^>]*style=["'][^"']*font-family:\s*([^;"']+)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, '[font:$1]$2[/font]')
+    .replace(/<p[^>]*style=["'][^"']*font-family:\s*([^;"']+)[^"']*["'][^>]*>([\s\S]*?)<\/p>/gi, '[font:$1]$2[/font]\n')
+    .replace(/<div[^>]*style=["'][^"']*font-family:\s*([^;"']+)[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi, '[font:$1]$2[/font]\n');
 
   // Strip any remaining unhandled HTML tags
   processed = processed.replace(/<(?!\/?(b|i|u)\b)[^>]+>/gi, '');
