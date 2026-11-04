@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { can, isEditable, type Photo, type User } from '@ozellar/shared';
+import { can, isEditable, type Photo, type User, type Finding } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { addPhoto, prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon, EditIcon, XIcon } from '../../icons';
+import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon, EditIcon, XIcon, WarningIcon } from '../../icons';
 import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
@@ -127,6 +127,45 @@ export function SectionDetailPage() {
       sectionPhotos.push(p);
     }
   }
+
+  const unlinkedSectionDefects = sectionPhotos.filter((p) => p.isDefect && !p.findingId);
+  const [isSyncingDefects, setIsSyncingDefects] = useState(false);
+
+  const handleSyncSectionDefects = async () => {
+    if (isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;
+    setIsSyncingDefects(true);
+    try {
+      for (const p of unlinkedSectionDefects) {
+        const existingFindings = await db.findings
+          .where('inspectionSectionId')
+          .equals(sectionId)
+          .toArray();
+
+        const findingId = crypto.randomUUID();
+        const newFinding: Finding = {
+          id: findingId,
+          inspectionId: inspectionId || '',
+          inspectionSectionId: sectionId,
+          text: p.description ? String(p.description).trim() : 'Defect observation logged from visual evidence',
+          answer: 'no',
+          correctiveAction: '',
+          preventiveAction: '',
+          position: existingFindings.length,
+        };
+
+        await localWrite('findings', findingId, newFinding as unknown as Record<string, unknown>);
+        await localWrite('photos', p.id, {
+          findingId,
+          isDefect: true,
+        });
+      }
+    } catch (err: any) {
+      console.error('Failed to sync section defect observations', err);
+      alert(`Error creating observations: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsSyncingDefects(false);
+    }
+  };
 
   function startRename() {
     setRenameValue(dispSection!.name);
@@ -454,6 +493,48 @@ export function SectionDetailPage() {
             ? 'Record any specific observations, deficiencies, or findings for this photo section.'
             : 'Anything not covered by the checklist above — describe it and mark Yes/No.'}
         </p>
+
+        {unlinkedSectionDefects.length > 0 && !locked && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: 8,
+              marginBottom: 12,
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#991b1b', fontWeight: 600 }}>
+              <WarningIcon style={{ width: 16, height: 16, color: '#dc2626' }} />
+              <span>
+                {unlinkedSectionDefects.length} defect photo{unlinkedSectionDefects.length > 1 ? 's' : ''} in this section {unlinkedSectionDefects.length > 1 ? 'do' : 'does'} not have an observation card yet.
+              </span>
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={isSyncingDefects}
+              onClick={() => void handleSyncSectionDefects()}
+              style={{
+                fontSize: 12,
+                padding: '5px 12px',
+                fontWeight: 700,
+                background: '#dc2626',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+              }}
+            >
+              {isSyncingDefects ? 'Creating…' : `Create Observation${unlinkedSectionDefects.length > 1 ? 's' : ''}`}
+            </button>
+          </div>
+        )}
 
         {findings.map((f, idx) => (
           <FindingCard

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { can, isEditable, STATUS_LABELS, type InspectionStatus, type User } from '@ozellar/shared';
+import { can, isEditable, STATUS_LABELS, type InspectionStatus, type User, type Finding } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
@@ -102,6 +102,49 @@ export function SectionListPage() {
 
   const activePhotos = useMemo(() => photos.filter((p) => !p.deletedAt), [photos]);
   const defectPhotos = useMemo(() => activePhotos.filter((p) => !!p.isDefect), [activePhotos]);
+  const unlinkedDefectPhotos = useMemo(
+    () => activePhotos.filter((p) => p.isDefect && !p.findingId && p.inspectionSectionId),
+    [activePhotos]
+  );
+
+  const [isSyncingDefects, setIsSyncingDefects] = useState(false);
+
+  const handleSyncDefectObservations = async () => {
+    if (isSyncingDefects || unlinkedDefectPhotos.length === 0) return;
+    setIsSyncingDefects(true);
+    try {
+      for (const p of unlinkedDefectPhotos) {
+        if (!p.inspectionSectionId) continue;
+        const existingFindings = await db.findings
+          .where('inspectionSectionId')
+          .equals(p.inspectionSectionId)
+          .toArray();
+
+        const findingId = crypto.randomUUID();
+        const newFinding: Finding = {
+          id: findingId,
+          inspectionId: inspectionId || '',
+          inspectionSectionId: p.inspectionSectionId,
+          text: p.description ? String(p.description).trim() : 'Defect observation logged from visual evidence',
+          answer: 'no',
+          correctiveAction: '',
+          preventiveAction: '',
+          position: existingFindings.length,
+        };
+
+        await localWrite('findings', findingId, newFinding as unknown as Record<string, unknown>);
+        await localWrite('photos', p.id, {
+          findingId,
+          isDefect: true,
+        });
+      }
+    } catch (err: any) {
+      console.error('Failed to sync defect observations', err);
+      alert(`Error creating observations: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsSyncingDefects(false);
+    }
+  };
 
   const photosBySection = useMemo(() => {
     const map = new Map<string, number>();
@@ -527,6 +570,30 @@ export function SectionListPage() {
               </div>
             </div>
             <div className="ipdb-actions">
+              {unlinkedDefectPhotos.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-sync-defects"
+                  onClick={() => void handleSyncDefectObservations()}
+                  disabled={isSyncingDefects || sectionsLocked}
+                  title="Create observation cards for all defect photos that do not have one yet"
+                  style={{
+                    borderColor: '#ef4444',
+                    color: '#b91c1c',
+                    background: '#fef2f2',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontWeight: 700,
+                    boxShadow: '0 1px 3px rgba(239, 68, 68, 0.2)',
+                  }}
+                >
+                  <WarningIcon style={{ width: 14, height: 14 }} />
+                  <span>
+                    {isSyncingDefects ? 'Creating Observations…' : `Create Observations for Defects (${unlinkedDefectPhotos.length})`}
+                  </span>
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-primary btn-sm btn-preview-photos"
