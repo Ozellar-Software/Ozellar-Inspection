@@ -18,6 +18,8 @@ export interface RichTextOptions {
   color?: [number, number, number];
   bulletColor?: [number, number, number];
   dryRun?: boolean;
+  maxY?: number;
+  onPageBreak?: () => number;
 }
 
 /**
@@ -237,6 +239,9 @@ export function renderRichText(
     // Blank line
     if (rawLine.trim() === '') {
       curY += lineGap * 0.7;
+      if (!dryRun && options.maxY && curY > options.maxY && options.onPageBreak) {
+        curY = options.onPageBreak();
+      }
       continue;
     }
 
@@ -279,6 +284,18 @@ export function renderRichText(
 
     const contentX = startX + indent;
     const contentW = maxWidth - indent;
+    const effectiveLineGap = isHeading ? lineGap * 1.25 : lineGap;
+
+    // Check if new line exceeds maximum page Y
+    if (!dryRun && options.maxY && curY + effectiveLineGap > options.maxY && options.onPageBreak) {
+      curY = options.onPageBreak();
+      doc.setFont(baseFont, 'normal').setFontSize(curFontSize);
+      if (isHeading) {
+        doc.setTextColor(16, 89, 53);
+      } else {
+        doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+      }
+    }
 
     // Draw bullet or number
     if (!dryRun) {
@@ -372,8 +389,6 @@ export function renderRichText(
       }
     }
 
-    const effectiveLineGap = isHeading ? lineGap * 1.25 : lineGap;
-
     for (let i = 0; i < words.length; i++) {
       const w = words[i];
       const style =
@@ -398,6 +413,15 @@ export function renderRichText(
       // Check wrapping
       if (curX > contentX && curX + wWidth > contentX + contentW) {
         curY += effectiveLineGap;
+        if (!dryRun && options.maxY && curY > options.maxY && options.onPageBreak) {
+          curY = options.onPageBreak();
+          doc.setFont(w.font, style).setFontSize(curFontSize);
+          if (isHeading) {
+            doc.setTextColor(16, 89, 53);
+          } else {
+            doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+          }
+        }
         curX = contentX;
       }
 
@@ -419,7 +443,7 @@ export function renderRichText(
     curY += effectiveLineGap;
   }
 
-  return curY - startY;
+  return dryRun ? curY - startY : curY;
 }
 
 /**

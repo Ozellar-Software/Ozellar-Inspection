@@ -1439,70 +1439,23 @@ export async function generateInspectionPdf(data: ReportData & {
 
   doc.y = execHdrY + 18.5;
 
-  // 2. Full-Width Executive Surveyor Remarks & Appraisal Container
-  const summaryText = inspection.summary?.trim() || 'Vessel physical survey conducted in accordance with international maritime regulations and approved company survey procedures. Individual compartment condition, structural integrity, and specific equipment findings are documented in the detailed section logs.';
-
-  const textWidth = CONTENT_W - 16;
-  const richH = measureRichText(doc.pdf, summaryText, textWidth, { size: 8.2, lineGap: 4.6 });
-
-  // Dynamic card height to comfortably fit all lines of remarks + header + metadata + signoff
-  const headerAreaH = 19; // Header bar (7.5mm) + Metadata row (11.5mm)
-  const signoffH = 16;   // Sign-off declaration and surveyor signature block
-  const minCardH = 90;
-  const maxSinglePageH = 185; // Maximum height on Page 3 before bottom seal panel
-
-  const remarksCardH = Math.min(Math.max(richH + headerAreaH + signoffH + 6, minCardH), maxSinglePageH);
-  const cardStartY = doc.y;
-
-  // Outer container
-  doc.roundedBox(MARGIN_LEFT, cardStartY, CONTENT_W, remarksCardH, WHITE, BORDER, 2.5);
-
-  // Left solid accent (inset pill so it stays neatly inside rounded corners)
-  doc.setFill(NAVY);
-  doc.pdf.roundedRect(MARGIN_LEFT + 1.5, cardStartY + 2, 2.5, remarksCardH - 4, 1, 1, 'F');
-
-  // Header band
-  doc.setFill([241, 245, 249]);
-  doc.pdf.roundedRect(MARGIN_LEFT, cardStartY, CONTENT_W, 7.5, 2.5, 2.5, 'F');
-  doc.pdf.rect(MARGIN_LEFT, cardStartY + 7.5 - 2, CONTENT_W, 2, 'F');
-  doc.setDraw(BORDER_DARK, 0.2);
-  doc.pdf.line(MARGIN_LEFT, cardStartY + 7.5, PAGE_W - MARGIN_RIGHT, cardStartY + 7.5);
-
-  // Left Geometric Badge 'A'
-  doc.setFill(NAVY);
-  doc.pdf.roundedRect(MARGIN_LEFT + 3.5, cardStartY + 1.6, 4.5, 4.5, 1, 1, 'F');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
-  doc.setTextColor(WHITE);
-  doc.pdf.text('A', MARGIN_LEFT + 5.7, cardStartY + 4.8, { align: 'center' });
-
-  // Header Title
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
-  doc.setTextColor(NAVY);
-  doc.pdf.text('ATTENDING SURVEYOR EXECUTIVE REMARKS & CONDITION APPRAISAL', MARGIN_LEFT + 10.5, cardStartY + 5.2);
-
-  // Right Header Tag
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text('OFFICIAL STATUTORY OPINION', PAGE_W - MARGIN_RIGHT - 6, cardStartY + 5.2, { align: 'right' });
-
-  // Metadata Strip under header (4 columns)
-  const metaY = cardStartY + 7.5;
-  const metaH = 10.5;
+  // 2. Executive Survey Dispatch Metadata Ribbon
+  const metaY = doc.y;
+  const metaH = 11;
   doc.setFill(SLATE_BG);
-  doc.pdf.rect(MARGIN_LEFT + 0.5, metaY, CONTENT_W - 1, metaH, 'F');
-  doc.setDraw(BORDER, 0.2);
-  doc.pdf.line(MARGIN_LEFT, metaY + metaH, PAGE_W - MARGIN_RIGHT, metaY + metaH);
+  doc.setDraw(BORDER_DARK, 0.25);
+  doc.pdf.roundedRect(MARGIN_LEFT, metaY, CONTENT_W, metaH, 1.5, 1.5, 'FD');
 
   const metaCols = [
-    { label: 'LEAD SURVEYOR', val: inspection.inspector || '-' },
+    { label: 'LEAD SURVEYOR', val: inspection.inspector || 'Official Marine Surveyor' },
     { label: 'SURVEY PORT / LOCATION', val: inspection.port || '-' },
     { label: 'SURVEY AGENCY', val: inspection.company || 'Ozellar Marine Global' },
-    { label: 'INSPECTION PERIOD', val: `${fmtDate(inspection.startDate)} - ${fmtDate(inspection.completionDate || inspection.startDate)}` },
+    { label: 'INSPECTION DATES', val: `${fmtDate(inspection.startDate)} - ${fmtDate(inspection.completionDate || inspection.startDate)}` },
   ];
-  const mColW = (CONTENT_W - 6) / 4;
+  const mColW = CONTENT_W / 4;
 
   for (let mi = 0; mi < metaCols.length; mi++) {
-    const mcX = MARGIN_LEFT + 3 + mi * mColW;
+    const mcX = MARGIN_LEFT + mi * mColW;
     if (mi > 0) {
       doc.setDraw(BORDER, 0.2);
       doc.pdf.line(mcX, metaY + 2, mcX, metaY + metaH - 2);
@@ -1520,133 +1473,134 @@ export async function generateInspectionPdf(data: ReportData & {
     doc.pdf.text(mVal, mcX + 4, metaY + 8.4);
   }
 
-  // Remarks Rich Text Content
-  const textStartY = metaY + metaH + 4;
-  renderRichText(doc.pdf, summaryText, MARGIN_LEFT + 8, textStartY, textWidth, {
-    size: 8.2,
-    lineGap: 4.6,
+  doc.y = metaY + metaH + 6;
+
+  // 3. Section Title Bar: Attending Surveyor Remarks & Appraisal
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(8.0);
+  doc.setTextColor(NAVY);
+  doc.pdf.text('ATTENDING SURVEYOR APPRAISAL & OPERATIONAL SYNTHESIS', MARGIN_LEFT, doc.y + 3);
+
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
+  doc.setTextColor(TEXT_MUTED);
+  doc.pdf.text('OFFICIAL RECORD', PAGE_W - MARGIN_RIGHT, doc.y + 3, { align: 'right' });
+
+  doc.setDraw(BORDER_DARK, 0.25);
+  doc.pdf.line(MARGIN_LEFT, doc.y + 5.5, PAGE_W - MARGIN_RIGHT, doc.y + 5.5);
+  doc.y += 9.5;
+
+  // 4. Flowing Paginated Rich Text Content (Accommodates Any Length Across Pages!)
+  const summaryText = inspection.summary?.trim() || 'Vessel physical survey conducted in accordance with international maritime regulations and approved company survey procedures. Individual compartment condition, structural integrity, and specific equipment findings are documented in the detailed section logs.';
+
+  const onExecPageBreak = () => {
+    doc.newPage();
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(10.5);
+    doc.setTextColor(NAVY);
+    doc.pdf.text('2. Executive Summary (Continued)', MARGIN_LEFT, 20);
+
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  SURVEYOR REMARKS (CONT.)`, PAGE_W - MARGIN_RIGHT, 20, { align: 'right' });
+
+    doc.setDraw(BORDER_DARK, 0.25);
+    doc.pdf.line(MARGIN_LEFT, 23, PAGE_W - MARGIN_RIGHT, 23);
+
+    doc.y = 28;
+    return 28;
+  };
+
+  const pageMaxY = PAGE_H - BOTTOM_MARGIN - 22; // Leave safe space above footer
+
+  const finalY = renderRichText(doc.pdf, summaryText, MARGIN_LEFT, doc.y, CONTENT_W, {
+    size: 8.4,
+    lineGap: 4.8,
     color: TEXT_BODY,
     bulletColor: NAVY,
+    maxY: pageMaxY,
+    onPageBreak: onExecPageBreak,
   });
 
-  // Surveyor Formal Sign-off footer strip inside Remarks card
-  const signY = cardStartY + remarksCardH - signoffH;
-  doc.setDraw(BORDER, 0.25);
-  doc.pdf.line(MARGIN_LEFT + 4, signY, PAGE_W - MARGIN_RIGHT - 4, signY);
+  doc.y = finalY + 8;
 
-  doc.pdf.setFont('helvetica', 'italic').setFontSize(5.4);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text(
-    'I hereby confirm that this survey appraisal and executive summary represents an accurate on-site evaluation of the vessel\'s physical condition and operational status at the time of inspection.',
-    MARGIN_LEFT + 8,
-    signY + 4.5
-  );
+  // 5. Executive Surveyor Attestation & Formal Sign-Off Plaque
+  const signoffBlockH = 26;
+  if (doc.y + signoffBlockH > PAGE_H - BOTTOM_MARGIN - 8) {
+    doc.newPage();
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(10.5);
+    doc.setTextColor(NAVY);
+    doc.pdf.text('2. Executive Summary - Formal Sign-off', MARGIN_LEFT, 20);
 
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.2);
-  doc.setTextColor(NAVY);
-  doc.pdf.text(`ATTENDING SURVEYOR: ${(inspection.inspector || 'Official Marine Surveyor').toUpperCase()}`, MARGIN_LEFT + 8, signY + 11.2);
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  SURVEYOR SIGN-OFF`, PAGE_W - MARGIN_RIGHT, 20, { align: 'right' });
 
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(5.8);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text(`DATE OF ATTESTATION: ${fmtDate(inspection.completionDate || inspection.startDate)}  |  STATUS: ${execStatusLabel}`, PAGE_W - MARGIN_RIGHT - 8, signY + 11.2, { align: 'right' });
+    doc.setDraw(BORDER_DARK, 0.25);
+    doc.pdf.line(MARGIN_LEFT, 23, PAGE_W - MARGIN_RIGHT, 23);
+    doc.y = 28;
+  }
 
-  doc.y = cardStartY + remarksCardH + 5;
-
-  // 5. Official Quality Audit & Sign-off Footer Panel (Matching Page 2)
-  const execSealBoxY = doc.y;
-  const execSealBoxH = 28;
-  doc.roundedBox(MARGIN_LEFT, execSealBoxY, CONTENT_W, execSealBoxH, WHITE, BORDER, 2.5);
+  const plaqueY = doc.y;
+  doc.roundedBox(MARGIN_LEFT, plaqueY, CONTENT_W, signoffBlockH, SLATE_BG, BORDER, 2.0);
 
   // Left solid accent
   doc.setFill(NAVY);
-  doc.pdf.roundedRect(MARGIN_LEFT + 1.5, execSealBoxY + 2, 2.5, execSealBoxH - 4, 1, 1, 'F');
+  doc.pdf.roundedRect(MARGIN_LEFT + 1.2, plaqueY + 1.5, 2.5, signoffBlockH - 3, 1, 1, 'F');
 
-  // Vertical hairline divider
-  const execDividerX = MARGIN_LEFT + 118;
+  // Vertical divider rule
+  const divX = MARGIN_LEFT + 118;
   doc.setDraw(BORDER, 0.25);
-  doc.pdf.line(execDividerX, execSealBoxY + 3, execDividerX, execSealBoxY + execSealBoxH - 3);
+  doc.pdf.line(divX, plaqueY + 3, divX, plaqueY + signoffBlockH - 3);
 
-  // ── LEFT SIDE: Audit Attestation & Verification Badges ──
-  const execAttLeft = MARGIN_LEFT + 7;
-  const execAttMaxW = execDividerX - execAttLeft - 4;
-
+  // Left Column: Attestation Statement & Signer
+  const pLeft = MARGIN_LEFT + 7;
   doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
   doc.setTextColor(NAVY);
-  doc.pdf.text('SURVEY AUDIT ATTESTATION & TECHNICAL RECORD', execAttLeft, execSealBoxY + 5.5);
+  doc.pdf.text('OFFICIAL SURVEYOR ATTESTATION & AUDIT ENDORSEMENT', pLeft, plaqueY + 5.5);
 
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(5.8);
-  doc.setTextColor(TEXT_BODY);
-  const execAttMsg = 'This executive summary represents an accurate synthesis of vessel physical condition, audited compartments, and surveyor visual records at the time of inspection, performed in accordance with international survey protocols.';
-  const execAttLines = doc.pdf.splitTextToSize(execAttMsg, execAttMaxW) as string[];
-  doc.pdf.text(execAttLines, execAttLeft, execSealBoxY + 9.8);
+  doc.pdf.setFont('helvetica', 'italic').setFontSize(5.6);
+  doc.setTextColor(TEXT_MUTED);
+  const attestationLines = doc.pdf.splitTextToSize(
+    'I hereby attest that this executive summary and operational appraisal represents an accurate on-site evaluation of the vessel\'s physical condition, operational status, and statutory compliance at the time of survey.',
+    divX - pLeft - 4
+  ) as string[];
+  doc.pdf.text(attestationLines, pLeft, plaqueY + 10.0);
 
-  // 3 Verification Pills
-  const execCheckY = execSealBoxY + 18.2;
-  const execCheckBadges = [
-    'Survey Completed',
-    'Evidence Cataloged',
-    'Audit Certified',
-  ];
-  const execBadgeGap = 3;
-  const execCheckW = (execAttMaxW - 2 * execBadgeGap) / 3;
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
+  doc.setTextColor(TEXT_DARK);
+  doc.pdf.text(`ATTENDING SURVEYOR: ${(inspection.inspector || 'Official Marine Surveyor').toUpperCase()}`, pLeft, plaqueY + 19.5);
 
-  for (let cbi = 0; cbi < execCheckBadges.length; cbi++) {
-    const cbX = execAttLeft + cbi * (execCheckW + execBadgeGap);
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(5.5);
+  doc.setTextColor(TEXT_MUTED);
+  doc.pdf.text(`Survey Agency: ${inspection.company || 'Ozellar Marine Global'}  |  Date: ${fmtDate(inspection.completionDate || inspection.startDate)}`, pLeft, plaqueY + 23.2);
 
-    doc.setFill([236, 253, 245]);
-    doc.setDraw([167, 243, 208], 0.3);
-    doc.pdf.roundedRect(cbX, execCheckY, execCheckW, 5.2, 1.2, 1.2, 'FD');
+  // Right Column: Official Seal Stamp Plaque
+  const rWidth = CONTENT_W - (divX - MARGIN_LEFT);
+  const rCenter = divX + rWidth / 2;
 
-    doc.setFill([16, 122, 70]);
-    doc.pdf.circle(cbX + 3.2, execCheckY + 2.6, 0.9, 'F');
-
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
-    doc.setTextColor([6, 95, 70]);
-    doc.pdf.text(execCheckBadges[cbi], cbX + 5.6, execCheckY + 3.7);
-  }
-
-  // ── RIGHT SIDE: Official Survey Seal Stamp ──
-  const execSealAreaLeft = execDividerX + 3;
-  const execSealAreaW = PAGE_W - MARGIN_RIGHT - execSealAreaLeft;
-  const execSealCenterX = execSealAreaLeft + execSealAreaW / 2;
-
-  const execStampBoxW = 56;
-  const execStampBoxH = 22;
-  const execStampBoxX = execSealCenterX - execStampBoxW / 2;
-  const execStampBoxY = execSealBoxY + 3;
-
-  doc.roundedBox(execStampBoxX, execStampBoxY, execStampBoxW, execStampBoxH, SLATE_BG, NAVY, 1.5);
-  doc.setDraw(BORDER_DARK, 0.2);
-  doc.pdf.roundedRect(execStampBoxX + 1, execStampBoxY + 1, execStampBoxW - 2, execStampBoxH - 2, 1, 1, 'S');
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.2);
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
   doc.setTextColor(NAVY);
-  doc.pdf.text('OZELLAR MARINE TECHNICAL AUDIT', execSealCenterX, execStampBoxY + 4.2, { align: 'center' });
+  doc.pdf.text('OZELLAR MARINE GLOBAL', rCenter, plaqueY + 5.5, { align: 'center' });
 
-  const execSPillW = 42;
-  const execSPillH = 4.6;
-  const execSPillX = execSealCenterX - execSPillW / 2;
-  const execSPillY = execStampBoxY + 5.8;
+  // Status Pill
+  const pPillW = 44;
+  const pPillH = 4.8;
+  const pPillX = rCenter - pPillW / 2;
+  const pPillY = plaqueY + 7.5;
   doc.setFill(NAVY);
-  doc.pdf.roundedRect(execSPillX, execSPillY, execSPillW, execSPillH, 1, 1, 'F');
+  doc.pdf.roundedRect(pPillX, pPillY, pPillW, pPillH, 1, 1, 'F');
   doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
   doc.setTextColor(WHITE);
-  doc.pdf.text('OFFICIAL RECORD - VERIFIED', execSealCenterX, execSPillY + 3.3, { align: 'center' });
+  doc.pdf.text('AUDIT RECORD - ATTESTED & FILED', rCenter, pPillY + 3.4, { align: 'center' });
 
+  // Reference & Date
   doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
   doc.setTextColor(TEXT_DARK);
-  doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  ${fmtDate(inspection.startDate)}`, execSealCenterX, execStampBoxY + 15.0, { align: 'center' });
+  doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  ${fmtDate(inspection.startDate)}`, rCenter, plaqueY + 17.5, { align: 'center' });
 
-  doc.pdf.setFont('helvetica', 'italic').setFontSize(4.8);
+  doc.pdf.setFont('helvetica', 'italic').setFontSize(5.0);
   doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text(
-    inspection.inspector ? `Surveyor: ${inspection.inspector}` : 'Authorized Technical Dossier',
-    execSealCenterX,
-    execStampBoxY + 18.8,
-    { align: 'center' }
-  );
+  doc.pdf.text('Official Survey Attestation Plaque', rCenter, plaqueY + 21.8, { align: 'center' });
 
-  doc.y = execSealBoxY + execSealBoxH + 6;
+  doc.y = plaqueY + signoffBlockH + 8;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGES 4+: SECTION EVALUATIONS & CHECKLIST DETAILS / PHOTO SECTIONS
