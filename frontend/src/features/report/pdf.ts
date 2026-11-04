@@ -503,12 +503,29 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
   // ── Full-Bleed Hero Cover Image ──────────────────────────────────────────
   // Image spans full page width, with a dark gradient overlay at bottom for text
-  const heroY = 26;
-  const heroH = PAGE_H * 0.52; // ~154 mm — dominates the top half of the page
+  const heroY = 25;
+  const heroH = 138;
   let coverImgLoaded: LoadedImage | null = null;
   if (inspection.coverPhotoId) {
     coverImgLoaded = await loadImage(inspection.coverPhotoId);
   }
+
+  // Inspected vessel metadata string (shown on image overlay)
+  const metaItems = [
+    inspection.imo ? `IMO ${inspection.imo}` : '',
+    inspection.vesselType ? inspection.vesselType.toUpperCase() : '',
+    vessel?.particulars?.flag ? `Flag: ${vessel.particulars.flag}` : '',
+    inspection.port ? `Port: ${inspection.port}` : '',
+  ].filter(Boolean);
+  const vMetaStr = metaItems.join('   |   ');
+
+  // Status configuration
+  const statusLabel = (STATUS_LABELS[inspection.status] || inspection.status || 'IN PROGRESS').toUpperCase();
+  const stColor = inspection.status === 'approved'
+    ? { bg: [16, 122, 70] as [number, number, number], border: [34, 197, 94] as [number, number, number] }
+    : inspection.status === 'returned'
+    ? { bg: [185, 28, 28] as [number, number, number], border: [239, 68, 68] as [number, number, number] }
+    : { bg: [180, 83, 9] as [number, number, number], border: [245, 158, 11] as [number, number, number] };
 
   if (coverImgLoaded) {
     // Full-bleed: cover scale to fill entire width × heroH
@@ -519,150 +536,181 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     const iy = heroY + (heroH - ih) / 2;
     doc.pdf.addImage(coverImgLoaded.dataUrl, 'JPEG', ix, iy, iw, ih);
 
-    // Dark gradient overlay at bottom of image (simulate gradient with layered rects)
-    const gradH = 52;
+    // Dark gradient overlay at bottom of image (layered rects)
+    const gradH = 50;
     const gradTop = heroY + heroH - gradH;
     const steps = 10;
     for (let i = 0; i < steps; i++) {
-      const alpha = i / steps; // 0 → 1
+      const alpha = i / steps;
       const darkness = Math.round(alpha * 180);
       doc.setFill([darkness > 130 ? 0 : 10, darkness > 130 ? 0 : 20, darkness > 130 ? 0 : 15] as [number, number, number]);
-      doc.pdf.setGState(doc.pdf.GState({ opacity: alpha * 0.75 }));
+      doc.pdf.setGState(doc.pdf.GState({ opacity: alpha * 0.78 }));
       doc.pdf.rect(0, gradTop + (i * gradH) / steps, PAGE_W, gradH / steps + 0.5, 'F');
     }
     doc.pdf.setGState(doc.pdf.GState({ opacity: 1 }));
 
-    // Vessel name & IMO text overlay at bottom of image
+    // Status Pill (placed at bottom right of image over gradient)
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+    const pillTextW = doc.pdf.getTextWidth(statusLabel);
+    const pillW = pillTextW + 14;
+    const pillH = 7.5;
+    const pillX = PAGE_W - MARGIN_RIGHT - pillW;
+    const pillY = heroY + heroH - 22;
+
+    doc.setFill(stColor.bg);
+    doc.setDraw(stColor.border, 0.4);
+    doc.pdf.roundedRect(pillX, pillY, pillW, pillH, 1.5, 1.5, 'FD');
+    // Inner filled status dot
+    doc.setFill(WHITE);
+    doc.pdf.circle(pillX + 4.5, pillY + pillH / 2, 1.1, 'F');
+    doc.setTextColor(WHITE);
+    doc.pdf.text(statusLabel, pillX + 8, pillY + 5.2);
+
+    // Vessel Name Overlay (bottom left)
     const overlayTextY = heroY + heroH - 18;
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(16);
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(16.5);
     doc.setTextColor(WHITE);
     doc.pdf.text((inspection.vesselName || 'VESSEL').toUpperCase(), MARGIN_LEFT, overlayTextY);
 
-    doc.pdf.setFont('helvetica', 'normal').setFontSize(8.5);
-    doc.setTextColor([200, 230, 215]);
-    const metaStr = [
-      inspection.imo && `IMO ${inspection.imo}`,
-      inspection.vesselType,
-      inspection.port && `Port: ${inspection.port}`,
-    ].filter(Boolean).join('  ·  ');
-    doc.pdf.text(metaStr, MARGIN_LEFT, overlayTextY + 7);
+    // Metadata line (IMO, Type, Flag, Port)
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(8.0);
+    doc.setTextColor([210, 235, 225]);
+    doc.pdf.text(vMetaStr, MARGIN_LEFT, overlayTextY + 7);
 
-    // Orange accent bar at very bottom of image
+    // Orange accent bar at bottom of image
     doc.setFill(TEAL);
     doc.pdf.rect(0, heroY + heroH - 2, PAGE_W, 2.5, 'F');
   } else {
-    // Executive Maritime fallback banner (no cover photo)
+    // Executive Maritime fallback banner (when no cover photo available)
     doc.setFill([13, 33, 56]);
     doc.pdf.rect(0, heroY, PAGE_W, heroH, 'F');
     doc.setFill([10, 50, 35]);
-    doc.pdf.rect(0, heroY + heroH - 30, PAGE_W, 30, 'F');
+    doc.pdf.rect(0, heroY + heroH - 35, PAGE_W, 35, 'F');
 
     doc.setFill(TEAL);
-    doc.pdf.rect(MARGIN_LEFT, heroY + 18, 24, 1.5, 'F');
+    doc.pdf.rect(MARGIN_LEFT, heroY + 16, 24, 1.5, 'F');
+
+    // Status Pill
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+    const pillTextW = doc.pdf.getTextWidth(statusLabel);
+    const pillW = pillTextW + 14;
+    const pillH = 7.5;
+    const pillX = PAGE_W - MARGIN_RIGHT - pillW;
+    const pillY = heroY + 16;
+    doc.setFill(stColor.bg);
+    doc.setDraw(stColor.border, 0.4);
+    doc.pdf.roundedRect(pillX, pillY, pillW, pillH, 1.5, 1.5, 'FD');
+    doc.setFill(WHITE);
+    doc.pdf.circle(pillX + 4.5, pillY + pillH / 2, 1.1, 'F');
+    doc.setTextColor(WHITE);
+    doc.pdf.text(statusLabel, pillX + 8, pillY + 5.2);
 
     doc.pdf.setFont('helvetica', 'bold').setFontSize(22);
     doc.setTextColor(WHITE);
     doc.pdf.text((inspection.vesselName || 'VESSEL INSPECTION').toUpperCase(), MARGIN_LEFT, heroY + 32);
 
-    doc.pdf.setFont('helvetica', 'normal').setFontSize(9.5);
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
     doc.setTextColor([180, 225, 200]);
-    doc.pdf.text(`IMO: ${inspection.imo || 'NOT SPECIFIED'}   ·   TYPE: ${(inspection.vesselType || 'COMMERCIAL VESSEL').toUpperCase()}`, MARGIN_LEFT, heroY + 42);
-
-    doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
-    doc.setTextColor([150, 190, 165]);
-    doc.pdf.text(`PORT: ${inspection.port || 'NOT SET'}   ·   SURVEY DATE: ${fmtDate(inspection.startDate)}`, MARGIN_LEFT, heroY + 50);
+    doc.pdf.text(vMetaStr || `IMO: ${inspection.imo || 'NOT SPECIFIED'}`, MARGIN_LEFT, heroY + 44);
 
     doc.setFill(TEAL);
     doc.pdf.rect(0, heroY + heroH - 2, PAGE_W, 2.5, 'F');
   }
 
-  // Vessel Identity & Status Banner — compact card below image
-  const vcardY = heroY + heroH + 5;
-  const vcardH = 20;
-  doc.roundedBox(MARGIN_LEFT, vcardY, CONTENT_W, vcardH, WHITE, BORDER, 2.5);
-  // Green left accent
-  doc.setFill(NAVY);
-  doc.pdf.rect(MARGIN_LEFT, vcardY, 3, vcardH, 'F');
-
-  // Left vessel info
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text('INSPECTED VESSEL', MARGIN_LEFT + 7, vcardY + 5.5);
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(13);
-  doc.setTextColor(NAVY);
-  doc.pdf.text(inspection.vesselName || 'Unnamed Vessel', MARGIN_LEFT + 7, vcardY + 12.5);
-
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
-  doc.setTextColor(TEXT_MUTED);
-  const vMeta = [inspection.imo && `IMO ${inspection.imo}`, inspection.vesselType, vessel?.particulars?.flag && `Flag: ${vessel.particulars.flag}`].filter(Boolean).join('  |  ');
-  doc.pdf.text(vMeta, MARGIN_LEFT + 7, vcardY + 17.5);
-
-  // Right status pill
-  const statusLabel = (STATUS_LABELS[inspection.status] || inspection.status).toUpperCase();
-  const stState = inspection.status === 'approved' ? 'ok'
-    : inspection.status === 'returned' ? 'bad'
-    : inspection.status === 'in_progress' ? 'pending' : 'ok';
-  const stColor = stState === 'ok' ? STATUS_OK : stState === 'bad' ? STATUS_BAD : STATUS_PENDING;
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-  const stText = `●  ${statusLabel}`;
-  const stW = doc.pdf.getTextWidth(stText) + 10;
-  const stX = PAGE_W - MARGIN_RIGHT - stW - 6;
-  doc.roundedBox(stX, vcardY + 5.5, stW, 8, stColor.bg, stColor.border, 2);
-  doc.setTextColor(stColor.text);
-  doc.pdf.text(stText, stX + 5, vcardY + 11.3);
-
-  // Inspection Particulars 2-Column Grid
-  const detailsY = vcardY + vcardH + 4;
-  const detailsH = 48;
-  doc.roundedBox(MARGIN_LEFT, detailsY, CONTENT_W, detailsH, SLATE_BG, BORDER, 2.5);
+  // ── AUDIT & SURVEY PARTICULARS (Executive Maritime Table) ──────────────────
+  const detailsY = heroY + heroH + 6;
+  const detailsH = 66;
+  doc.roundedBox(MARGIN_LEFT, detailsY, CONTENT_W, detailsH, WHITE, BORDER, 2.5);
 
   // Navy header strip inside card
+  const hdrH = 8.5;
   doc.setFill(NAVY);
-  doc.pdf.rect(MARGIN_LEFT, detailsY, CONTENT_W, 7.5, 'F');
+  doc.pdf.rect(MARGIN_LEFT, detailsY, CONTENT_W, hdrH, 'F');
   doc.setFill(TEAL);
-  doc.pdf.rect(MARGIN_LEFT, detailsY, 3, 7.5, 'F');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
+  doc.pdf.rect(MARGIN_LEFT, detailsY, 3.5, hdrH, 'F');
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
   doc.setTextColor(WHITE);
-  doc.pdf.text('AUDIT & SURVEY PARTICULARS', MARGIN_LEFT + 7, detailsY + 5.2);
+  doc.pdf.text('AUDIT & SURVEY PARTICULARS', MARGIN_LEFT + 8, detailsY + 5.8);
 
-  // Left Column
-  const col1X = MARGIN_LEFT + 7;
-  let rowY = detailsY + 15;
-  doc.kvLine('Survey Type', isPhotoOnly ? 'Photographic Condition Survey' : (INSPECTION_TYPE_LABELS[inspection.inspectionType] || inspection.inspectionType), col1X, rowY, 34);
-  rowY += 7;
-  doc.kvLine('Port / Location', inspection.port || '-', col1X, rowY, 34);
-  rowY += 7;
-  doc.kvLine('Commenced', fmtDate(inspection.startDate), col1X, rowY, 34);
-  rowY += 7;
-  doc.kvLine('Completed', fmtDate(inspection.completionDate || inspection.startDate), col1X, rowY, 34);
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(7);
+  doc.setTextColor([200, 230, 215]);
+  doc.pdf.text('OFFICIAL STATUTORY RECORD', PAGE_W - MARGIN_RIGHT - 8, detailsY + 5.8, { align: 'right' });
 
-  // Right Column
-  const col2X = MARGIN_LEFT + 96;
-  rowY = detailsY + 15;
-  doc.kvLine('Lead Surveyor', inspection.inspector || '-', col2X, rowY, 34);
-  rowY += 7;
-  doc.kvLine('Report Ref', `VIR-${inspection.id.slice(0, 8).toUpperCase()}`, col2X, rowY, 34);
-  rowY += 7;
-  doc.kvLine('Vessel Type', inspection.vesselType || '-', col2X, rowY, 34);
+  // 4 Rows of Data Grid
+  const particularsRows = [
+    {
+      col1: { label: 'SURVEY TYPE', val: isPhotoOnly ? 'Photographic Condition Survey' : (INSPECTION_TYPE_LABELS[inspection.inspectionType] || inspection.inspectionType || 'In Port Survey') },
+      col2: { label: 'LEAD SURVEYOR', val: inspection.inspector || '-' },
+    },
+    {
+      col1: { label: 'PORT / LOCATION', val: inspection.port || '-' },
+      col2: { label: 'SURVEY AGENCY', val: inspection.company || 'Ozellar Marine Global' },
+    },
+    {
+      col1: { label: 'DATE COMMENCED', val: fmtDate(inspection.startDate) },
+      col2: { label: 'REPORT REFERENCE', val: `VIR-${inspection.id.slice(0, 8).toUpperCase()}` },
+    },
+    {
+      col1: { label: 'DATE COMPLETED', val: fmtDate(inspection.completionDate || inspection.startDate) },
+      col2: { label: 'VESSEL CATEGORY', val: (inspection.vesselType || 'Commercial Vessel').toUpperCase() },
+    },
+  ];
 
-  // Cover Footer Certification Box
-  const certY = detailsY + detailsH + 4;
-  const certH = 15;
-  doc.roundedBox(MARGIN_LEFT, certY, CONTENT_W, certH, TEAL_TINT, TEAL, 2);
+  let pRowY = detailsY + hdrH + 3.5;
+  const col1X = MARGIN_LEFT + 8;
+  const col2X = MARGIN_LEFT + 98;
+
+  for (let rIdx = 0; rIdx < particularsRows.length; rIdx++) {
+    const row = particularsRows[rIdx];
+
+    // Col 1
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(row.col1.label, col1X, pRowY + 3.5);
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+    doc.setTextColor(NAVY);
+    doc.pdf.text(row.col1.val, col1X, pRowY + 8.5);
+
+    // Col 2
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(row.col2.label, col2X, pRowY + 3.5);
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+    doc.setTextColor(NAVY);
+    doc.pdf.text(row.col2.val, col2X, pRowY + 8.5);
+
+    // Hairline divider after rows 0, 1, 2
+    if (rIdx < particularsRows.length - 1) {
+      doc.setDraw(BORDER, 0.2);
+      doc.pdf.line(MARGIN_LEFT + 8, pRowY + 12.5, PAGE_W - MARGIN_RIGHT - 8, pRowY + 12.5);
+    }
+
+    pRowY += 13.5;
+  }
+
+  // ── Cover Footer Certification Box ─────────────────────────────────────────
+  const certY = detailsY + detailsH + 6;
+  const certH = 24;
+  doc.roundedBox(MARGIN_LEFT, certY, CONTENT_W, certH, TEAL_TINT, [242, 107, 36] as any, 2);
   doc.setFill(TEAL);
-  doc.pdf.rect(MARGIN_LEFT, certY, 3, certH, 'F');
+  doc.pdf.rect(MARGIN_LEFT, certY, 3.5, certH, 'F');
 
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
   doc.setTextColor(TEAL);
-  doc.pdf.text('VERIFICATION STATEMENT & QUALITY CERTIFICATION', MARGIN_LEFT + 6, certY + 5.5);
+  doc.pdf.text('VERIFICATION STATEMENT & QUALITY CERTIFICATION', MARGIN_LEFT + 8, certY + 6.5);
 
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(6.5);
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+  doc.setTextColor(NAVY);
+  doc.pdf.text('IMO / SOLAS SURVEY STANDARDS', PAGE_W - MARGIN_RIGHT - 8, certY + 6.5, { align: 'right' });
+
+  doc.setDraw([242, 107, 36], 0.2);
+  doc.pdf.line(MARGIN_LEFT + 8, certY + 9, PAGE_W - MARGIN_RIGHT - 8, certY + 9);
+
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(7.2);
   doc.setTextColor(TEXT_BODY);
-  const certMsg = 'This inspection was carried out in accordance with maritime safety regulations and approved company survey procedures. Findings and condition assessments represent accurate technical status at the time of inspection.';
-  const certLines = doc.pdf.splitTextToSize(certMsg, CONTENT_W - 12) as string[];
-  doc.pdf.text(certLines, MARGIN_LEFT + 6, certY + 9.5);
+  const certMsg = 'This inspection was carried out in accordance with international maritime safety regulations, classification society standards, and approved company survey procedures. Findings and condition assessments represent accurate technical status at the time of inspection.';
+  const certLines = doc.pdf.splitTextToSize(certMsg, CONTENT_W - 16) as string[];
+  doc.pdf.text(certLines, MARGIN_LEFT + 8, certY + 14.5);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 2: VESSEL TECHNICAL PARTICULARS
