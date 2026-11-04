@@ -7,11 +7,12 @@ import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, CameraIcon, PlusIcon, XIcon, EyeIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon } from '../../icons';
+import { BackIcon, CameraIcon, PlusIcon, XIcon, EyeIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon, FileIcon } from '../../icons';
 import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
 import { DeleteInspectionModal } from './DeleteInspectionModal';
 import { PhotoGalleryPreviewModal } from './PhotoGalleryPreviewModal';
+import { ReportPdfPreviewModal } from '../report/ReportPdfPreviewModal';
 import { loadReportData } from '../report/reportData';
 import { generateInspectionPdf } from '../report/pdf';
 import './SectionListPage.css';
@@ -52,6 +53,7 @@ export function SectionListPage() {
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [isReportPreviewModalOpen, setIsReportPreviewModalOpen] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [recheckedAccess, setRecheckedAccess] = useState(false);
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
@@ -536,6 +538,23 @@ export function SectionListPage() {
               </button>
               <button
                 type="button"
+                className="btn btn-primary btn-sm btn-preview-report"
+                onClick={() => setIsReportPreviewModalOpen(true)}
+                title="Review official Report PDF with live high-resolution preview"
+                style={{
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+                  borderColor: '#0f766e',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <FileIcon style={{ width: 14, height: 14 }} />
+                <span>Report Review</span>
+              </button>
+              <button
+                type="button"
                 className="btn btn-outline btn-sm"
                 onClick={() => void handleDownloadPhotoReportPdf()}
                 disabled={isExportingPdf}
@@ -850,6 +869,16 @@ export function SectionListPage() {
           allSections={sections}
           locked={sectionsLocked}
           onDownloadZip={handleDownloadInspectionPhotos}
+        />
+      )}
+
+      {isReportPreviewModalOpen && inspectionId && (
+        <ReportPdfPreviewModal
+          isOpen={isReportPreviewModalOpen}
+          onClose={() => setIsReportPreviewModalOpen(false)}
+          inspectionId={inspectionId}
+          vesselName={displayInspection?.vesselName}
+          defaultReportType={(displayInspection as any)?.reportMode === 'photo' ? 'photo_only' : 'full'}
         />
       )}
 

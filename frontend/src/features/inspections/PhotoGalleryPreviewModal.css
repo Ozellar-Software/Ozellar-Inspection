@@ -729,35 +729,56 @@
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
 
-.pgpm-status-pill {
-  display: flex;
+.pgpm-status-pill-btn {
+  display: inline-flex;
   align-items: center;
   gap: 4.5px;
   font-size: 10px;
   font-weight: 800;
-  padding: 3px 8px;
+  padding: 3px 9px;
   border-radius: 7px;
   letter-spacing: 0.3px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+  border: none;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  user-select: none;
 }
 
-.pgpm-status-pill.defect {
+.pgpm-status-pill-btn.defect {
   background: #dc2626;
   color: #ffffff;
 }
 
-.pgpm-status-pill.normal {
+.pgpm-status-pill-btn.defect:hover {
+  background: #b91c1c;
+  transform: scale(1.05);
+}
+
+.pgpm-status-pill-btn.normal {
   background: #059669;
   color: #ffffff;
 }
 
+.pgpm-status-pill-btn.normal:hover {
+  background: #047857;
+  transform: scale(1.05);
+}
+
 /* Card Caption / Meta */
 .pgpm-card-caption {
-  padding: 12px 14px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   background: #ffffff;
+}
+
+.pgpm-card-caption-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .pgpm-card-section {
@@ -771,26 +792,39 @@
   text-overflow: ellipsis;
 }
 
-.pgpm-card-desc {
-  margin: 0;
-  font-size: 12.5px;
-  color: #1e293b;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+/* Inline Remark Input */
+.pgpm-inline-remark-wrap {
+  width: 100%;
+  margin-top: 2px;
 }
 
-.pgpm-card-desc.defect {
-  font-weight: 600;
-  color: #991b1b;
+.pgpm-inline-remark-input {
+  width: 100%;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: #0f172a;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.pgpm-card-desc.empty {
-  font-style: italic;
+.pgpm-inline-remark-input:focus {
+  background: #ffffff;
+  border-color: #105935;
+  box-shadow: 0 0 0 2.5px rgba(16, 89, 53, 0.12);
+}
+
+.pgpm-inline-remark-input.defect:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 2.5px rgba(239, 68, 68, 0.12);
+}
+
+.pgpm-inline-remark-input::placeholder {
   color: #94a3b8;
-  font-size: 11.5px;
+  font-style: italic;
 }
 
 /* ── Empty State ── */

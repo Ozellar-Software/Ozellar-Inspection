@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import './RichTextEditor.css';
 
 export interface RichTextEditorProps {
@@ -14,34 +14,81 @@ export interface RichTextEditorProps {
   style?: React.CSSProperties;
 }
 
-/**
- * RichTextEditor provides a sleek maritime-themed toolbar for:
- * - Bold (**text**)
- * - Italic (*text*)
- * - Underline (<u>text</u>)
- * - Bullet list (• item)
- * - Numbered list (1. item)
- * - Headings (# Title, ## Section)
- * - Font Families ([font:serif]...[/font], [font:mono]...[/font])
- * - Quick symbols (✓, ▲, →)
- * - Live formatted preview tab matching the Report PDF
- */
+const WORD_FONTS = [
+  // Standard & System
+  { label: 'Calibri', value: 'Calibri, sans-serif' },
+  { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
+  { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
+  { label: 'Segoe UI', value: '"Segoe UI", Tahoma, sans-serif' },
+  { label: 'Trebuchet MS', value: '"Trebuchet MS", sans-serif' },
+  { label: 'Verdana', value: 'Verdana, sans-serif' },
+  { label: 'Tahoma', value: 'Tahoma, sans-serif' },
+
+  // Editorial & Formal Serif
+  { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Garamond', value: 'Garamond, serif' },
+  { label: 'Cambria', value: 'Cambria, Georgia, serif' },
+  { label: 'Palatino', value: '"Palatino Linotype", Palatino, serif' },
+
+  // Modern Clean Sans
+  { label: 'Inter', value: 'Inter, sans-serif' },
+  { label: 'Roboto', value: 'Roboto, sans-serif' },
+  { label: 'Montserrat', value: 'Montserrat, sans-serif' },
+  { label: 'Poppins', value: 'Poppins, sans-serif' },
+  { label: 'Open Sans', value: '"Open Sans", sans-serif' },
+  { label: 'Lato', value: 'Lato, sans-serif' },
+
+  // Technical & Monospace
+  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
+  { label: 'Consolas', value: 'Consolas, monospace' },
+  { label: 'SF Mono', value: '"SF Mono", Menlo, monospace' },
+];
+
+const BULLET_STYLES = [
+  { label: 'Disc (Solid Round)', symbol: '•', display: '• Disc' },
+  { label: 'Circle (Hollow)', symbol: '○', display: '○ Circle' },
+  { label: 'Square (Solid)', symbol: '■', display: '■ Square' },
+  { label: 'Checkbox (Hollow)', symbol: '□', display: '□ Checkbox' },
+  { label: 'Diamond', symbol: '◆', display: '◆ Diamond' },
+  { label: 'Arrow', symbol: '➢', display: '➢ Arrow' },
+  { label: 'Checkmark', symbol: '✓', display: '✓ Check' },
+  { label: 'Dash', symbol: '–', display: '– Dash' },
+  { label: 'Numbered (1, 2, 3)', symbol: 'num', display: '1. Number' },
+  { label: 'Alphabet (a, b, c)', symbol: 'alpha', display: 'a. Alphabet' },
+  { label: 'Roman (i, ii, iii)', symbol: 'roman', display: 'i. Roman' },
+];
+
 export function RichTextEditor({
   value = '',
   onChange,
   onBlur,
-  placeholder = 'Type your notes or remarks here…',
+  placeholder = 'Type here…',
   disabled = false,
-  minHeight = 90,
+  minHeight = 80,
   label,
   showFontSelector = true,
   className = '',
   style = {},
 }: RichTextEditorProps) {
-  const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write');
+  const [selectedFont, setSelectedFont] = useState(WORD_FONTS[0].value);
+  const [isBulletMenuOpen, setIsBulletMenuOpen] = useState(false);
+  const bulletMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Wrap or insert text around current selection
+  // Close bullet menu on outside click
+  useEffect(() => {
+    if (!isBulletMenuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (bulletMenuRef.current && !bulletMenuRef.current.contains(e.target as Node)) {
+        setIsBulletMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isBulletMenuOpen]);
+
+  // Wrap or insert text
   const applyInlineWrap = useCallback(
     (prefix: string, suffix: string, defaultText: string) => {
       if (disabled) return;
@@ -57,7 +104,6 @@ export function RichTextEditor({
 
       onChange(nextValue);
 
-      // Re-position cursor inside or after wrapped text
       setTimeout(() => {
         textarea.focus();
         if (selected) {
@@ -70,17 +116,17 @@ export function RichTextEditor({
     [value, onChange, disabled]
   );
 
-  // Apply bullet or numbered list to current line or selected lines
-  const applyListPrefix = useCallback(
-    (type: 'bullet' | 'number') => {
+  // Apply chosen bullet or number style
+  const applyBulletStyle = useCallback(
+    (symbol: string) => {
       if (disabled) return;
+      setIsBulletMenuOpen(false);
       const textarea = textareaRef.current;
       if (!textarea) return;
 
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
 
-      // Find start of current line
       const before = value.substring(0, start);
       const lineStart = before.lastIndexOf('\n') + 1;
       const after = value.substring(end);
@@ -90,19 +136,22 @@ export function RichTextEditor({
       const lines = selectedBlock.split('\n');
 
       const newLines = lines.map((line, idx) => {
-        const trimmed = line.trimStart();
-        if (type === 'bullet') {
-          // Toggle off if already bullet
-          if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-            return line.replace(/^(\s*)([•\-\*]\s+)/, '');
-          }
-          return `• ${trimmed}`;
+        // Strip any existing bullet/number prefix
+        const clean = line.replace(/^(\s*)([•○■□◆➢➔→✓–\-\*]|\d+[\.\)]|[a-zA-Z][\.\)]|[ivxlcdmIVXLCDM]+[\.\)])\s+/, '$1');
+        const indentMatch = line.match(/^(\s*)/);
+        const indent = indentMatch ? indentMatch[1] : '';
+
+        if (symbol === 'num') {
+          return `${indent}${idx + 1}. ${clean.trimStart()}`;
+        } else if (symbol === 'alpha') {
+          const letter = String.fromCharCode(97 + (idx % 26));
+          return `${indent}${letter}. ${clean.trimStart()}`;
+        } else if (symbol === 'roman') {
+          const romanNumerals = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x'];
+          const r = romanNumerals[idx % romanNumerals.length];
+          return `${indent}${r}. ${clean.trimStart()}`;
         } else {
-          // Numbered list
-          if (/^\d+[\.\)]\s+/.test(trimmed)) {
-            return line.replace(/^(\s*)(\d+[\.\)]\s+)/, '');
-          }
-          return `${idx + 1}. ${trimmed}`;
+          return `${indent}${symbol} ${clean.trimStart()}`;
         }
       });
 
@@ -118,9 +167,9 @@ export function RichTextEditor({
     [value, onChange, disabled]
   );
 
-  // Apply heading prefix (#, ##, ###)
+  // Apply heading (H2, H3)
   const applyHeading = useCallback(
-    (level: 1 | 2 | 3) => {
+    (level: 2 | 3) => {
       if (disabled) return;
       const textarea = textareaRef.current;
       if (!textarea) return;
@@ -147,51 +196,26 @@ export function RichTextEditor({
     [value, onChange, disabled]
   );
 
-  // Apply font family tag: [font:serif]...[/font] or [font:mono]...[/font]
-  const applyFontTag = useCallback(
-    (fontName: 'serif' | 'mono' | 'sans') => {
-      if (disabled) return;
-      if (fontName === 'sans') {
-        // Remove font tags from selection
-        const textarea = textareaRef.current;
-        if (!textarea) return;
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const selected = value.substring(start, end);
-        const stripped = selected.replace(/\[font:\w+\]/g, '').replace(/\[\/font\]/g, '');
-        onChange(value.substring(0, start) + stripped + value.substring(end));
-        return;
-      }
-      applyInlineWrap(`[font:${fontName}]`, `[/font]`, 'formatted text');
-    },
-    [applyInlineWrap, disabled, value, onChange]
-  );
+  // Apply font family tag to selected text
+  const handleFontChange = (fontVal: string, fontLabel: string) => {
+    setSelectedFont(fontVal);
+    if (disabled) return;
+    const textarea = textareaRef.current;
+    if (!textarea) return;
 
-  // Insert special symbol at cursor
-  const insertSymbol = useCallback(
-    (symbol: string) => {
-      if (disabled) return;
-      const textarea = textareaRef.current;
-      if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    if (start !== end) {
+      // Selected text -> wrap in font tag
+      applyInlineWrap(`[font:${fontLabel}]`, `[/font]`, 'text');
+    }
+  };
 
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const nextValue = value.substring(0, start) + symbol + value.substring(end);
-      onChange(nextValue);
-
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(start + symbol.length, start + symbol.length);
-      }, 0);
-    },
-    [value, onChange, disabled]
-  );
-
-  // Smart Enter handling for bullet / numbered list continuation and keyboard shortcuts
+  // Smart enter key handling: carry current bullet or increment number
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (disabled) return;
 
-    // Shortcuts: Ctrl+B / Cmd+B -> Bold, Ctrl+I -> Italic, Ctrl+U -> Underline
+    // Shortcuts: Ctrl+B, Ctrl+I, Ctrl+U
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 'b' || e.key === 'B') {
         e.preventDefault();
@@ -210,7 +234,6 @@ export function RichTextEditor({
       }
     }
 
-    // Enter key smart list continuation
     if (e.key === 'Enter') {
       const textarea = textareaRef.current;
       if (!textarea) return;
@@ -220,10 +243,11 @@ export function RichTextEditor({
       const lineStart = beforeCursor.lastIndexOf('\n') + 1;
       const currentLine = beforeCursor.substring(lineStart);
 
-      // Check if current line is a bullet:
-      const bulletMatch = currentLine.match(/^(\s*)([•\-\*])\s+(.*)$/);
+      // Bullet continuation
+      const bulletMatch = currentLine.match(/^(\s*)([•○■□◆➢➔→✓–\-\*])\s+(.*)$/);
       if (bulletMatch) {
         const indent = bulletMatch[1];
+        const symbol = bulletMatch[2];
         const content = bulletMatch[3];
 
         if (content.trim() === '') {
@@ -231,362 +255,213 @@ export function RichTextEditor({
           e.preventDefault();
           const nextVal = value.substring(0, lineStart) + value.substring(start);
           onChange(nextVal);
-          setTimeout(() => {
-            textarea.setSelectionRange(lineStart, lineStart);
-          }, 0);
+          setTimeout(() => textarea.setSelectionRange(lineStart, lineStart), 0);
           return;
         } else {
-          // Continue bullet on next line
           e.preventDefault();
-          const insertion = `\n${indent}• `;
+          const insertion = `\n${indent}${symbol} `;
           const nextVal = value.substring(0, start) + insertion + value.substring(start);
           onChange(nextVal);
-          setTimeout(() => {
-            textarea.setSelectionRange(start + insertion.length, start + insertion.length);
-          }, 0);
+          setTimeout(() => textarea.setSelectionRange(start + insertion.length, start + insertion.length), 0);
           return;
         }
       }
 
-      // Check if current line is a numbered list:
-      const numberMatch = currentLine.match(/^(\s*)(\d+)[\.\)]\s+(.*)$/);
-      if (numberMatch) {
-        const indent = numberMatch[1];
-        const num = parseInt(numberMatch[2], 10);
-        const content = numberMatch[3];
+      // Number continuation
+      const numMatch = currentLine.match(/^(\s*)(\d+)[\.\)]\s+(.*)$/);
+      if (numMatch) {
+        const indent = numMatch[1];
+        const num = parseInt(numMatch[2], 10);
+        const content = numMatch[3];
 
         if (content.trim() === '') {
-          // Empty number line -> exit list
           e.preventDefault();
           const nextVal = value.substring(0, lineStart) + value.substring(start);
           onChange(nextVal);
-          setTimeout(() => {
-            textarea.setSelectionRange(lineStart, lineStart);
-          }, 0);
+          setTimeout(() => textarea.setSelectionRange(lineStart, lineStart), 0);
           return;
         } else {
-          // Increment number
           e.preventDefault();
           const insertion = `\n${indent}${num + 1}. `;
           const nextVal = value.substring(0, start) + insertion + value.substring(start);
           onChange(nextVal);
-          setTimeout(() => {
-            textarea.setSelectionRange(start + insertion.length, start + insertion.length);
-          }, 0);
+          setTimeout(() => textarea.setSelectionRange(start + insertion.length, start + insertion.length), 0);
           return;
         }
       }
     }
   };
 
-  // Convert raw text into styled HTML elements for Live Preview
-  const renderLivePreview = () => {
-    if (!value.trim()) {
-      return <div className="rte-preview-empty">Nothing to preview. Enter text to see formatted output.</div>;
-    }
-
-    const lines = value.split('\n');
-    return (
-      <div className="rte-preview-content">
-        {lines.map((line, lIdx) => {
-          if (!line.trim()) {
-            return <div key={lIdx} className="rte-preview-gap" />;
-          }
-
-          // Check Headings
-          if (line.startsWith('# ')) {
-            return (
-              <h3 key={lIdx} className="rte-h1">
-                {renderInlinePreview(line.substring(2))}
-              </h3>
-            );
-          }
-          if (line.startsWith('## ')) {
-            return (
-              <h4 key={lIdx} className="rte-h2">
-                {renderInlinePreview(line.substring(3))}
-              </h4>
-            );
-          }
-          if (line.startsWith('### ')) {
-            return (
-              <h5 key={lIdx} className="rte-h3">
-                {renderInlinePreview(line.substring(4))}
-              </h5>
-            );
-          }
-
-          // Check Bullets
-          const bulletMatch = line.match(/^(\s*)([•\-\*])\s+(.*)$/);
-          if (bulletMatch) {
-            return (
-              <div key={lIdx} className="rte-bullet-line">
-                <span className="rte-bullet-dot" />
-                <span className="rte-bullet-text">{renderInlinePreview(bulletMatch[3])}</span>
-              </div>
-            );
-          }
-
-          // Check Numbers
-          const numMatch = line.match(/^(\s*)(\d+[\.\)])\s+(.*)$/);
-          if (numMatch) {
-            return (
-              <div key={lIdx} className="rte-num-line">
-                <span className="rte-num-badge">{numMatch[2]}</span>
-                <span className="rte-num-text">{renderInlinePreview(numMatch[3])}</span>
-              </div>
-            );
-          }
-
-          // Normal Paragraph Line
-          return (
-            <p key={lIdx} className="rte-p">
-              {renderInlinePreview(line)}
-            </p>
-          );
-        })}
-      </div>
-    );
-  };
-
-  // Parse inline tokens into React elements for preview
-  const renderInlinePreview = (text: string) => {
-    // Regex for bold, italic, underline, and font tags
-    const parts = text.split(
-      /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|<b>[\s\S]+?<\/b>|<i>[\s\S]+?<\/i>|<u>[\s\S]+?<\/u>|\[font:\w+\][\s\S]+?\[\/font\])/g
-    );
-
-    return parts.map((part, pIdx) => {
-      if (part.startsWith('***') && part.endsWith('***')) {
-        return <strong key={pIdx}><em>{part.slice(3, -3)}</em></strong>;
-      }
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={pIdx}>{part.slice(2, -2)}</strong>;
-      }
-      if (part.toLowerCase().startsWith('<b>') && part.toLowerCase().endsWith('</b>')) {
-        return <strong key={pIdx}>{part.slice(3, -4)}</strong>;
-      }
-      if (part.startsWith('*') && part.endsWith('*')) {
-        return <em key={pIdx}>{part.slice(1, -1)}</em>;
-      }
-      if (part.toLowerCase().startsWith('<i>') && part.toLowerCase().endsWith('</i>')) {
-        return <em key={pIdx}>{part.slice(3, -4)}</em>;
-      }
-      if (part.toLowerCase().startsWith('<u>') && part.toLowerCase().endsWith('</u>')) {
-        return <u key={pIdx}>{part.slice(3, -4)}</u>;
-      }
-      if (part.toLowerCase().startsWith('[font:')) {
-        const fontMatch = part.match(/^\[font:(\w+)\]([\s\S]+?)\[\/font\]/i);
-        if (fontMatch) {
-          const fName = fontMatch[1].toLowerCase();
-          const fClass = fName === 'serif' || fName === 'times' ? 'font-serif' : fName === 'mono' || fName === 'courier' ? 'font-mono' : 'font-sans';
-          return <span key={pIdx} className={fClass}>{renderInlinePreview(fontMatch[2])}</span>;
-        }
-      }
-      return <React.Fragment key={pIdx}>{part}</React.Fragment>;
-    });
-  };
-
   return (
-    <div className={`rte-container ${className} ${disabled ? 'disabled' : ''}`} style={style}>
-      {/* ── Optional Header / Label Row ── */}
-      {label && (
-        <div className="rte-header-label">
-          <span>{label}</span>
-        </div>
-      )}
+    <div className={`word-editor-container ${className} ${disabled ? 'disabled' : ''}`} style={style}>
+      {label && <div className="word-editor-label">{label}</div>}
 
-      {/* ── Toolbar ── */}
-      <div className="rte-toolbar">
-        <div className="rte-toolbar-group">
-          {/* Headings */}
+      {/* ── Word-Style Sleek Ribbon ── */}
+      <div className="word-ribbon">
+        {/* Font Family Selector */}
+        {showFontSelector && (
+          <div className="word-ribbon-item">
+            <select
+              className="word-font-select"
+              value={selectedFont}
+              onChange={(e) => {
+                const opt = WORD_FONTS.find((f) => f.value === e.target.value);
+                handleFontChange(e.target.value, opt ? opt.label : 'Calibri');
+              }}
+              disabled={disabled}
+              title="Font Family"
+            >
+              {WORD_FONTS.map((f) => (
+                <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="word-ribbon-sep" />
+
+        {/* Headings */}
+        <div className="word-ribbon-group">
           <button
             type="button"
-            className="rte-tool-btn"
-            title="Heading 2 (## Title)"
+            className="word-btn"
             onClick={() => applyHeading(2)}
             disabled={disabled}
+            title="Heading 2 (## Title)"
           >
             H2
           </button>
           <button
             type="button"
-            className="rte-tool-btn"
-            title="Heading 3 (### Subhead)"
+            className="word-btn"
             onClick={() => applyHeading(3)}
             disabled={disabled}
+            title="Heading 3 (### Subhead)"
           >
             H3
           </button>
         </div>
 
-        <div className="rte-divider" />
+        <div className="word-ribbon-sep" />
 
-        <div className="rte-toolbar-group">
-          {/* Bold */}
+        {/* Inline Formatting: Bold, Italic, Underline, Strike */}
+        <div className="word-ribbon-group">
           <button
             type="button"
-            className="rte-tool-btn rte-bold"
-            title="Bold (**text** or Ctrl+B)"
+            className="word-btn bold"
             onClick={() => applyInlineWrap('**', '**', 'bold text')}
             disabled={disabled}
+            title="Bold (Ctrl+B)"
           >
             <strong>B</strong>
           </button>
-          {/* Italic */}
           <button
             type="button"
-            className="rte-tool-btn rte-italic"
-            title="Italic (*text* or Ctrl+I)"
+            className="word-btn italic"
             onClick={() => applyInlineWrap('*', '*', 'italic text')}
             disabled={disabled}
+            title="Italic (Ctrl+I)"
           >
             <em>I</em>
           </button>
-          {/* Underline */}
           <button
             type="button"
-            className="rte-tool-btn rte-underline"
-            title="Underline (<u>text</u> or Ctrl+U)"
+            className="word-btn underline"
             onClick={() => applyInlineWrap('<u>', '</u>', 'underlined text')}
             disabled={disabled}
+            title="Underline (Ctrl+U)"
           >
             <u>U</u>
           </button>
-        </div>
-
-        <div className="rte-divider" />
-
-        <div className="rte-toolbar-group">
-          {/* Bullet List */}
           <button
             type="button"
-            className="rte-tool-btn"
-            title="Bullet list (• Item)"
-            onClick={() => applyListPrefix('bullet')}
+            className="word-btn strike"
+            onClick={() => applyInlineWrap('~~', '~~', 'strikethrough text')}
             disabled={disabled}
+            title="Strikethrough"
           >
-            <span style={{ fontSize: 14 }}>•</span> List
-          </button>
-          {/* Numbered List */}
-          <button
-            type="button"
-            className="rte-tool-btn"
-            title="Numbered list (1. Item)"
-            onClick={() => applyListPrefix('number')}
-            disabled={disabled}
-          >
-            1. List
+            <s>S</s>
           </button>
         </div>
 
-        {showFontSelector && (
-          <>
-            <div className="rte-divider" />
-            <div className="rte-toolbar-group">
-              <select
-                className="rte-font-select"
-                title="Select font style"
-                disabled={disabled}
-                defaultValue="default"
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === 'serif' || val === 'mono' || val === 'sans') {
-                    applyFontTag(val);
-                  }
-                  e.target.value = 'default';
-                }}
-              >
-                <option value="default" disabled>Font Style…</option>
-                <option value="sans">Standard (Sans)</option>
-                <option value="serif">Executive (Serif)</option>
-                <option value="mono">Technical (Mono)</option>
-              </select>
+        <div className="word-ribbon-sep" />
+
+        {/* Word-Style Bullet Picker Popover */}
+        <div className="word-bullet-wrap" ref={bulletMenuRef}>
+          <button
+            type="button"
+            className="word-btn word-bullet-btn"
+            onClick={() => setIsBulletMenuOpen((v) => !v)}
+            disabled={disabled}
+            title="Select Bullet Style or Numbered List"
+          >
+            <span className="word-bullet-icon">•</span>
+            <span className="word-bullet-text">Bullets</span>
+            <span className="word-chevron">▼</span>
+          </button>
+
+          {isBulletMenuOpen && (
+            <div className="word-bullet-menu">
+              <div className="word-bullet-menu-title">Select Bullet & List Style</div>
+              <div className="word-bullet-grid">
+                {BULLET_STYLES.map((b) => (
+                  <button
+                    key={b.symbol}
+                    type="button"
+                    className="word-bullet-opt"
+                    onClick={() => applyBulletStyle(b.symbol)}
+                  >
+                    <span className="word-bullet-sample">{b.display.split(' ')[0]}</span>
+                    <span className="word-bullet-name">{b.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
 
-        <div className="rte-divider" />
+        <div className="word-ribbon-sep" />
 
-        {/* Quick Symbols */}
-        <div className="rte-toolbar-group rte-symbols">
+        {/* Quick Survey Icons */}
+        <div className="word-ribbon-group">
           <button
             type="button"
-            className="rte-tool-btn symbol"
-            title="Insert Checkmark (✓)"
-            onClick={() => insertSymbol('✓ ')}
+            className="word-btn symbol"
+            onClick={() => applyBulletStyle('✓')}
             disabled={disabled}
+            title="Add Checkmark (✓)"
           >
             ✓
           </button>
           <button
             type="button"
-            className="rte-tool-btn symbol"
-            title="Insert Defect / Warning Alert (▲)"
-            onClick={() => insertSymbol('▲ ')}
+            className="word-btn symbol alert"
+            onClick={() => applyInlineWrap('**▲ ', '**', 'DEFECT')}
             disabled={disabled}
+            title="Add Defect Alert (▲)"
           >
             ▲
           </button>
-          <button
-            type="button"
-            className="rte-tool-btn symbol"
-            title="Insert Action Arrow (→)"
-            onClick={() => insertSymbol('→ ')}
-            disabled={disabled}
-          >
-            →
-          </button>
-        </div>
-
-        {/* Mode Switcher (Write vs Live PDF Preview) */}
-        <div className="rte-toolbar-right">
-          <div className="rte-tabs">
-            <button
-              type="button"
-              className={`rte-tab-btn ${activeTab === 'write' ? 'active' : ''}`}
-              onClick={() => setActiveTab('write')}
-              title="Edit text"
-            >
-              Write
-            </button>
-            <button
-              type="button"
-              className={`rte-tab-btn ${activeTab === 'preview' ? 'active' : ''}`}
-              onClick={() => setActiveTab('preview')}
-              title="Preview formatted output"
-            >
-              Preview
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* ── Editor Body ── */}
-      <div className="rte-body" style={{ minHeight }}>
-        {activeTab === 'write' ? (
-          <textarea
-            ref={textareaRef}
-            className="rte-textarea"
-            value={value}
-            placeholder={placeholder}
-            disabled={disabled}
-            onChange={(e) => onChange(e.target.value)}
-            onBlur={onBlur}
-            onKeyDown={handleKeyDown}
-            style={{ minHeight }}
-          />
-        ) : (
-          <div className="rte-preview" style={{ minHeight }}>
-            {renderLivePreview()}
-          </div>
-        )}
-      </div>
-
-      {/* ── Status Hint ── */}
-      <div className="rte-hint-bar">
-        <span>Formatting shortcuts: <strong>**bold**</strong>, <em>*italic*</em>, <u>&lt;u&gt;underline&lt;/u&gt;</u>, <strong>• bullets</strong>, <strong>1. numbers</strong>, <strong># headings</strong></span>
-      </div>
+      {/* ── Editor Body (Live Font Family Styling) ── */}
+      <textarea
+        ref={textareaRef}
+        className="word-textarea"
+        value={value}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        onKeyDown={handleKeyDown}
+        style={{
+          minHeight,
+          fontFamily: selectedFont,
+        }}
+      />
     </div>
   );
 }

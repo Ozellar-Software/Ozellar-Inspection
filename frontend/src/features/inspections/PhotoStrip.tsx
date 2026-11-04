@@ -30,6 +30,8 @@ import { PhotoDownloadModal, type DownloadFilterOption } from './PhotoDownloadMo
 import { downloadPhotosAsZip } from './photoDownload';
 import { startPhotoDrag, endPhotoDrag, startTouchPhotoDrag, showDragNotification } from './photoDragService';
 import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
+import { togglePhotoDefectWithObservation, type DefectConfirmRequest } from './photoDefectService';
+import { ConfirmDefectRemovalModal } from './ConfirmDefectRemovalModal';
 import './PhotoStrip.css';
 
 /**
@@ -100,6 +102,7 @@ export function PhotoStrip({
   // Upload Modal state & initial files
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [modalInitialFiles, setModalInitialFiles] = useState<File[]>([]);
+  const [confirmReq, setConfirmReq] = useState<DefectConfirmRequest | null>(null);
 
   // Filter out deleted photos and maintain stable position order
   const activePhotos = photos
@@ -171,13 +174,12 @@ export function PhotoStrip({
     setIsUploadModalOpen(true);
   };
 
-  // Toggle Normal / Defect classification
+  // Toggle Normal / Defect classification with Observation sync
   const handleToggleDefect = async (photoId: string, isDefect: boolean) => {
     const existing = await db.photos.get(photoId);
     if (existing) {
-      await localWrite('photos', photoId, {
-        ...existing,
-        isDefect,
+      await togglePhotoDefectWithObservation(existing, isDefect, {
+        onConfirmRequired: (req) => setConfirmReq(req),
       });
     }
   };
@@ -1367,6 +1369,24 @@ export function PhotoStrip({
           onConfirm={executeBatchDelete}
           onCancel={() => {
             if (!isDeleting) setIsBatchDeleteOpen(false);
+          }}
+        />
+      )}
+
+      {/* ── Confirm Defect Removal Modal ── */}
+      {confirmReq && (
+        <ConfirmDefectRemovalModal
+          isOpen={!!confirmReq}
+          photo={confirmReq.photo}
+          finding={confirmReq.finding}
+          sectionName={confirmReq.sectionName}
+          onConfirm={async () => {
+            await confirmReq.onConfirm();
+            setConfirmReq(null);
+          }}
+          onCancel={() => {
+            confirmReq.onCancel();
+            setConfirmReq(null);
           }}
         />
       )}

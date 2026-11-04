@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { InspectionSection, Photo } from '@ozellar/shared';
 import { getPhotoUrls } from '../../offline/photoQueue';
+import { localWrite } from '../../offline/outbox';
 import {
   EyeIcon,
   XIcon,
@@ -13,6 +14,11 @@ import {
   ShipIcon,
 } from '../../icons';
 import { ImageViewerModal } from './ImageViewerModal';
+import {
+  togglePhotoDefectWithObservation,
+  type DefectConfirmRequest,
+} from './photoDefectService';
+import { ConfirmDefectRemovalModal } from './ConfirmDefectRemovalModal';
 import './PhotoGalleryPreviewModal.css';
 
 type SyncedPhoto = Photo & { deletedAt?: string | null };
@@ -43,7 +49,6 @@ interface SectionDropdownProps {
 
 /**
  * Modern custom dropdown for filtering photos by section.
- * Replaces standard native HTML <select> with a rich, interactive menu.
  */
 function ModernSectionDropdown({
   sections,
@@ -56,7 +61,6 @@ function ModernSectionDropdown({
   const [filterQuery, setFilterQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click / tap
   useEffect(() => {
     if (!isOpen) return;
     function handleClickOutside(event: MouseEvent | TouchEvent) {
@@ -72,7 +76,6 @@ function ModernSectionDropdown({
     };
   }, [isOpen]);
 
-  // Close on Escape key
   useEffect(() => {
     if (!isOpen) return;
     function handleKeyDown(e: KeyboardEvent) {
@@ -95,7 +98,6 @@ function ModernSectionDropdown({
       ? totalCount
       : sectionPhotoCounts.get(selectedSection)?.total || 0;
 
-  // Filter sections by search query if list is long
   const filteredSections = useMemo(() => {
     if (!filterQuery.trim()) return sections;
     const q = filterQuery.toLowerCase().trim();
@@ -166,7 +168,6 @@ function ModernSectionDropdown({
           )}
 
           <div className="pgpm-dropdown-list">
-            {/* "All Sections" option */}
             {(!filterQuery.trim() || 'all sections'.includes(filterQuery.toLowerCase())) && (
               <button
                 type="button"
@@ -261,7 +262,20 @@ export function PhotoGalleryPreviewModal({
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [viewerPhotoIndex, setViewerPhotoIndex] = useState<number | null>(null);
 
-  // Sync selected section when modal opens or currentSectionId changes
+  // Confirmation popup state for changing defect photo with observation details
+  const [confirmReq, setConfirmReq] = useState<DefectConfirmRequest | null>(null);
+
+  // Local remark cache to allow snappy inline editing
+  const [remarksMap, setRemarksMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const map: Record<string, string> = {};
+    for (const p of activePhotos) {
+      map[p.id] = p.description ? String(p.description) : '';
+    }
+    setRemarksMap(map);
+  }, [activePhotos]);
+
   useEffect(() => {
     if (isOpen) {
       if (currentSectionId && allSections.some((s) => s.id === currentSectionId)) {
@@ -272,7 +286,6 @@ export function PhotoGalleryPreviewModal({
     }
   }, [isOpen, currentSectionId, allSections]);
 
-  // Section lookup map
   const sectionMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const s of allSections) {
@@ -281,7 +294,6 @@ export function PhotoGalleryPreviewModal({
     return map;
   }, [allSections]);
 
-  // Section photo counts map (total + defect)
   const sectionPhotoCounts = useMemo(() => {
     const counts = new Map<string, { total: number; defect: number }>();
     for (const p of activePhotos) {
@@ -294,27 +306,22 @@ export function PhotoGalleryPreviewModal({
     return counts;
   }, [activePhotos]);
 
-  // Global counts
   const defectCount = useMemo(() => activePhotos.filter((p) => !!p.isDefect).length, [activePhotos]);
   const normalCount = activePhotos.length - defectCount;
 
-  // Filtered photos
   const filteredPhotos = useMemo(() => {
     return activePhotos.filter((p) => {
-      // 1. Defect/Normal Filter
       if (activeFilter === 'defect' && !p.isDefect) return false;
       if (activeFilter === 'normal' && p.isDefect) return false;
 
-      // 2. Section Filter
       if (selectedSection !== 'all') {
         const secId = p.inspectionSectionId;
         if (secId !== selectedSection) return false;
       }
 
-      // 3. Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const descMatch = p.description ? String(p.description).toLowerCase().includes(q) : false;
+        const descMatch = (remarksMap[p.id] || p.description || '').toLowerCase().includes(q);
         const secName = p.inspectionSectionId ? sectionMap.get(p.inspectionSectionId) || '' : '';
         const secMatch = secName.toLowerCase().includes(q);
         if (!descMatch && !secMatch) return false;
@@ -322,7 +329,7 @@ export function PhotoGalleryPreviewModal({
 
       return true;
     });
-  }, [activePhotos, activeFilter, selectedSection, searchQuery, sectionMap]);
+  }, [activePhotos, activeFilter, selectedSection, searchQuery, sectionMap, remarksMap]);
 
   // Load photo URLs
   useEffect(() => {
@@ -345,15 +352,40 @@ export function PhotoGalleryPreviewModal({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && viewerPhotoIndex === null) {
+      if (e.key === 'Escape' && viewerPhotoIndex === null && !confirmReq) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, viewerPhotoIndex]);
+  }, [isOpen, onClose, viewerPhotoIndex, confirmReq]);
 
-  // Clear all filters handler
+  // Save inline remark
+  const handleSaveRemark = async (photoId: string, newRemark: string) => {
+    const clean = newRemark.trim();
+    setRemarksMap((prev) => ({ ...prev, [photoId]: clean }));
+    try {
+      await localWrite('photos', photoId, { description: clean });
+      onPhotoUpdated?.(photoId, { description: clean });
+    } catch (err) {
+      console.error('Failed to save photo remark', err);
+    }
+  };
+
+  // Toggle Defect status with Observation sync
+  const handleToggleDefect = async (photo: Photo) => {
+    if (locked) return;
+    const newDefect = !photo.isDefect;
+
+    await togglePhotoDefectWithObservation(photo, newDefect, {
+      onConfirmRequired: (req) => setConfirmReq(req),
+      onCompleted: (updatedPhoto) => {
+        onPhotoToggled?.(updatedPhoto.id, updatedPhoto.isDefect);
+        onPhotoUpdated?.(updatedPhoto.id, updatedPhoto);
+      },
+    });
+  };
+
   const handleResetFilters = () => {
     setActiveFilter('all');
     setSelectedSection('all');
@@ -368,7 +400,7 @@ export function PhotoGalleryPreviewModal({
     <div
       className="pgpm-backdrop"
       onClick={(e) => {
-        if (e.target === e.currentTarget && viewerPhotoIndex === null) {
+        if (e.target === e.currentTarget && viewerPhotoIndex === null && !confirmReq) {
           onClose();
         }
       }}
@@ -394,7 +426,7 @@ export function PhotoGalleryPreviewModal({
                 )}
               </div>
               <p className="pgpm-subtitle">
-                High-resolution inspection record viewer • Click any photo to inspect, zoom, or edit details
+                High-resolution inspection evidence gallery • Add remarks directly below photos or click to inspect
               </p>
             </div>
           </div>
@@ -455,7 +487,6 @@ export function PhotoGalleryPreviewModal({
           </div>
 
           <div className="pgpm-toolbar-right">
-            {/* Modern Section Selector Dropdown */}
             {allSections.length > 1 && (
               <ModernSectionDropdown
                 sections={allSections}
@@ -466,7 +497,6 @@ export function PhotoGalleryPreviewModal({
               />
             )}
 
-            {/* Keyword Search Input with Clear Button */}
             <div className="pgpm-search-wrap">
               <span className="pgpm-search-icon">
                 <SearchIcon width={14} height={14} />
@@ -491,7 +521,6 @@ export function PhotoGalleryPreviewModal({
               )}
             </div>
 
-            {/* Reset Filters Shortcut (shown only if filters are applied) */}
             {hasActiveFilters && (
               <button
                 type="button"
@@ -534,7 +563,7 @@ export function PhotoGalleryPreviewModal({
                 const secName = photo.inspectionSectionId
                   ? sectionMap.get(photo.inspectionSectionId) || 'Section Survey'
                   : 'Survey Photo';
-                const desc = photo.description ? String(photo.description).trim() : '';
+                const curRemark = remarksMap[photo.id] ?? (photo.description ? String(photo.description) : '');
 
                 return (
                   <div
@@ -557,7 +586,7 @@ export function PhotoGalleryPreviewModal({
                       {url ? (
                         <img
                           src={url}
-                          alt={desc || `Inspection photo ${pIdx + 1}`}
+                          alt={curRemark || `Inspection photo ${pIdx + 1}`}
                           className="pgpm-img"
                           loading="lazy"
                         />
@@ -571,17 +600,34 @@ export function PhotoGalleryPreviewModal({
                       {/* Top Badges */}
                       <div className="pgpm-card-top">
                         <span className="pgpm-seq-badge">#{pIdx + 1}</span>
-                        {isDef ? (
-                          <span className="pgpm-status-pill defect">
-                            <WarningIcon style={{ width: 10, height: 10 }} />
-                            DEFECT
-                          </span>
-                        ) : (
-                          <span className="pgpm-status-pill normal">
-                            <CheckIcon style={{ width: 10, height: 10 }} />
-                            NORMAL
-                          </span>
-                        )}
+
+                        {/* Interactive Defect/Normal Toggle Button */}
+                        <button
+                          type="button"
+                          className={`pgpm-status-pill-btn ${isDef ? 'defect' : 'normal'}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleToggleDefect(photo);
+                          }}
+                          disabled={locked}
+                          title={
+                            isDef
+                              ? 'Defect flagged • Click to change to Normal/Satisfactory'
+                              : 'Satisfactory • Click to flag as Defect Observation'
+                          }
+                        >
+                          {isDef ? (
+                            <>
+                              <WarningIcon style={{ width: 10, height: 10 }} />
+                              <span>DEFECT</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckIcon style={{ width: 10, height: 10 }} />
+                              <span>NORMAL</span>
+                            </>
+                          )}
+                        </button>
                       </div>
 
                       {/* Hover Overlay */}
@@ -593,16 +639,32 @@ export function PhotoGalleryPreviewModal({
                       </div>
                     </div>
 
-                    {/* Bottom Caption & Meta */}
+                    {/* Bottom Caption, Section & Inline Remark Input */}
                     <div className="pgpm-card-caption">
-                      <span className="pgpm-card-section">{secName}</span>
-                      {desc ? (
-                        <p className={`pgpm-card-desc ${isDef ? 'defect' : ''}`}>{desc}</p>
-                      ) : (
-                        <p className="pgpm-card-desc empty">
-                          {isDef ? 'Defect flagged during inspection' : 'Visual survey record'}
-                        </p>
-                      )}
+                      <div className="pgpm-card-caption-header">
+                        <span className="pgpm-card-section">{secName}</span>
+                      </div>
+
+                      {/* Inline Editable Remark Input */}
+                      <div
+                        className="pgpm-inline-remark-wrap"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="text"
+                          className={`pgpm-inline-remark-input ${isDef ? 'defect' : ''}`}
+                          placeholder={isDef ? 'Add defect remarks…' : 'Add survey remarks…'}
+                          defaultValue={curRemark}
+                          disabled={locked}
+                          onBlur={(e) => void handleSaveRemark(photo.id, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.currentTarget.blur();
+                            }
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 );
@@ -630,7 +692,25 @@ export function PhotoGalleryPreviewModal({
         </div>
       </div>
 
-      {/* ── Fullscreen Interactive Photo Viewer Modal (when any photo is clicked) ── */}
+      {/* ── Confirmation Modal for Changing Defect to Normal when Observation has details ── */}
+      {confirmReq && (
+        <ConfirmDefectRemovalModal
+          isOpen={!!confirmReq}
+          photo={confirmReq.photo}
+          finding={confirmReq.finding}
+          sectionName={confirmReq.sectionName}
+          onConfirm={async () => {
+            await confirmReq.onConfirm();
+            setConfirmReq(null);
+          }}
+          onCancel={() => {
+            confirmReq.onCancel();
+            setConfirmReq(null);
+          }}
+        />
+      )}
+
+      {/* ── Fullscreen Interactive Photo Viewer Modal ── */}
       {viewerPhotoIndex !== null && (
         <ImageViewerModal
           photos={activePhotos}

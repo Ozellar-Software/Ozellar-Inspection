@@ -18,6 +18,8 @@ import {
   downloadPhotosAsZip,
 } from './photoDownload';
 import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
+import { togglePhotoDefectWithObservation, type DefectConfirmRequest } from './photoDefectService';
+import { ConfirmDefectRemovalModal } from './ConfirmDefectRemovalModal';
 import './ImageViewerModal.css';
 
 type SyncedPhoto = Photo & { deletedAt?: string | null };
@@ -62,6 +64,7 @@ export function ImageViewerModal({
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmReq, setConfirmReq] = useState<DefectConfirmRequest | null>(null);
   const [descMap, setDescMap] = useState<Record<string, string>>({});
   const [descText, setDescText] = useState('');
   const [isEditingDesc, setIsEditingDesc] = useState(false);
@@ -248,8 +251,13 @@ export function ImageViewerModal({
     if (locked || !currentPhoto) return;
     const newDefect = !currentPhoto.isDefect;
     try {
-      await localWrite('photos', currentPhoto.id, { isDefect: newDefect });
-      onPhotoToggled?.(currentPhoto.id, newDefect);
+      await togglePhotoDefectWithObservation(currentPhoto, newDefect, {
+        onConfirmRequired: (req) => setConfirmReq(req),
+        onCompleted: (updatedPhoto) => {
+          onPhotoToggled?.(currentPhoto.id, updatedPhoto.isDefect);
+          onPhotoUpdated?.(currentPhoto.id, updatedPhoto);
+        },
+      });
     } catch (err) {
       console.error('Failed to toggle photo defect status', err);
     }
@@ -632,6 +640,24 @@ export function ImageViewerModal({
           onConfirm={executeDelete}
           onCancel={() => {
             if (!isDeleting) setIsDeleteModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* ── Confirm Defect Removal Modal ── */}
+      {confirmReq && (
+        <ConfirmDefectRemovalModal
+          isOpen={!!confirmReq}
+          photo={confirmReq.photo}
+          finding={confirmReq.finding}
+          sectionName={confirmReq.sectionName}
+          onConfirm={async () => {
+            await confirmReq.onConfirm();
+            setConfirmReq(null);
+          }}
+          onCancel={() => {
+            confirmReq.onCancel();
+            setConfirmReq(null);
           }}
         />
       )}

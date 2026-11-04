@@ -7,6 +7,7 @@ export interface InlineToken {
   bold: boolean;
   italic: boolean;
   underline?: boolean;
+  strike?: boolean;
   font?: SupportedFont;
 }
 
@@ -20,9 +21,35 @@ export interface RichTextOptions {
 }
 
 /**
+ * Maps any web or system font family name to standard jsPDF supported fonts.
+ */
+export function mapToPdfFont(fontName: string): SupportedFont {
+  const f = fontName.toLowerCase();
+  if (
+    f.includes('times') ||
+    f.includes('georgia') ||
+    f.includes('garamond') ||
+    f.includes('cambria') ||
+    f.includes('palatino') ||
+    f.includes('bookman') ||
+    f.includes('serif')
+  ) {
+    return 'times';
+  }
+  if (
+    f.includes('courier') ||
+    f.includes('consolas') ||
+    f.includes('monaco') ||
+    f.includes('mono')
+  ) {
+    return 'courier';
+  }
+  return 'helvetica';
+}
+
+/**
  * Tokenize a single line of text for inline formatting:
- * **bold**, *italic*, ***bold italic***, <b>bold</b>, <i>italic</i>, <u>underline</u>,
- * and [font:serif|mono|sans|times|courier|helvetica]...[/font]
+ * **bold**, *italic*, <u>underline</u>, ~~strike~~, and [font:xxx]...[/font]
  */
 export function parseInlineFormatting(
   text: string,
@@ -30,7 +57,7 @@ export function parseInlineFormatting(
 ): InlineToken[] {
   const tokens: InlineToken[] = [];
   const pattern =
-    /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|<b>[\s\S]+?<\/b>|<i>[\s\S]+?<\/i>|<u>[\s\S]+?<\/u>|\[font:(serif|sans|mono|times|courier|helvetica)\][\s\S]+?\[\/font\])/gi;
+    /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|<b>[\s\S]+?<\/b>|<i>[\s\S]+?<\/i>|<u>[\s\S]+?<\/u>|~~[\s\S]+?~~|\[font:[^\]]+\][\s\S]+?\[\/font\])/gi;
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -89,18 +116,18 @@ export function parseInlineFormatting(
         underline: true,
         font: defaultFont,
       });
+    } else if (raw.startsWith('~~') && raw.endsWith('~~')) {
+      tokens.push({
+        text: raw.slice(2, -2),
+        bold: false,
+        italic: false,
+        strike: true,
+        font: defaultFont,
+      });
     } else if (raw.toLowerCase().startsWith('[font:')) {
-      const fontMatch = raw.match(
-        /^\[font:(serif|sans|mono|times|courier|helvetica)\]([\s\S]+?)\[\/font\]/i
-      );
+      const fontMatch = raw.match(/^\[font:([^\]]+)\]([\s\S]+?)\[\/font\]/i);
       if (fontMatch) {
-        let f: SupportedFont = defaultFont;
-        const fontName = fontMatch[1].toLowerCase();
-        if (fontName === 'serif' || fontName === 'times') f = 'times';
-        else if (fontName === 'mono' || fontName === 'courier') f = 'courier';
-        else if (fontName === 'sans' || fontName === 'helvetica') f = 'helvetica';
-
-        // Recursively parse inner content inside font tag
+        const f = mapToPdfFont(fontMatch[1]);
         const inner = parseInlineFormatting(fontMatch[2], f);
         tokens.push(...inner);
       }
@@ -122,9 +149,8 @@ export function parseInlineFormatting(
 }
 
 /**
- * Render multi-line rich text (with markdown headings, bullet lists,
- * numbered lists, bold, italics, font tags, and line wrapping) into a jsPDF document.
- * Returns the total height consumed in mm.
+ * Render multi-line rich text with Word-style bullet types, numbered lists,
+ * bold, italics, font tags, and wrapping into jsPDF.
  */
 export function renderRichText(
   doc: jsPDF,
@@ -149,21 +175,24 @@ export function renderRichText(
   for (let lIdx = 0; lIdx < rawLines.length; lIdx++) {
     const rawLine = rawLines[lIdx].trimEnd();
 
-    // Empty blank line -> add paragraph spacing
+    // Blank line
     if (rawLine.trim() === '') {
       curY += lineGap * 0.7;
       continue;
     }
 
     let isBullet = false;
+    let bulletSymbol = '•';
     let isNumbered = false;
     let numPrefix = '';
     let isHeading = false;
     let headingLevel = 0;
     let cleanLine = rawLine;
 
-    const bulletMatch = rawLine.match(/^(\s*)([•\-\*])\s+(.*)$/);
-    const numberMatch = rawLine.match(/^(\s*)(\d+[\.\)])\s+(.*)$/);
+    // Supports Disc (•), Circle (○), Square (■), Checkbox (□), Diamond (◆), Arrow (➢, ➔, →), Check (✓), Dash (–, -)
+    const bulletMatch = rawLine.match(/^(\s*)([•○■□◆➢➔→✓–\-\*])\s+(.*)$/);
+    // Supports 1., 1), a., a), i., i)
+    const numberMatch = rawLine.match(/^(\s*)(\d+[\.\)]|[a-zA-Z][\.\)]|[ivxlcdmIVXLCDM]+[\.\)])\s+(.*)$/);
     const headingMatch = rawLine.match(/^(#{1,3})\s+(.*)$/);
 
     let curFontSize = baseSize;
@@ -179,12 +208,13 @@ export function renderRichText(
       if (lIdx > 0) curY += 2;
     } else if (bulletMatch) {
       isBullet = true;
-      indent = 5.5;
+      bulletSymbol = bulletMatch[2];
+      indent = 6.0;
       cleanLine = bulletMatch[3];
     } else if (numberMatch) {
       isNumbered = true;
       numPrefix = numberMatch[2];
-      indent = 6.5;
+      indent = 7.0;
       cleanLine = numberMatch[3];
     }
 
@@ -195,7 +225,45 @@ export function renderRichText(
     if (!dryRun) {
       if (isBullet) {
         doc.setFillColor(bulletColor[0], bulletColor[1], bulletColor[2]);
-        doc.circle(startX + 1.8, curY - curFontSize * 0.12, 0.7, 'F');
+        doc.setDrawColor(bulletColor[0], bulletColor[1], bulletColor[2]);
+        doc.setTextColor(bulletColor[0], bulletColor[1], bulletColor[2]);
+
+        const bulletCenterY = curY - curFontSize * 0.12;
+
+        if (bulletSymbol === '•' || bulletSymbol === '*' || bulletSymbol === '-') {
+          // Solid round disc
+          doc.circle(startX + 1.8, bulletCenterY, 0.75, 'F');
+        } else if (bulletSymbol === '○') {
+          // Hollow circle
+          doc.setLineWidth(0.3);
+          doc.circle(startX + 1.8, bulletCenterY, 0.75, 'S');
+        } else if (bulletSymbol === '■') {
+          // Solid square
+          doc.rect(startX + 1.1, bulletCenterY - 0.7, 1.4, 1.4, 'F');
+        } else if (bulletSymbol === '□') {
+          // Hollow square / checkbox
+          doc.setLineWidth(0.3);
+          doc.rect(startX + 1.1, bulletCenterY - 0.7, 1.4, 1.4, 'S');
+        } else if (bulletSymbol === '✓') {
+          // Checkmark
+          doc.setFont('helvetica', 'bold').setFontSize(curFontSize);
+          doc.text('✓', startX, curY);
+        } else if (bulletSymbol === '➢' || bulletSymbol === '➔' || bulletSymbol === '→') {
+          // Arrow pointer
+          doc.setFont('helvetica', 'bold').setFontSize(curFontSize);
+          doc.text('→', startX, curY);
+        } else if (bulletSymbol === '◆') {
+          // Diamond (draw clean diamond polygon)
+          const dx = startX + 1.8;
+          const dy = bulletCenterY;
+          const r = 0.85;
+          doc.triangle(dx, dy - r, dx - r, dy, dx + r, dy, 'F');
+          doc.triangle(dx, dy + r, dx - r, dy, dx + r, dy, 'F');
+        } else if (bulletSymbol === '–') {
+          // En dash
+          doc.setLineWidth(0.4);
+          doc.line(startX + 0.8, bulletCenterY, startX + 2.8, bulletCenterY);
+        }
       } else if (isNumbered) {
         doc.setFont(baseFont, 'bold').setFontSize(curFontSize);
         doc.setTextColor(bulletColor[0], bulletColor[1], bulletColor[2]);
@@ -203,15 +271,16 @@ export function renderRichText(
       }
     }
 
-    // Parse inline tokens
+    // Parse inline formatting tokens
     const tokens = parseInlineFormatting(cleanLine, baseFont);
 
-    // Break tokens into words and whitespace
+    // Break tokens into words
     const words: Array<{
       text: string;
       bold: boolean;
       italic: boolean;
       underline?: boolean;
+      strike?: boolean;
       font: SupportedFont;
       isSpace: boolean;
     }> = [];
@@ -225,6 +294,7 @@ export function renderRichText(
             bold: t.bold || isHeading,
             italic: t.italic,
             underline: t.underline,
+            strike: t.strike,
             font: t.font || baseFont,
             isSpace: /^\s+$/.test(p),
           });
@@ -266,7 +336,7 @@ export function renderRichText(
         continue;
       }
 
-      // Check for wrapping
+      // Check wrapping
       if (curX > contentX && curX + wWidth > contentX + contentW) {
         curY += effectiveLineGap;
         curX = contentX;
@@ -275,7 +345,12 @@ export function renderRichText(
       if (!dryRun) {
         doc.text(w.text, curX, curY);
         if (w.underline) {
-          doc.line(curX, curY + 0.3, curX + wWidth, curY + 0.3);
+          doc.setLineWidth(0.25);
+          doc.line(curX, curY + 0.35, curX + wWidth, curY + 0.35);
+        }
+        if (w.strike) {
+          doc.setLineWidth(0.25);
+          doc.line(curX, curY - curFontSize * 0.12, curX + wWidth, curY - curFontSize * 0.12);
         }
       }
 
