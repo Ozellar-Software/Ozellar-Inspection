@@ -880,116 +880,261 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.pdf.text(certLines, MARGIN_LEFT + 8, certY + 14.5);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PAGE 2: VESSEL TECHNICAL PARTICULARS (Premium Executive Maritime Layout)
+  // PAGE 2: VESSEL TECHNICAL PARTICULARS (Executive Bespoke Maritime Dossier)
   // ═══════════════════════════════════════════════════════════════════════════
   doc.newPage();
-
-  doc.sectionHeader('1. Vessel Technical Particulars', 'Technical Specifications', 'Official Registry Record');
   const p = vessel?.particulars ?? {};
 
-  // ── Top 4 Key Specification Metric KPI Cards ──
-  const kpiY = doc.y;
-  const specKpiH = 20;
-  const kpiGap = 4;
-  const specKpiW = (CONTENT_W - 3 * kpiGap) / 4; // 42.5 mm each
+  // 1. Bespoke Architectural Executive Dossier Header (Unique - Not a generic green bar!)
+  const dossierHdrY = doc.y;
 
-  const kpis = [
+  // Top category kicker
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+  doc.setTextColor(TEAL); // Accent Orange
+  doc.pdf.text('STATUTORY SPECIFICATIONS DOSSIER & TECHNICAL PARTICULARS', MARGIN_LEFT, dossierHdrY + 3.5);
+
+  // Main Title
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(13.5);
+  doc.setTextColor(NAVY);
+  doc.pdf.text('1. Vessel Technical Particulars', MARGIN_LEFT, dossierHdrY + 8.5);
+
+  // Subtitle
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(7.0);
+  doc.setTextColor(TEXT_MUTED);
+  doc.pdf.text('Certified Statutory, Classification Society & Principal Technical Registry Record', MARGIN_LEFT, dossierHdrY + 12.2);
+
+  // Right-hand Side Executive Badges (IMO + Vessel Category)
+  const imoStr = inspection.imo ? `IMO ${inspection.imo}` : (vessel?.imo ? `IMO ${vessel.imo}` : 'IMO REGISTERED');
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
+  const imoPillW = doc.pdf.getTextWidth(imoStr) + 10;
+  const vTypeStr = (inspection.vesselType || (vessel as any)?.type || 'COMMERCIAL').toUpperCase();
+  const vTypePillW = doc.pdf.getTextWidth(vTypeStr) + 10;
+
+  // IMO Badge (Navy fill, white bold)
+  const imoX = PAGE_W - MARGIN_RIGHT - imoPillW;
+  doc.setFill(NAVY);
+  doc.pdf.roundedRect(imoX, dossierHdrY + 1.5, imoPillW, 6.2, 1.2, 1.2, 'F');
+  doc.setTextColor(WHITE);
+  doc.pdf.text(imoStr, imoX + imoPillW / 2, dossierHdrY + 5.7, { align: 'center' });
+
+  // Vessel Type Badge (Slate fill, dark navy border & text)
+  const vTypeX = imoX - vTypePillW - 3;
+  doc.setFill(SLATE_BG);
+  doc.setDraw(BORDER);
+  doc.pdf.roundedRect(vTypeX, dossierHdrY + 1.5, vTypePillW, 6.2, 1.2, 1.2, 'FD');
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+  doc.setTextColor(NAVY);
+  doc.pdf.text(vTypeStr, vTypeX + vTypePillW / 2, dossierHdrY + 5.7, { align: 'center' });
+
+  // Dual-tone Accent Hairline Divider
+  doc.setFill(TEAL);
+  doc.pdf.rect(MARGIN_LEFT, dossierHdrY + 14.5, 26, 1.2, 'F');
+  doc.setDraw(BORDER_DARK, 0.25);
+  doc.pdf.line(MARGIN_LEFT + 26, dossierHdrY + 15.1, PAGE_W - MARGIN_RIGHT, dossierHdrY + 15.1);
+
+  doc.y = dossierHdrY + 18.5;
+
+  // 2. Vessel Profile Identity Card (Full-Width Architectural Panel)
+  const heroCardY = doc.y;
+  const heroCardH = 22;
+  doc.roundedBox(MARGIN_LEFT, heroCardY, CONTENT_W, heroCardH, SLATE_BG, BORDER, 2);
+
+  // Left solid accent
+  doc.setFill(NAVY);
+  doc.pdf.rect(MARGIN_LEFT, heroCardY, 3, heroCardH, 'F');
+
+  // 4 Columns inside Hero Panel
+  const heroCols = [
     {
-      label: 'BUILD YEAR',
-      val: p.yearBuilt || (vessel as any)?.builtYear || 'RECORDED',
-      sub: p.placeOfBuild || 'Shipyard Built',
+      label: 'VESSEL IDENTITY',
+      val: (inspection.vesselName || vessel?.name || 'COMMERCIAL VESSEL').toUpperCase(),
+      sub: imoStr,
+      isPrimary: true,
     },
     {
-      label: 'DEADWEIGHT',
-      val: p.deadweight
-        ? (p.deadweight.includes('T') || p.deadweight.includes('t') ? p.deadweight : `${p.deadweight} DWT`)
-        : (p.grossTonnage ? `${p.grossTonnage} GT` : 'COMMERCIAL'),
-      sub: 'Cargo Capacity',
+      label: 'FLAG & REGISTRY',
+      val: p.flag || (vessel as any)?.flag || 'LIBERIA (LR)',
+      sub: `Port: ${p.portOfRegistry || (vessel as any)?.portOfRegistry || inspection.port || 'Registered Port'}`,
     },
     {
-      label: 'LENGTH (LOA)',
-      val: p.loa
-        ? (p.loa.includes('m') || p.loa.includes('M') ? p.loa : `${p.loa} M`)
-        : (p.breadth ? `BEAM ${p.breadth} M` : (inspection.vesselType || 'COMMERCIAL').toUpperCase()),
-      sub: p.breadth ? `Breadth: ${p.breadth}m` : 'Principal Dimensions',
-    },
-    {
-      label: 'CLASSIFICATION',
+      label: 'CLASS & SOCIETY',
       val: p.classSociety || 'IACS CERTIFIED',
-      sub: p.classNotation ? p.classNotation.slice(0, 18) : 'Statutory Class',
+      sub: p.classNotation ? p.classNotation.slice(0, 20) : 'Statutory Standards',
+    },
+    {
+      label: 'SURVEY REFERENCE',
+      val: `VIR-${inspection.id.slice(0, 8).toUpperCase()}`,
+      sub: `Date: ${fmtDate(inspection.startDate)}`,
     },
   ];
 
-  for (let ki = 0; ki < kpis.length; ki++) {
-    const kx = MARGIN_LEFT + ki * (specKpiW + kpiGap);
-    doc.roundedBox(kx, kpiY, specKpiW, specKpiH, WHITE, BORDER, 2);
+  const heroColW = (CONTENT_W - 3) / 4;
+  for (let ci = 0; ci < heroCols.length; ci++) {
+    const col = heroCols[ci];
+    const cx = MARGIN_LEFT + 3 + ci * heroColW;
 
-    // Top accent bar
-    doc.setFill(ki === 0 ? NAVY : ki === 1 ? [185, 28, 28] : ki === 2 ? NAVY_LIGHT : TEAL);
-    doc.pdf.rect(kx, kpiY, specKpiW, 2.5, 'F');
+    // Hairline vertical divider between columns
+    if (ci > 0) {
+      doc.setDraw(BORDER, 0.25);
+      doc.pdf.line(cx, heroCardY + 2.5, cx, heroCardY + heroCardH - 2.5);
+    }
+
+    const padLeft = cx + 5;
+    const maxValW = heroColW - 8;
 
     // Label
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
     doc.setTextColor(TEXT_MUTED);
-    doc.pdf.text(kpis[ki].label, kx + 4, kpiY + 7);
+    doc.pdf.text(col.label, padLeft, heroCardY + 5.8);
 
-    // Main Value
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(9);
-    doc.setTextColor(TEXT_DARK);
-    let valStr = kpis[ki].val;
-    while (valStr.length > 3 && doc.pdf.getTextWidth(valStr) > specKpiW - 8) {
-      valStr = valStr.slice(0, -1);
+    // Value
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(col.isPrimary ? 9.5 : 8.2);
+    doc.setTextColor(col.isPrimary ? NAVY : TEXT_DARK);
+    let vText = col.val;
+    while (vText.length > 3 && doc.pdf.getTextWidth(vText) > maxValW) {
+      vText = vText.slice(0, -1);
     }
-    doc.pdf.text(valStr, kx + 4, kpiY + 12.8);
+    doc.pdf.text(vText, padLeft, heroCardY + 11.8);
 
-    // Subtitle note
+    // Subtitle
     doc.pdf.setFont('helvetica', 'normal').setFontSize(5.8);
     doc.setTextColor(TEXT_FAINT);
-    let subStr = kpis[ki].sub;
-    while (subStr.length > 3 && doc.pdf.getTextWidth(subStr) > specKpiW - 8) {
-      subStr = subStr.slice(0, -1);
+    let sText = col.sub;
+    while (sText.length > 3 && doc.pdf.getTextWidth(sText) > maxValW) {
+      sText = sText.slice(0, -1);
     }
-    doc.pdf.text(subStr, kx + 4, kpiY + 17);
+    doc.pdf.text(sText, padLeft, heroCardY + 17.0);
   }
 
-  doc.y = kpiY + specKpiH + 5;
+  doc.y = heroCardY + heroCardH + 4.5;
 
-  // ── Two-Column Grouped Maritime Specification Modules ──
-  const colW = (CONTENT_W - 6) / 2; // 88 mm each
+  // 3. Key Technical Specification Metric Ribbon (4 Refined Executive KPI Cards)
+  const specRibbonY = doc.y;
+  const specRibbonH = 16.5;
+  const ribbonGap = 4;
+  const ribbonCardW = (CONTENT_W - 3 * ribbonGap) / 4;
+
+  const ribbonItems = [
+    {
+      label: 'TRADING PROFILE',
+      val: (inspection.vesselType || (vessel as any)?.type || 'BULK CARRIER').toUpperCase(),
+      sub: 'Category / Service',
+      barColor: NAVY,
+    },
+    {
+      label: 'REGISTERED TONNAGE',
+      val: p.deadweight
+        ? (p.deadweight.includes('T') || p.deadweight.includes('t') ? p.deadweight : `${p.deadweight} DWT`)
+        : (p.grossTonnage ? `${p.grossTonnage} GT` : 'COMMERCIAL DWT'),
+      sub: 'Deadweight / Cargo',
+      barColor: [185, 28, 28] as [number, number, number],
+    },
+    {
+      label: 'HULL DIMENSIONS',
+      val: p.loa
+        ? (p.loa.includes('m') || p.loa.includes('M') ? p.loa : `${p.loa} M LOA`)
+        : (p.breadth ? `BEAM ${p.breadth} M` : 'PRINCIPAL SPECS'),
+      sub: p.breadth ? `Beam: ${p.breadth}m` : 'Length & Breadth',
+      barColor: NAVY_LIGHT,
+    },
+    {
+      label: 'CONSTRUCTION RECORD',
+      val: p.yearBuilt ? `BUILT ${p.yearBuilt}` : (p.placeOfBuild || 'SHIPYARD RECORD').toUpperCase(),
+      sub: p.placeOfBuild ? p.placeOfBuild : 'Build Specification',
+      barColor: TEAL,
+    },
+  ];
+
+  for (let ri = 0; ri < ribbonItems.length; ri++) {
+    const item = ribbonItems[ri];
+    const rx = MARGIN_LEFT + ri * (ribbonCardW + ribbonGap);
+
+    doc.roundedBox(rx, specRibbonY, ribbonCardW, specRibbonH, WHITE, BORDER, 1.8);
+
+    // Top hairline accent line
+    doc.setFill(item.barColor);
+    doc.pdf.rect(rx, specRibbonY, ribbonCardW, 1.8, 'F');
+
+    // Label
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(item.label, rx + 4, specRibbonY + 5.8);
+
+    // Value
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(8.2);
+    doc.setTextColor(TEXT_DARK);
+    let valStr = item.val;
+    while (valStr.length > 3 && doc.pdf.getTextWidth(valStr) > ribbonCardW - 8) {
+      valStr = valStr.slice(0, -1);
+    }
+    doc.pdf.text(valStr, rx + 4, specRibbonY + 10.6);
+
+    // Subtitle
+    doc.pdf.setFont('helvetica', 'normal').setFontSize(5.6);
+    doc.setTextColor(TEXT_FAINT);
+    let subStr = item.sub;
+    while (subStr.length > 3 && doc.pdf.getTextWidth(subStr) > ribbonCardW - 8) {
+      subStr = subStr.slice(0, -1);
+    }
+    doc.pdf.text(subStr, rx + 4, specRibbonY + 14.5);
+  }
+
+  doc.y = specRibbonY + specRibbonH + 4.5;
+
+  // 4. Two-Column Technical Matrix (4 Balanced Executive Cards, No Repetitive Green Bars!)
+  const colW = (CONTENT_W - 5) / 2; // 88.5 mm each
   const col1Left = MARGIN_LEFT;
-  const col2Left = MARGIN_LEFT + colW + 6;
+  const col2Left = MARGIN_LEFT + colW + 5;
 
-  const drawModuleCard = (
+  const drawExecutiveSpecCard = (
     mx: number,
     my: number,
     mw: number,
+    cardBadge: string,
     title: string,
+    categoryTag: string,
     items: { label: string; value: string }[]
   ): number => {
     const headerH = 6.8;
-    const rowHeight = 6.2;
-    const totalH = headerH + items.length * rowHeight + 2.5;
+    const rowHeight = 6.3;
+    const totalH = headerH + items.length * rowHeight + 1.5;
 
     // Card outer box
     doc.roundedBox(mx, my, mw, totalH, WHITE, BORDER, 2);
 
-    // Card header bar
-    doc.setFill(NAVY);
+    // Card header bar: Crisp slate background (Not solid green!)
+    doc.setFill([241, 245, 249]); // #F1F5F9 Slate Tint
     doc.pdf.roundedRect(mx, my, mw, headerH, 2, 2, 'F');
-    doc.pdf.rect(mx, my + headerH - 2, mw, 2, 'F');
+    doc.pdf.rect(mx, my + headerH - 1.5, mw, 1.5, 'F');
 
-    // Orange left accent strip
-    doc.setFill(TEAL);
-    doc.pdf.rect(mx, my, 2.5, headerH, 'F');
+    // Header bottom hairline divider
+    doc.setDraw(BORDER_DARK, 0.2);
+    doc.pdf.line(mx, my + headerH, mx + mw, my + headerH);
 
-    // Header title
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
+    // Left Geometric Badge (Pill with Navy background)
+    const badgeW = 4.2;
+    const badgeH = 4.2;
+    const badgeX = mx + 3.2;
+    const badgeY = my + 1.3;
+    doc.setFill(NAVY);
+    doc.pdf.roundedRect(badgeX, badgeY, badgeW, badgeH, 0.8, 0.8, 'F');
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.0);
     doc.setTextColor(WHITE);
-    doc.pdf.text(title.toUpperCase(), mx + 6, my + 4.8);
+    doc.pdf.text(cardBadge, badgeX + badgeW / 2, badgeY + 3.0, { align: 'center' });
 
-    // Row items
-    let rY = my + headerH + 1.2;
-    const labelW = 40;
+    // Header Title
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+    doc.setTextColor(NAVY);
+    doc.pdf.text(title.toUpperCase(), mx + 9.5, my + 4.6);
+
+    // Right Category Tag
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(categoryTag.toUpperCase(), mx + mw - 4, my + 4.6, { align: 'right' });
+
+    // Row items (Zebra striping, clean typography)
+    let rY = my + headerH;
+    const labelW = 39;
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -1003,31 +1148,36 @@ export async function generateInspectionPdf(data: ReportData & {
       // Hairline row divider
       if (i < items.length - 1) {
         doc.setDraw(BORDER, 0.15);
-        doc.pdf.line(mx + 4, rY + rowHeight, mx + mw - 4, rY + rowHeight);
+        doc.pdf.line(mx + 3, rY + rowHeight, mx + mw - 3, rY + rowHeight);
       }
 
-      // Accent Dot
-      const hasVal = Boolean(item.value && item.value !== '-');
+      // Left Accent Bullet
+      const hasVal = Boolean(item.value && item.value !== '-' && item.value.trim() !== '');
       doc.setFill(hasVal ? TEAL : [203, 213, 225]);
-      doc.pdf.circle(mx + 4, rY + rowHeight / 2, 0.65, 'F');
+      doc.pdf.circle(mx + 4.5, rY + rowHeight / 2, 0.55, 'F');
 
       // Label
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.2);
       doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text(item.label.toUpperCase(), mx + 7, rY + 4.2);
+      doc.pdf.text(item.label.toUpperCase(), mx + 7.5, rY + 4.2);
 
       // Value
       const valX = mx + labelW;
-      const valMaxW = mw - labelW - 4;
-      let vText = item.value || '-';
+      const valMaxW = mw - labelW - 3.5;
 
-      doc.pdf.setFont('helvetica', hasVal ? 'bold' : 'normal').setFontSize(7.2);
-      doc.setTextColor(hasVal ? TEXT_DARK : TEXT_FAINT);
-
-      while (vText.length > 3 && doc.pdf.getTextWidth(vText) > valMaxW) {
-        vText = vText.slice(0, -1);
+      if (hasVal) {
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+        doc.setTextColor(TEXT_DARK);
+        let vText = item.value;
+        while (vText.length > 3 && doc.pdf.getTextWidth(vText) > valMaxW) {
+          vText = vText.slice(0, -1);
+        }
+        doc.pdf.text(vText, valX, rY + 4.2);
+      } else {
+        doc.pdf.setFont('helvetica', 'normal').setFontSize(6.2);
+        doc.setTextColor(TEXT_FAINT);
+        doc.pdf.text('—', valX, rY + 4.2);
       }
-      doc.pdf.text(vText, valX, rY + 4.2);
 
       rY += rowHeight;
     }
@@ -1035,121 +1185,185 @@ export async function generateInspectionPdf(data: ReportData & {
     return totalH;
   };
 
-  const moduleStartY = doc.y;
+  const matrixStartY = doc.y;
 
-  // Left Column Modules
-  let leftY = moduleStartY;
+  // Left Column: Card A (Registration) & Card B (Commercial & Audit)
+  let leftY = matrixStartY;
 
-  // Left 1: Registration & Identification
-  const left1H = drawModuleCard(col1Left, leftY, colW, 'Vessel Registration & Identification', [
-    { label: 'Flag State', value: p.flag || (vessel as any)?.flag || '-' },
-    { label: 'Port of Registry', value: p.portOfRegistry || (vessel as any)?.portOfRegistry || inspection.port || '-' },
-    { label: 'Call Sign', value: p.callSign || (vessel as any)?.callSign || '-' },
-    { label: 'IMO Number', value: inspection.imo ? `IMO ${inspection.imo}` : (vessel?.imo ? `IMO ${vessel.imo}` : '-') },
-    { label: 'Official Number', value: p.officialNo || '-' },
-    { label: 'Year Built', value: p.yearBuilt || (vessel as any)?.builtYear || '-' },
-    { label: 'Place of Build', value: p.placeOfBuild || '-' },
-  ]);
+  // Card A: Registration & Identification
+  const left1H = drawExecutiveSpecCard(
+    col1Left,
+    leftY,
+    colW,
+    'A',
+    'Registration & Statutory Record',
+    'Statutory Registry',
+    [
+      { label: 'Flag State', value: p.flag || (vessel as any)?.flag || '-' },
+      { label: 'Port of Registry', value: p.portOfRegistry || (vessel as any)?.portOfRegistry || inspection.port || '-' },
+      { label: 'Official Registry No', value: p.officialNo || '-' },
+      { label: 'Radio Call Sign', value: p.callSign || (vessel as any)?.callSign || '-' },
+      { label: 'IMO Official Number', value: inspection.imo ? `IMO ${inspection.imo}` : (vessel?.imo ? `IMO ${vessel.imo}` : '-') },
+      { label: 'Year Built', value: p.yearBuilt || (vessel as any)?.builtYear || '-' },
+      { label: 'Place of Build', value: p.placeOfBuild || '-' },
+    ]
+  );
   leftY += left1H + 4;
 
-  // Left 2: Principal Dimensions & Draft
-  const left2H = drawModuleCard(col1Left, leftY, colW, 'Principal Dimensions & Draft', [
-    { label: 'Length Overall (LOA)', value: p.loa ? (p.loa.includes('m') || p.loa.includes('M') ? p.loa : `${p.loa} m`) : '-' },
-    { label: 'Breadth (Beam)', value: p.breadth ? (p.breadth.includes('m') || p.breadth.includes('M') ? p.breadth : `${p.breadth} m`) : '-' },
-    { label: 'Moulded Depth', value: p.depth ? (p.depth.includes('m') || p.depth.includes('M') ? p.depth : `${p.depth} m`) : '-' },
-    { label: 'Summer Draft', value: p.summerDraft ? (p.summerDraft.includes('m') || p.summerDraft.includes('M') ? p.summerDraft : `${p.summerDraft} m`) : '-' },
-  ]);
-  leftY += left2H + 4;
+  // Card B: Commercial Ownership & Audit Logistics
+  const left2H = drawExecutiveSpecCard(
+    col1Left,
+    leftY,
+    colW,
+    'B',
+    'Commercial Management & Audit',
+    'Operations & Audit',
+    [
+      { label: 'Registered Owner', value: p.owner || '-' },
+      { label: 'Commercial Operator', value: p.managerOperator || '-' },
+      { label: 'Survey Reference', value: `VIR-${inspection.id.slice(0, 8).toUpperCase()}` },
+      { label: 'Survey Port / Location', value: inspection.port || '-' },
+      { label: 'Attending Surveyor', value: inspection.inspector || '-' },
+      { label: 'Date Commenced', value: fmtDate(inspection.startDate) },
+      { label: 'Date Completed', value: fmtDate(inspection.completionDate || inspection.startDate) },
+    ]
+  );
+  leftY += left2H;
 
-  // Left 3: Ownership & Management
-  const left3H = drawModuleCard(col1Left, leftY, colW, 'Commercial Ownership & Management', [
-    { label: 'Registered Owner', value: p.owner || '-' },
-    { label: 'Manager / Operator', value: p.managerOperator || '-' },
-    { label: 'Operational Email', value: p.email || '-' },
-    { label: 'Satellite Phone', value: p.satellitePhone || '-' },
-  ]);
-  leftY += left3H;
+  // Right Column: Card C (Dimensions & Tonnage) & Card D (Propulsion & Class)
+  let rightY = matrixStartY;
 
-  // Right Column Modules
-  let rightY = moduleStartY;
-
-  // Right 1: Class & Tonnage Specifications
-  const right1H = drawModuleCard(col2Left, rightY, colW, 'Class & Tonnage Specifications', [
-    { label: 'Class Society', value: p.classSociety || '-' },
-    { label: 'Class Notation', value: p.classNotation || '-' },
-    { label: 'Gross Tonnage (GRT)', value: p.grossTonnage ? (p.grossTonnage.includes('T') ? p.grossTonnage : `${p.grossTonnage} GT`) : '-' },
-    { label: 'Net Tonnage (NRT)', value: p.netTonnage ? (p.netTonnage.includes('T') ? p.netTonnage : `${p.netTonnage} NT`) : '-' },
-    { label: 'Deadweight (DWT)', value: p.deadweight ? (p.deadweight.includes('T') || p.deadweight.includes('t') ? p.deadweight : `${p.deadweight} DWT`) : '-' },
-  ]);
+  // Card C: Principal Dimensions & Tonnage
+  const right1H = drawExecutiveSpecCard(
+    col2Left,
+    rightY,
+    colW,
+    'C',
+    'Dimensions, Draft & Tonnage',
+    'Hull & Capacities',
+    [
+      { label: 'Length Overall (LOA)', value: p.loa ? (p.loa.includes('m') || p.loa.includes('M') ? p.loa : `${p.loa} m`) : '-' },
+      { label: 'Breadth (Beam)', value: p.breadth ? (p.breadth.includes('m') || p.breadth.includes('M') ? p.breadth : `${p.breadth} m`) : '-' },
+      { label: 'Moulded Depth', value: p.depth ? (p.depth.includes('m') || p.depth.includes('M') ? p.depth : `${p.depth} m`) : '-' },
+      { label: 'Summer Draft', value: p.summerDraft ? (p.summerDraft.includes('m') || p.summerDraft.includes('M') ? p.summerDraft : `${p.summerDraft} m`) : '-' },
+      { label: 'Gross Tonnage (GRT)', value: p.grossTonnage ? (p.grossTonnage.includes('T') ? p.grossTonnage : `${p.grossTonnage} GT`) : '-' },
+      { label: 'Net Tonnage (NRT)', value: p.netTonnage ? (p.netTonnage.includes('T') ? p.netTonnage : `${p.netTonnage} NT`) : '-' },
+      { label: 'Deadweight (DWT)', value: p.deadweight ? (p.deadweight.includes('T') || p.deadweight.includes('t') ? p.deadweight : `${p.deadweight} DWT`) : '-' },
+    ]
+  );
   rightY += right1H + 4;
 
-  // Right 2: Machinery & Propulsion
-  const right2H = drawModuleCard(col2Left, rightY, colW, 'Machinery & Propulsion System', [
-    { label: 'Main Engine', value: p.mainEngine || '-' },
-    { label: 'Maker & Model', value: p.mainEngineMakerModel || '-' },
-    { label: 'Power Output', value: p.mainEnginePower ? (p.mainEnginePower.includes('W') ? p.mainEnginePower : `${p.mainEnginePower} kW`) : '-' },
-    { label: 'Propulsion Type', value: p.propulsion || '-' },
-  ]);
-  rightY += right2H + 4;
+  // Card D: Propulsion Machinery & Classification
+  const right2H = drawExecutiveSpecCard(
+    col2Left,
+    rightY,
+    colW,
+    'D',
+    'Machinery, Propulsion & Class',
+    'Engineering & Society',
+    [
+      { label: 'Classification Society', value: p.classSociety || 'IACS Certified' },
+      { label: 'Class Notation', value: p.classNotation || '-' },
+      { label: 'Main Propulsion Engine', value: p.mainEngine || '-' },
+      { label: 'Maker & Model', value: p.mainEngineMakerModel || '-' },
+      { label: 'Total Power Output', value: p.mainEnginePower ? (p.mainEnginePower.includes('W') ? p.mainEnginePower : `${p.mainEnginePower} kW`) : '-' },
+      { label: 'Propulsion Type', value: p.propulsion || '-' },
+      { label: 'Operational Comms', value: p.satellitePhone || p.email || '-' },
+    ]
+  );
+  rightY += right2H;
 
-  // Right 3: Survey Logistics & Reference
-  const right3H = drawModuleCard(col2Left, rightY, colW, 'Audit Logistics & Technical Ref', [
-    { label: 'Survey Reference', value: `VIR-${inspection.id.slice(0, 8).toUpperCase()}` },
-    { label: 'Vessel Category', value: (inspection.vesselType || 'Commercial Vessel').toUpperCase() },
-    { label: 'Survey Port', value: inspection.port || '-' },
-    { label: 'Date Commenced', value: fmtDate(inspection.startDate) },
-    { label: 'Date Completed', value: fmtDate(inspection.completionDate || inspection.startDate) },
-    { label: 'Lead Surveyor', value: inspection.inspector || '-' },
-  ]);
-  rightY += right3H;
-
-  // Advance doc.y to below both columns
   doc.y = Math.max(leftY, rightY) + 5;
 
-  // ── Bottom Feature: Statutory Verification & Quality Declaration Banner ──
-  const decBoxH = 26;
-  doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, decBoxH, SLATE_BG, BORDER, 2);
+  // 5. Official Maritime Survey Seal & Statutory Attestation (Full Width Bottom)
+  const sealBoxY = doc.y;
+  const sealBoxH = 26;
+  doc.roundedBox(MARGIN_LEFT, sealBoxY, CONTENT_W, sealBoxH, SLATE_BG, BORDER, 2);
 
-  // Top Navy strip with Orange Accent
-  const decHdrH = 6;
+  // Left solid accent
   doc.setFill(NAVY);
-  doc.pdf.rect(MARGIN_LEFT, doc.y, CONTENT_W, decHdrH, 'F');
-  doc.setFill(TEAL);
-  doc.pdf.rect(MARGIN_LEFT, doc.y, 3, decHdrH, 'F');
+  doc.pdf.rect(MARGIN_LEFT, sealBoxY, 3, sealBoxH, 'F');
 
+  // Left side: Attestation statement and 3 verification badges
+  const attLeft = MARGIN_LEFT + 7;
+  const attW = CONTENT_W - 68; // 114 mm for text & badges
+
+  // Header
   doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-  doc.setTextColor(WHITE);
-  doc.pdf.text('STATUTORY REGISTRY & TECHNICAL CERTIFICATION VERIFICATION', MARGIN_LEFT + 7, doc.y + 4.3);
+  doc.setTextColor(NAVY);
+  doc.pdf.text('STATUTORY ATTESTATION & TECHNICAL CERTIFICATION RECORD', attLeft, sealBoxY + 5.2);
 
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(6.2);
-  doc.setTextColor([210, 235, 225]);
-  doc.pdf.text('IACS / SOLAS SPECIFICATION RECORD', PAGE_W - MARGIN_RIGHT - 6, doc.y + 4.3, { align: 'right' });
+  // Description
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(5.8);
+  doc.setTextColor(TEXT_BODY);
+  const attMsg = 'Vessel technical specifications recorded herein have been compiled from official registration certificates, classification society records, builder specification documentation, and attending surveyor on-site audit verification.';
+  const attLines = doc.pdf.splitTextToSize(attMsg, attW) as string[];
+  doc.pdf.text(attLines, attLeft, sealBoxY + 9.5);
 
-  // 3 Verification Badges Row
-  const vBadgeY = doc.y + decHdrH + 3.5;
-  const vBadgeW = (CONTENT_W - 12) / 3;
-
-  const verifications = [
-    '✓ Official Registry Cross-Referenced',
-    '✓ Class Certificates & Tonnage Verified',
-    '✓ Technical Specifications Confirmed',
+  // 3 Checkpoint Badges (Width 36mm each, no text truncation!)
+  const checkY = sealBoxY + 18.0;
+  const checkBadges = [
+    '✓ Registry Verified',
+    '✓ Class & Tonnage Confirmed',
+    '✓ On-Site Audit Attested',
   ];
+  const checkW = (attW - 6) / 3; // ~36 mm
 
-  for (let vi = 0; vi < verifications.length; vi++) {
-    const vx = MARGIN_LEFT + 4 + vi * (vBadgeW + 2);
-    doc.roundedBox(vx, vBadgeY, vBadgeW, 5.2, [236, 253, 245], [167, 243, 208], 1);
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.2);
+  for (let cbi = 0; cbi < checkBadges.length; cbi++) {
+    const cbX = attLeft + cbi * (checkW + 3);
+    doc.setFill([236, 253, 245]);
+    doc.setDraw([167, 243, 208], 0.3);
+    doc.pdf.roundedRect(cbX, checkY, checkW, 5.0, 1.0, 1.0, 'FD');
+
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
     doc.setTextColor([6, 95, 70]);
-    doc.pdf.text(verifications[vi], vx + vBadgeW / 2, vBadgeY + 3.7, { align: 'center' });
+    doc.pdf.text(checkBadges[cbi], cbX + checkW / 2, checkY + 3.4, { align: 'center' });
   }
 
-  // Formal legal/technical verification note
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(6.2);
-  doc.setTextColor(TEXT_MUTED);
-  const decText = 'Vessel particulars documented above have been compiled from official registration certificates, classification society records, builder specification documentation, and attending surveyor on-site verification.';
-  doc.pdf.text(decText, MARGIN_LEFT + 6, vBadgeY + 11.5);
+  // Right side: Official Survey Seal Stamp Box
+  const stampX = PAGE_W - MARGIN_RIGHT - 56;
+  const stampY = sealBoxY + 2.5;
+  const stampW = 53;
+  const stampH = 21;
 
-  doc.y += decBoxH + 6;
+  // Outer Seal Box
+  doc.roundedBox(stampX, stampY, stampW, stampH, WHITE, NAVY, 1.5);
+  // Inner hairline decorative border
+  doc.setDraw(BORDER_DARK, 0.2);
+  doc.pdf.roundedRect(stampX + 1, stampY + 1, stampW - 2, stampH - 2, 1, 1, 'S');
+
+  // Seal Header
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.0);
+  doc.setTextColor(NAVY);
+  doc.pdf.text('★  OZELLAR MARINE TECHNICAL AUDIT  ★', stampX + stampW / 2, stampY + 4.2, { align: 'center' });
+
+  // Seal Status Pill
+  const pillW = 38;
+  const pillH = 4.5;
+  const pillX = stampX + (stampW - pillW) / 2;
+  const pillY = stampY + 6.0;
+  doc.setFill(NAVY);
+  doc.pdf.roundedRect(pillX, pillY, pillW, pillH, 1, 1, 'F');
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
+  doc.setTextColor(WHITE);
+  doc.pdf.text('OFFICIAL RECORD • VERIFIED', pillX + pillW / 2, pillY + 3.2, { align: 'center' });
+
+  // Seal Reference & Date
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
+  doc.setTextColor(TEXT_DARK);
+  doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  ${fmtDate(inspection.startDate)}`, stampX + stampW / 2, stampY + 14.5, { align: 'center' });
+
+  // Seal Surveyor Attestation
+  doc.pdf.setFont('helvetica', 'italic').setFontSize(4.8);
+  doc.setTextColor(TEXT_MUTED);
+  doc.pdf.text(
+    inspection.inspector ? `Surveyor: ${inspection.inspector}` : 'Authorized Marine Technical Dossier',
+    stampX + stampW / 2,
+    stampY + 18.2,
+    { align: 'center' }
+  );
+
+  doc.y = sealBoxY + sealBoxH + 6;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 3: EXECUTIVE SUMMARY
