@@ -128,6 +128,51 @@ async function loadImage(photoId?: string | null): Promise<LoadedImage | null> {
   }
 }
 
+// Precise Image Cropper to guarantee exact aspect ratio without PDF overflow
+async function cropToCover(loadedImg: LoadedImage, targetW: number, targetH: number): Promise<string> {
+  try {
+    const targetAspect = targetW / targetH;
+    const srcW = loadedImg.w;
+    const srcH = loadedImg.h;
+    if (!srcW || !srcH) return loadedImg.dataUrl;
+    const srcAspect = srcW / srcH;
+
+    let cropW = srcW;
+    let cropH = srcH;
+    let cropX = 0;
+    let cropY = 0;
+
+    if (srcAspect > targetAspect) {
+      // Source is wider than target aspect -> crop left and right
+      cropW = Math.round(srcH * targetAspect);
+      cropX = Math.round((srcW - cropW) / 2);
+    } else {
+      // Source is taller than target aspect -> crop top and bottom
+      cropH = Math.round(srcW / targetAspect);
+      cropY = Math.round((srcH - cropH) / 2);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.min(cropW, 1600);
+    canvas.height = Math.round(canvas.width / targetAspect);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return loadedImg.dataUrl;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('canvas crop failed'));
+      img.src = loadedImg.dataUrl;
+    });
+
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.88);
+  } catch {
+    return loadedImg.dataUrl;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Enterprise PDF Builder Class
 // ---------------------------------------------------------------------------
@@ -528,13 +573,9 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     : { bg: [180, 83, 9] as [number, number, number], border: [245, 158, 11] as [number, number, number] };
 
   if (coverImgLoaded) {
-    // Full-bleed: cover scale to fill entire width × heroH
-    const sc = Math.max(PAGE_W / coverImgLoaded.w, heroH / coverImgLoaded.h);
-    const iw = coverImgLoaded.w * sc;
-    const ih = coverImgLoaded.h * sc;
-    const ix = (PAGE_W - iw) / 2;
-    const iy = heroY + (heroH - ih) / 2;
-    doc.pdf.addImage(coverImgLoaded.dataUrl, 'JPEG', ix, iy, iw, ih);
+    // Exact crop to cover: fits PAGE_W × heroH with zero overflow
+    const croppedDataUrl = await cropToCover(coverImgLoaded, PAGE_W, heroH);
+    doc.pdf.addImage(croppedDataUrl, 'JPEG', 0, heroY, PAGE_W, heroH);
 
     // Dark gradient overlay at bottom of image (layered rects)
     const gradH = 50;
