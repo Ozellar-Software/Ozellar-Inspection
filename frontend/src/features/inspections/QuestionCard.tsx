@@ -1,4 +1,5 @@
 import './QuestionCard.css';
+import { RichTextEditor } from '../../components/RichTextEditor/RichTextEditor';
 import { useState, useRef, useEffect } from 'react';
 import type { InspectionQuestion, InspectionSection, Photo, Response } from '@ozellar/shared';
 import { db } from '../../offline/db';
@@ -400,33 +401,37 @@ export function QuestionCard({
       {answer === 'no' && (
         <div className="corrective-preventive-block">
           <div className="seg-label">Corrective Action</div>
-          <textarea
+          <RichTextEditor
             placeholder="Describe the corrective action taken..."
             disabled={locked}
             value={correctiveAction}
-            onChange={(e) => setCorrectiveAction(e.target.value)}
+            onChange={setCorrectiveAction}
             onBlur={() => void saveResponse(inspectionId, question.id, { correctiveAction })}
+            minHeight={65}
+            style={{ marginBottom: 10 }}
           />
           <div className="seg-label">Preventive Action</div>
-          <textarea
+          <RichTextEditor
             placeholder="Describe the preventive action to avoid recurrence..."
             disabled={locked}
             value={preventiveAction}
-            onChange={(e) => setPreventiveAction(e.target.value)}
+            onChange={setPreventiveAction}
             onBlur={() => void saveResponse(inspectionId, question.id, { preventiveAction })}
+            minHeight={65}
           />
         </div>
       )}
 
-      {/* ── Remark + photos block ── */}
+      {/* ── Remark + photos block with Rich Formatting ── */}
       <div className="observation-block">
         <div className="seg-label">Remark</div>
-        <textarea
-          placeholder="Add remarks or describe what you observed..."
+        <RichTextEditor
+          placeholder="Add remarks or describe what you observed (supports bold, italics, bullets, font styles)..."
           disabled={locked}
           value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
+          onChange={setRemarks}
           onBlur={() => void saveResponse(inspectionId, question.id, { remarks })}
+          minHeight={70}
           style={{ marginBottom: 10 }}
         />
 

@@ -8,6 +8,7 @@ import { TrashIcon, CheckIcon, XIcon, CameraIcon, WarningIcon } from '../../icon
 import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
 import { getDraggedPhoto, endPhotoDrag, showDragNotification } from './photoDragService';
 import './QuestionCard.css';
+import { RichTextEditor } from '../../components/RichTextEditor/RichTextEditor';
 
 function stateClass(f: Finding): string {
   if (f.answer === 'yes') return 'state-ok';
@@ -293,15 +294,16 @@ export function FindingCard({
         )}
       </div>
 
-      {/* ── Observation / Defect Description Block ── */}
+      {/* ── Observation / Defect Description Block with Rich Text ── */}
       <div className="observation-block" style={{ paddingBottom: 0 }}>
         <div className="seg-label" style={{ margin: '12px 0 6px' }}>Observation / Defect Description</div>
-        <textarea
-          placeholder="Describe the defect or observation you found..."
+        <RichTextEditor
+          placeholder="Describe the defect or observation (supports bold, italics, bullets, font styles)..."
           disabled={locked}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={setText}
           onBlur={() => void save(finding.id, { text })}
+          minHeight={75}
         />
       </div>
 
@@ -340,21 +342,23 @@ export function FindingCard({
       {!isSatisfactory && (
         <div className="corrective-preventive-block" style={{ marginTop: 10, paddingBottom: 0 }}>
           <div className="seg-label" style={{ margin: '0 0 6px' }}>Corrective Action</div>
-          <textarea
+          <RichTextEditor
             placeholder="Describe the corrective action taken or required..."
             disabled={locked}
             value={correctiveAction}
-            onChange={(e) => setCorrectiveAction(e.target.value)}
+            onChange={setCorrectiveAction}
             onBlur={() => void save(finding.id, { correctiveAction })}
+            minHeight={65}
             style={{ marginBottom: 10 }}
           />
           <div className="seg-label" style={{ margin: '0 0 6px' }}>Preventive Action</div>
-          <textarea
+          <RichTextEditor
             placeholder="Describe the preventive action to avoid recurrence..."
             disabled={locked}
             value={preventiveAction}
-            onChange={(e) => setPreventiveAction(e.target.value)}
+            onChange={setPreventiveAction}
             onBlur={() => void save(finding.id, { preventiveAction })}
+            minHeight={65}
           />
         </div>
       )}

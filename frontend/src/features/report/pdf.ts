@@ -5,6 +5,7 @@ import { db } from '../../offline/db';
 import brandLogoSrc from '../../assets/ozellar-marine-global-logo.gif';
 import { PARTICULAR_LABELS, PARTICULAR_GROUPS } from '../vessels/particulars';
 import type { ReportData, SectionReport, Observation } from './reportData';
+import { renderRichText, measureRichText } from './richTextPdf';
 
 // ---------------------------------------------------------------------------
 // Design System Constants (Maritime Executive Theme)
@@ -882,8 +883,8 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   doc.y += kpiH + 6;
 
   const summaryText = inspection.summary?.trim() || 'No executive summary remarks recorded by the surveyor.';
-  const summaryLines = doc.pdf.splitTextToSize(summaryText, CONTENT_W - 20) as string[];
-  const sumBoxH = Math.max(summaryLines.length * 4.8 + 16, 26);
+  const richH = measureRichText(doc.pdf, summaryText, CONTENT_W - 20, { size: 8.5, lineGap: 4.8 });
+  const sumBoxH = Math.max(richH + 18, 26);
 
   doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, sumBoxH, SLATE_BG, BORDER, 2);
   doc.setFill(TEAL);
@@ -895,13 +896,12 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   doc.setDraw(BORDER, 0.3);
   doc.pdf.line(MARGIN_LEFT + 7, doc.y + 8, PAGE_W - MARGIN_RIGHT - 7, doc.y + 8);
 
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(8.5);
-  doc.setTextColor(TEXT_BODY);
-  let curSy = doc.y + 13;
-  for (const line of summaryLines) {
-    doc.pdf.text(line, MARGIN_LEFT + 7, curSy);
-    curSy += 4.8;
-  }
+  renderRichText(doc.pdf, summaryText, MARGIN_LEFT + 7, doc.y + 13.5, CONTENT_W - 20, {
+    size: 8.5,
+    lineGap: 4.8,
+    color: TEXT_BODY,
+    bulletColor: NAVY,
+  });
   doc.y += sumBoxH + 10;
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -935,9 +935,10 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
       // Section Remarks (if any)
       if (s.section.remarks?.trim()) {
-        doc.ensure(20);
-        const remLines = doc.pdf.splitTextToSize(s.section.remarks, CONTENT_W - 16) as string[];
-        const remBoxH = Math.max(remLines.length * 4.4 + 15, 20);
+        const remText = s.section.remarks.trim();
+        const richH = measureRichText(doc.pdf, remText, CONTENT_W - 16, { size: 8.5, lineGap: 4.5 });
+        const remBoxH = Math.max(richH + 16, 20);
+        doc.ensure(remBoxH + 4);
 
         doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, remBoxH, SLATE_BG, BORDER, 2);
         doc.setFill(TEAL);
@@ -947,13 +948,12 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         doc.setTextColor(TEXT_MUTED);
         doc.pdf.text('REMARKS', MARGIN_LEFT + 7, doc.y + 6);
 
-        doc.pdf.setFont('helvetica', 'normal').setFontSize(8.5);
-        doc.setTextColor(TEXT_BODY);
-        let remY = doc.y + 6 + (remLines.length > 0 ? 5 : 0);
-        for (const line of remLines) {
-          doc.pdf.text(line, MARGIN_LEFT + 7, remY);
-          remY += 4.4;
-        }
+        renderRichText(doc.pdf, remText, MARGIN_LEFT + 7, doc.y + 11.5, CONTENT_W - 16, {
+          size: 8.5,
+          lineGap: 4.5,
+          color: TEXT_BODY,
+          bulletColor: NAVY,
+        });
         doc.y += remBoxH + 6;
       }
 
@@ -984,18 +984,15 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
         for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
           const fRow = s.findings[fIdx];
-          const textLines = doc.pdf.splitTextToSize(fRow.finding.text || 'Observation logged', CONTENT_W - 16) as string[];
-          let caLines: string[] = [];
-          if (fRow.finding.correctiveAction) {
-            caLines = doc.pdf.splitTextToSize(`Corrective Action: ${fRow.finding.correctiveAction}`, CONTENT_W - 16) as string[];
-          }
-          let paLines: string[] = [];
-          if (fRow.finding.preventiveAction) {
-            paLines = doc.pdf.splitTextToSize(`Preventive Action: ${fRow.finding.preventiveAction}`, CONTENT_W - 16) as string[];
-          }
+          const textContent = fRow.finding.text || 'Observation logged';
+          const caContent = fRow.finding.correctiveAction ? `**Corrective Action:** ${fRow.finding.correctiveAction}` : '';
+          const paContent = fRow.finding.preventiveAction ? `*Preventive Action:* ${fRow.finding.preventiveAction}` : '';
 
-          const contentLinesCount = textLines.length + caLines.length + paLines.length;
-          const textH = 14 + contentLinesCount * 4.2;
+          const textH = measureRichText(doc.pdf, textContent, CONTENT_W - 16, { size: 8, lineGap: 4.2 });
+          const caH = caContent ? measureRichText(doc.pdf, caContent, CONTENT_W - 16, { size: 7.5, lineGap: 4.2 }) : 0;
+          const paH = paContent ? measureRichText(doc.pdf, paContent, CONTENT_W - 16, { size: 7.5, lineGap: 4.2 }) : 0;
+
+          const totalTextH = 12 + textH + (caH ? caH + 2 : 0) + (paH ? paH + 2 : 0);
 
           const photoIds = fRow.photoIds || [];
           const singlePhoto = photoIds.length === 1;
@@ -1009,7 +1006,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
             photoBlockH = photoRows * (gridPH + 6) + 4;
           }
 
-          const cardH = textH + photoBlockH + 4;
+          const cardH = totalTextH + photoBlockH + 4;
 
           doc.ensure(cardH + 4);
           const cardY = doc.y;
@@ -1022,23 +1019,29 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
           doc.pdf.text(`OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()}`, MARGIN_LEFT + 8, cardY + 5.5);
 
           let curY = cardY + 11;
-          doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
-          doc.setTextColor(TEXT_DARK);
-          doc.pdf.text(textLines, MARGIN_LEFT + 8, curY);
-          curY += textLines.length * 4.2;
+          renderRichText(doc.pdf, textContent, MARGIN_LEFT + 8, curY, CONTENT_W - 16, {
+            size: 8,
+            lineGap: 4.2,
+            color: TEXT_DARK,
+          });
+          curY += textH + 2;
 
-          if (caLines.length > 0) {
-            doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-            doc.setTextColor([185, 28, 28]);
-            doc.pdf.text(caLines, MARGIN_LEFT + 8, curY);
-            curY += caLines.length * 4.2;
+          if (caContent) {
+            renderRichText(doc.pdf, caContent, MARGIN_LEFT + 8, curY, CONTENT_W - 16, {
+              size: 7.5,
+              lineGap: 4.2,
+              color: [185, 28, 28],
+            });
+            curY += caH + 2;
           }
 
-          if (paLines.length > 0) {
-            doc.pdf.setFont('helvetica', 'italic').setFontSize(7.5);
-            doc.setTextColor(TEXT_MUTED);
-            doc.pdf.text(paLines, MARGIN_LEFT + 8, curY);
-            curY += paLines.length * 4.2;
+          if (paContent) {
+            renderRichText(doc.pdf, paContent, MARGIN_LEFT + 8, curY, CONTENT_W - 16, {
+              size: 7.5,
+              lineGap: 4.2,
+              color: TEXT_MUTED,
+            });
+            curY += paH + 2;
           }
 
           if (photoIds.length > 0) {
@@ -1169,19 +1172,24 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
       // Remarks Block (if any)
       if (response?.remarks?.trim()) {
-        doc.pdf.setFont('helvetica', 'normal').setFontSize(8.5);
-        doc.setTextColor(TEXT_BODY);
-        const remLines = doc.pdf.splitTextToSize(`Remarks: ${response.remarks}`, CONTENT_W - 16) as string[];
-        for (const rLine of remLines) {
-          doc.pdf.text(rLine, MARGIN_LEFT + 6, innerY);
-          innerY += 4;
-        }
-        innerY += 2;
+        const remContent = `**Remarks:** ${response.remarks.trim()}`;
+        const remH = measureRichText(doc.pdf, remContent, CONTENT_W - 16, { size: 8.5, lineGap: 4.2 });
+        renderRichText(doc.pdf, remContent, MARGIN_LEFT + 6, innerY, CONTENT_W - 16, {
+          size: 8.5,
+          lineGap: 4.2,
+          color: TEXT_BODY,
+        });
+        innerY += remH + 3;
       }
 
       // Deficiency Callout Box (if bad)
       if (state === 'bad') {
-        const defBoxH = 22;
+        const caText = response?.correctiveAction ? `**Corrective:** ${response.correctiveAction}` : '**Corrective:** Immediate rectification required';
+        const paText = response?.preventiveAction ? `*Preventive:* ${response.preventiveAction}` : '*Preventive:* Review preventive maintenance routine';
+        const caH = measureRichText(doc.pdf, caText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
+        const paH = measureRichText(doc.pdf, paText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
+        const defBoxH = Math.max(caH + paH + 13, 22);
+
         doc.roundedBox(MARGIN_LEFT + 6, innerY, CONTENT_W - 12, defBoxH, [254, 242, 242], [254, 202, 202], 2);
         doc.setFill([239, 68, 68]);
         doc.pdf.rect(MARGIN_LEFT + 6, innerY, 2.5, defBoxH, 'F');
@@ -1190,12 +1198,10 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         doc.setTextColor([185, 28, 28]);
         doc.pdf.text('!  DEFICIENCY / ACTION REQUIRED', MARGIN_LEFT + 12, innerY + 5);
 
-        doc.pdf.setFont('helvetica', 'normal').setFontSize(7.8);
-        doc.setTextColor(TEXT_DARK);
-        const caText = response?.correctiveAction ? `Corrective: ${response.correctiveAction}` : 'Corrective: Immediate rectification required';
-        const paText = response?.preventiveAction ? `Preventive: ${response.preventiveAction}` : 'Preventive: Review preventive maintenance routine';
-        doc.pdf.text(doc.pdf.splitTextToSize(caText, CONTENT_W - 22) as string[], MARGIN_LEFT + 12, innerY + 10.5);
-        doc.pdf.text(doc.pdf.splitTextToSize(paText, CONTENT_W - 22) as string[], MARGIN_LEFT + 12, innerY + 16.5);
+        let subY = innerY + 10;
+        renderRichText(doc.pdf, caText, MARGIN_LEFT + 12, subY, CONTENT_W - 22, { size: 7.8, lineGap: 4, color: TEXT_DARK });
+        subY += caH + 2;
+        renderRichText(doc.pdf, paText, MARGIN_LEFT + 12, subY, CONTENT_W - 22, { size: 7.8, lineGap: 4, color: TEXT_MUTED });
 
         innerY += defBoxH + 4;
       }
@@ -1534,9 +1540,6 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
   const conclusionText = inspection.conclusion?.trim() || 'No concluding remarks or formal recommendations logged.';
 
-  // Split into individual recommendation lines for bullet-point display
-  const rawConclusion = doc.pdf.splitTextToSize(conclusionText, CONTENT_W - 24) as string[];
-
   // Header context box
   const ctxBoxH = 18;
   doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, ctxBoxH, [13, 33, 56], NAVY, 2);
@@ -1551,8 +1554,9 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   doc.pdf.text(`Survey Period: ${surveyDate}  ·  Lead Surveyor: ${inspection.inspector || '-'}`, MARGIN_LEFT + 7, doc.y + 13.5);
   doc.y += ctxBoxH + 5;
 
-  // Conclusion text box
-  const conBoxH = Math.max(rawConclusion.length * 5 + 18, 30);
+  // Conclusion text box with rich formatting (bullets, bold, headings, font styles)
+  const conRichH = measureRichText(doc.pdf, conclusionText, CONTENT_W - 20, { size: 8.5, lineGap: 5 });
+  const conBoxH = Math.max(conRichH + 18, 30);
   doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, conBoxH, SLATE_BG, BORDER, 2);
   doc.setFill(TEAL);
   doc.pdf.rect(MARGIN_LEFT, doc.y, 3, conBoxH, 'F');
@@ -1562,13 +1566,12 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   doc.setDraw(BORDER, 0.3);
   doc.pdf.line(MARGIN_LEFT + 7, doc.y + 8.5, PAGE_W - MARGIN_RIGHT - 7, doc.y + 8.5);
 
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(8.5);
-  doc.setTextColor(TEXT_BODY);
-  let curCy = doc.y + 14;
-  for (const line of rawConclusion) {
-    doc.pdf.text(line, MARGIN_LEFT + 7, curCy);
-    curCy += 5;
-  }
+  renderRichText(doc.pdf, conclusionText, MARGIN_LEFT + 7, doc.y + 14, CONTENT_W - 20, {
+    size: 8.5,
+    lineGap: 5,
+    color: TEXT_BODY,
+    bulletColor: NAVY,
+  });
   doc.y += conBoxH + 6;
 
   // Key recommendation highlight boxes (checklist summary)

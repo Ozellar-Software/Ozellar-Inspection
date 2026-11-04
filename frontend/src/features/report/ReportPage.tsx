@@ -13,6 +13,7 @@ import { BackIcon, WarningIcon, LockIcon, CheckIcon, UploadIcon, XIcon, EyeIcon 
 import { loadReportData, type ReportData } from './reportData';
 import { generateInspectionPdf } from './pdf';
 import { VesselParticularsModal } from './VesselParticularsModal';
+import { RichTextEditor } from '../../components/RichTextEditor/RichTextEditor';
 import './ReportPage.css';
 
 interface Approver { id: string; email: string; name: string; designation: string; role: string }
@@ -1446,20 +1447,18 @@ export function ReportPage() {
           </div>
         </div>
 
-        {/* ── Summary textarea ── */}
+        {/* ── Summary textarea with Rich Formatting ── */}
         <div className="premium-report-card">
           <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-            Summary
+            Executive Summary
           </div>
-          <textarea
-            placeholder="Overall summary of this inspection..."
+          <RichTextEditor
+            placeholder="Overall executive summary of this inspection (supports bold, italics, bullets, font styles, and live preview)..."
             disabled={!editable}
             value={summary}
-            onChange={(e) => setSummary(e.target.value)}
+            onChange={setSummary}
             onBlur={saveSummaryConclusion}
-            style={{ width: '100%', minHeight: 80, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 10, padding: 12, fontSize: 14, outline: 'none', color: '#0f172a', resize: 'vertical' }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.background = '#ffffff'; }}
-            onBlurCapture={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
+            minHeight={110}
           />
         </div>
 
@@ -2035,20 +2034,18 @@ export function ReportPage() {
           );
         })}
 
-        {/* ── Conclusion textarea (shown last) ── */}
+        {/* ── Conclusion textarea with Rich Formatting ── */}
         <div className="premium-report-card">
           <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-            Conclusion
+            Conclusion & Recommendations
           </div>
-          <textarea
-            placeholder="Conclusion / recommendation..."
+          <RichTextEditor
+            placeholder="Conclusion, statutory recommendations, and survey close-out findings..."
             disabled={!editable}
             value={conclusion}
-            onChange={(e) => setConclusion(e.target.value)}
+            onChange={setConclusion}
             onBlur={saveSummaryConclusion}
-            style={{ width: '100%', minHeight: 80, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 10, padding: 12, fontSize: 14, outline: 'none', color: '#0f172a', resize: 'vertical' }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.background = '#ffffff'; }}
-            onBlurCapture={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
+            minHeight={120}
           />
         </div>
 

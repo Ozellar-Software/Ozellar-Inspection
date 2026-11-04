@@ -12,6 +12,7 @@ import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
 import { endPhotoDrag, showDragNotification } from './photoDragService';
+import { RichTextEditor } from '../../components/RichTextEditor/RichTextEditor';
 import './SectionDetailPage.css';
 
 import { useCurrentUser } from '../../auth/useCurrentUser';
@@ -422,14 +423,13 @@ export function SectionDetailPage() {
         {dispSection.photoOnly && (
           <div className="section-remarks-card">
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', marginBottom: 8 }}>Remarks</div>
-            <textarea
-              className="section-remarks-input"
-              placeholder="Add remarks or observations for this photo section..."
+            <RichTextEditor
+              placeholder="Add remarks or observations for this photo section (supports bold, italics, bullets, and font styles)..."
               value={remarksValue}
               disabled={locked}
-              onChange={(e) => setRemarksValue(e.target.value)}
+              onChange={setRemarksValue}
               onBlur={() => void saveRemarks(remarksValue)}
-              rows={3}
+              minHeight={85}
             />
           </div>
         )}
