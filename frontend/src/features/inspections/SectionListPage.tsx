@@ -12,6 +12,7 @@ import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
 import { DeleteInspectionModal } from './DeleteInspectionModal';
 import { PhotoGalleryPreviewModal } from './PhotoGalleryPreviewModal';
+import { formatObservationText } from './photoDefectService';
 import { ReportPdfPreviewModal } from '../report/ReportPdfPreviewModal';
 import { loadReportData } from '../report/reportData';
 import { generateInspectionPdf } from '../report/pdf';
@@ -120,12 +121,20 @@ export function SectionListPage() {
           .equals(p.inspectionSectionId)
           .toArray();
 
+        let sectionName = '';
+        const sec = await db.inspectionSections.get(p.inspectionSectionId);
+        if (sec?.name?.trim()) {
+          sectionName = sec.name.trim();
+        }
+
+        const findingText = formatObservationText(sectionName, p.description);
+
         const findingId = crypto.randomUUID();
         const newFinding: Finding = {
           id: findingId,
           inspectionId: inspectionId || '',
           inspectionSectionId: p.inspectionSectionId,
-          text: p.description ? String(p.description).trim() : 'Defect observation logged from visual evidence',
+          text: findingText,
           answer: 'no',
           correctiveAction: '',
           preventiveAction: '',
@@ -136,6 +145,7 @@ export function SectionListPage() {
         await localWrite('photos', p.id, {
           findingId,
           isDefect: true,
+          target: 'finding',
         });
       }
     } catch (err: any) {

@@ -12,6 +12,7 @@ import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
 import { endPhotoDrag, showDragNotification } from './photoDragService';
+import { formatObservationText } from './photoDefectService';
 import { RichTextEditor } from '../../components/RichTextEditor/RichTextEditor';
 import './SectionDetailPage.css';
 
@@ -103,18 +104,26 @@ export function SectionDetailPage() {
     if (isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;
     setIsSyncingDefects(true);
     try {
+      let sectionName = dispSection?.name?.trim() || '';
+      if (!sectionName && sectionId) {
+        const sec = await db.inspectionSections.get(sectionId);
+        sectionName = sec?.name?.trim() || '';
+      }
+
       for (const p of unlinkedSectionDefects) {
         const existingFindings = await db.findings
           .where('inspectionSectionId')
           .equals(sectionId)
           .toArray();
 
+        const findingText = formatObservationText(sectionName, p.description);
+
         const findingId = crypto.randomUUID();
         const newFinding: Finding = {
           id: findingId,
           inspectionId: inspectionId || '',
           inspectionSectionId: sectionId,
-          text: p.description ? String(p.description).trim() : 'Defect observation logged from visual evidence',
+          text: findingText,
           answer: 'no',
           correctiveAction: '',
           preventiveAction: '',
@@ -125,6 +134,7 @@ export function SectionDetailPage() {
         await localWrite('photos', p.id, {
           findingId,
           isDefect: true,
+          target: 'finding',
         });
       }
     } catch (err: any) {
@@ -194,9 +204,15 @@ export function SectionDetailPage() {
 
   async function addFinding() {
     const id = crypto.randomUUID();
+    const defaultText = dispSection?.name ? dispSection.name.trim() : '';
     await localWrite('findings', id, {
-      inspectionId, inspectionSectionId: sectionId, text: '', answer: 'no',
-      correctiveAction: '', preventiveAction: '', position: findings.length,
+      inspectionId,
+      inspectionSectionId: sectionId,
+      text: defaultText,
+      answer: 'no',
+      correctiveAction: '',
+      preventiveAction: '',
+      position: findings.length,
     });
   }
 

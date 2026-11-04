@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import type { InspectionSection, Photo } from '@ozellar/shared';
+import { db } from '../../offline/db';
 import { localWrite, localDelete } from '../../offline/outbox';
 import { photoSrc, getPhotoUrls } from '../../offline/photoQueue';
 import {
@@ -18,7 +19,7 @@ import {
   downloadPhotosAsZip,
 } from './photoDownload';
 import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
-import { togglePhotoDefectWithObservation, type DefectConfirmRequest } from './photoDefectService';
+import { togglePhotoDefectWithObservation, formatObservationText, type DefectConfirmRequest } from './photoDefectService';
 import { ConfirmDefectRemovalModal } from './ConfirmDefectRemovalModal';
 import './ImageViewerModal.css';
 
@@ -124,6 +125,25 @@ export function ImageViewerModal({
       setDescMap((prev) => ({ ...prev, [currentPhoto.id]: trimmed }));
       currentPhoto.description = trimmed;
       onPhotoUpdated?.(currentPhoto.id, { description: trimmed });
+
+      // If photo is marked defect and linked to an observation, keep the observation text in sync if it had default text
+      if (currentPhoto.isDefect && currentPhoto.findingId) {
+        const finding = await db.findings.get(currentPhoto.findingId);
+        if (finding) {
+          let secName = '';
+          const sId = finding.inspectionSectionId || currentPhoto.inspectionSectionId;
+          if (sId) {
+            const sec = await db.inspectionSections.get(sId);
+            if (sec?.name) secName = sec.name.trim();
+          }
+          const prevDefault = secName || '';
+          if (!finding.text || finding.text.trim() === prevDefault || finding.text.trim() === '') {
+            const newFindingText = formatObservationText(secName, trimmed);
+            await localWrite('findings', finding.id, { text: newFindingText });
+          }
+        }
+      }
+
       setIsEditingDesc(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);

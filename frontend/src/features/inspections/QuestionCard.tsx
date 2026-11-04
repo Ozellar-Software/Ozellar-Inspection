@@ -279,6 +279,7 @@ export function QuestionCard({
             file,
             target: 'question',
             inspectionId,
+            inspectionSectionId: question.inspectionSectionId,
             responseId: respId,
             position: pos++,
             isDefect: false,

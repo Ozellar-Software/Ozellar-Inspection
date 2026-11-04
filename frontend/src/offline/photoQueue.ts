@@ -3,6 +3,7 @@ import { api, BASE } from '../api/client';
 import { getToken } from '../auth/session';
 import { db } from './db';
 import { localWrite } from './outbox';
+import { formatObservationText } from '../features/inspections/photoDefectService';
 
 export async function compressImage(file: Blob, maxSide = 1600, quality = 0.8): Promise<Blob> {
   // Use modern createImageBitmap if available, with EXIF orientation preservation
@@ -98,20 +99,41 @@ export async function addPhoto(input: {
 
   let findingId = input.findingId ?? null;
   let target = input.target;
+  let sectionId = input.inspectionSectionId ?? null;
+
+  // If sectionId is missing but responseId exists, look up section from question
+  if (!sectionId && input.responseId) {
+    const resp = await db.responses.get(input.responseId);
+    if (resp?.inspectionQuestionId) {
+      const q = await db.inspectionQuestions.get(resp.inspectionQuestionId);
+      if (q?.inspectionSectionId) {
+        sectionId = q.inspectionSectionId;
+      }
+    }
+  }
 
   // When photo is marked as DEFECT and not yet linked to an observation, create an observation in the section!
-  if (input.isDefect && !findingId && input.inspectionSectionId) {
+  if (input.isDefect && !findingId && sectionId) {
     const existingFindings = await db.findings
       .where('inspectionSectionId')
-      .equals(input.inspectionSectionId)
+      .equals(sectionId)
       .toArray();
+
+    // Look up section name
+    let sectionName = '';
+    const sec = await db.inspectionSections.get(sectionId);
+    if (sec?.name?.trim()) {
+      sectionName = sec.name.trim();
+    }
+
+    const findingText = formatObservationText(sectionName, input.description);
 
     findingId = crypto.randomUUID();
     const newFinding: Finding = {
       id: findingId,
       inspectionId: input.inspectionId || '',
-      inspectionSectionId: input.inspectionSectionId,
-      text: input.description ? String(input.description).trim() : '',
+      inspectionSectionId: sectionId,
+      text: findingText,
       answer: 'no', // Observation / Defect
       correctiveAction: '',
       preventiveAction: '',
@@ -123,10 +145,16 @@ export async function addPhoto(input: {
   }
 
   await localWrite('photos', photoId, {
-    inspectionId: input.inspectionId ?? null, vesselId: input.vesselId ?? null, target,
-    inspectionSectionId: input.inspectionSectionId ?? null, responseId: input.responseId ?? null,
-    findingId, isDefect: !!input.isDefect, position: input.position,
-    contentType: 'image/jpeg', sizeBytes: blob.size,
+    inspectionId: input.inspectionId ?? null,
+    vesselId: input.vesselId ?? null,
+    target,
+    inspectionSectionId: sectionId ?? null,
+    responseId: input.responseId ?? null,
+    findingId,
+    isDefect: !!input.isDefect,
+    position: input.position,
+    contentType: 'image/jpeg',
+    sizeBytes: blob.size,
     description: input.description ?? '',
   });
   return photoId;

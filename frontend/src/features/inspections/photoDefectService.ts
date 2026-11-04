@@ -12,6 +12,27 @@ export interface DefectConfirmRequest {
 }
 
 /**
+ * Format observation text with section name and optional photo description.
+ */
+export function formatObservationText(sectionName?: string, description?: string): string {
+  const cleanSec = (sectionName || '').trim();
+  const cleanDesc = (description || '').trim();
+
+  if (!cleanSec && !cleanDesc) {
+    return 'Defect observation logged from visual evidence';
+  }
+  if (!cleanSec) return cleanDesc;
+  if (!cleanDesc) return cleanSec;
+
+  // If description already starts with the section name, avoid duplicating
+  if (cleanDesc.toLowerCase().startsWith(cleanSec.toLowerCase())) {
+    return cleanDesc;
+  }
+
+  return `${cleanSec} - ${cleanDesc}`;
+}
+
+/**
  * Check whether a finding has user-entered content or observations beyond the photo's caption.
  */
 export function hasFindingDetails(finding: Finding, photo?: Photo): boolean {
@@ -59,26 +80,48 @@ export async function togglePhotoDefectWithObservation(
   const existing = await db.photos.get(photoId);
   const currentPhoto: Photo = existing ? { ...existing, ...photo } : photo;
   const inspectionId = currentPhoto.inspectionId || photo.inspectionId || '';
-  const sectionId = currentPhoto.inspectionSectionId || photo.inspectionSectionId || '';
+  let sectionId = currentPhoto.inspectionSectionId || photo.inspectionSectionId || '';
+
+  // If sectionId is missing but responseId exists, look up section from question
+  if (!sectionId && currentPhoto.responseId) {
+    const resp = await db.responses.get(currentPhoto.responseId);
+    if (resp?.inspectionQuestionId) {
+      const q = await db.inspectionQuestions.get(resp.inspectionQuestionId);
+      if (q?.inspectionSectionId) {
+        sectionId = q.inspectionSectionId;
+      }
+    }
+  }
 
   if (newDefect) {
     // ── Turn into Defect ──
     let findingId = currentPhoto.findingId;
     let createdFinding = false;
 
-    // If not already attached to a finding, create a new Observation in the section
+    // Look up section name
+    let sectionName = '';
+    if (sectionId) {
+      const sec = await db.inspectionSections.get(sectionId);
+      if (sec?.name?.trim()) {
+        sectionName = sec.name.trim();
+      }
+    }
+
+    // If not already attached to a finding, create a new Observation in the section with section name
     if (!findingId && sectionId) {
       const existingFindings = await db.findings
         .where('inspectionSectionId')
         .equals(sectionId)
         .toArray();
 
+      const findingText = formatObservationText(sectionName, currentPhoto.description);
+
       findingId = crypto.randomUUID();
       const newFinding: Finding = {
         id: findingId,
         inspectionId,
         inspectionSectionId: sectionId,
-        text: currentPhoto.description ? String(currentPhoto.description).trim() : '',
+        text: findingText,
         answer: 'no', // Observation / Defect
         correctiveAction: '',
         preventiveAction: '',
@@ -87,10 +130,18 @@ export async function togglePhotoDefectWithObservation(
 
       await localWrite('findings', findingId, newFinding as unknown as Record<string, unknown>);
       createdFinding = true;
+    } else if (findingId) {
+      // If finding already exists but had no description or was empty, backfill with section name
+      const existingFinding = await db.findings.get(findingId);
+      if (existingFinding && !existingFinding.text?.trim() && sectionName) {
+        const findingText = formatObservationText(sectionName, currentPhoto.description);
+        await localWrite('findings', findingId, { text: findingText });
+      }
     }
 
     const patch: Partial<Photo> = {
       isDefect: true,
+      inspectionSectionId: sectionId || currentPhoto.inspectionSectionId || null,
       ...(findingId ? { findingId, target: 'finding' as const } : {}),
     };
 
