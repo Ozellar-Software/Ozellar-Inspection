@@ -1,42 +1,81 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    PREMIUM WORD-STYLE MINIMALIST RICH TEXT EDITOR
-   Executive Maritime Theme • Microsoft Word Aesthetic
+   Native Look & Feel Matching Standard App Inputs • On-Demand Word Ribbon
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .word-editor-container {
-  display: flex;
-  flex-direction: column;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  overflow: visible;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  position: relative;
   width: 100%;
   box-sizing: border-box;
-  position: relative;
-}
-
-.word-editor-container:focus-within {
-  border-color: #105935;
-  box-shadow: 0 0 0 3px rgba(16, 89, 53, 0.1);
+  background: transparent;
+  border: none;
 }
 
 .word-editor-container.disabled {
   opacity: 0.65;
   pointer-events: none;
-  background: #f8fafc;
 }
 
 .word-editor-label {
-  padding: 6px 12px 2px;
+  padding: 0 0 4px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--muted, #64748b);
   letter-spacing: 0.4px;
 }
 
-/* ── Word-Style Sleek Ribbon ── */
+/* ── Discreet Format Trigger Button (Top-Right) ── */
+.rte-format-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 6px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.rte-format-toggle:hover {
+  background: #ffffff;
+  color: var(--accent, #0e7c86);
+  border-color: var(--accent, #0e7c86);
+  box-shadow: 0 1px 4px rgba(14, 124, 134, 0.18);
+}
+
+.rte-format-toggle.active {
+  background: var(--accent, #0e7c86);
+  color: #ffffff;
+  border-color: var(--accent, #0e7c86);
+  box-shadow: 0 1px 3px rgba(14, 124, 134, 0.25);
+}
+
+.rte-format-icon {
+  font-weight: 800;
+  font-family: 'Times New Roman', serif;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.rte-format-text {
+  font-size: 11px;
+  font-family: var(--font, sans-serif);
+}
+
+/* ── Word-Style Sleek Ribbon (Docks on top when active) ── */
 .word-ribbon {
   display: flex;
   align-items: center;
@@ -44,9 +83,17 @@
   gap: 3px;
   padding: 4px 8px;
   background: #f8fafc;
+  border: 1px solid var(--border, #cbd5e1);
   border-bottom: 1px solid #e2e8f0;
-  border-radius: 9px 9px 0 0;
+  border-radius: 8px 8px 0 0;
   position: relative;
+  z-index: 6;
+  animation: rteRibbonSlide 0.14s ease-out;
+}
+
+@keyframes rteRibbonSlide {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .word-ribbon-item {
@@ -61,7 +108,7 @@
 }
 
 .word-font-select {
-  height: 26px;
+  height: 25px;
   padding: 0 6px;
   font-size: 12px;
   font-weight: 500;
@@ -71,7 +118,7 @@
   border-radius: 6px;
   outline: none;
   cursor: pointer;
-  max-width: 140px;
+  max-width: 130px;
   transition: border-color 0.14s ease;
 }
 
@@ -80,7 +127,7 @@
 }
 
 .word-font-select:focus {
-  border-color: #105935;
+  border-color: var(--accent, #0e7c86);
 }
 
 .word-ribbon-sep {
@@ -94,8 +141,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 26px;
-  min-width: 26px;
+  height: 25px;
+  min-width: 25px;
   padding: 0 6px;
   font-size: 12px;
   font-weight: 600;
@@ -138,12 +185,27 @@
 .word-btn.symbol {
   font-size: 13px;
   font-weight: 700;
-  color: #105935;
+  color: var(--ok, #105935);
 }
 
 .word-btn.symbol.alert {
-  color: #dc2626;
+  color: var(--bad, #dc2626);
   font-size: 11px;
+}
+
+.word-close-btn {
+  margin-left: auto;
+  font-size: 11px;
+  color: #94a3b8;
+  height: 22px;
+  width: 22px;
+  min-width: 22px;
+  padding: 0;
+}
+
+.word-close-btn:hover {
+  color: #ef4444;
+  background: #fee2e2;
 }
 
 /* ── Bullet Popover Menu ── */
@@ -157,7 +219,7 @@
   align-items: center;
   gap: 4px;
   padding: 0 7px;
-  height: 26px;
+  height: 25px;
   font-size: 11.5px;
   font-weight: 600;
   color: #334155;
@@ -238,14 +300,14 @@
 
 .word-bullet-opt:hover {
   background: #f1f5f9;
-  color: #105935;
+  color: var(--accent, #0e7c86);
   font-weight: 600;
 }
 
 .word-bullet-sample {
   min-width: 18px;
   font-weight: 700;
-  color: #105935;
+  color: var(--accent, #0e7c86);
   text-align: center;
   font-size: 13px;
 }
@@ -255,40 +317,72 @@
   font-size: 11.5px;
 }
 
-/* ── Editor Textarea ── */
+/* ── Editor Textarea (Identical to Original Clean Inputs) ── */
 .word-textarea {
   width: 100%;
-  border: none;
-  outline: none;
+  border: 1px solid var(--border, #e1e6e9);
+  border-radius: 8px;
   padding: 10px 12px;
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: #0f172a;
-  background: #ffffff;
+  padding-right: 80px; /* space so text doesn't clash with top-right Format button */
+  font-size: 14px;
+  color: var(--ink, #0b2138);
   resize: vertical;
-  border-radius: 0 0 9px 9px;
+  min-height: 70px;
+  background: var(--bg, #f4f6f7);
+  font-family: var(--font, sans-serif);
+  line-height: 1.45;
   box-sizing: border-box;
-  transition: font-family 0.15s ease;
+  display: block;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.word-textarea:focus {
+  outline: none;
+  border-color: var(--accent, #0e7c86);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(14, 124, 134, 0.12);
 }
 
 .word-textarea::placeholder {
   color: #94a3b8;
-  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  font-family: var(--font, sans-serif);
 }
 
-/* Mobile responsive */
-@media (max-width: 600px) {
+/* When toolbar is open, seamlessly attach top of textarea */
+.word-editor-container.toolbar-open .word-textarea {
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-radius: 0 0 8px 8px;
+  background: #ffffff;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 640px) {
   .word-ribbon {
     gap: 2px;
     padding: 3px 6px;
   }
 
   .word-font-select {
-    max-width: 110px;
+    max-width: 105px;
     font-size: 11px;
   }
 
   .word-ribbon-sep {
     display: none;
+  }
+
+  .word-textarea {
+    font-size: 13px;
+    padding: 8px 10px;
+    padding-right: 74px;
+  }
+
+  .word-textarea::placeholder {
+    font-size: 12px;
   }
 }

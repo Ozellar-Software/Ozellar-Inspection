@@ -65,13 +65,14 @@ export function RichTextEditor({
   onBlur,
   placeholder = 'Type here…',
   disabled = false,
-  minHeight = 80,
+  minHeight = 70,
   label,
   showFontSelector = true,
   className = '',
   style = {},
 }: RichTextEditorProps) {
   const [selectedFont, setSelectedFont] = useState(WORD_FONTS[0].value);
+  const [isToolbarOpen, setIsToolbarOpen] = useState(false);
   const [isBulletMenuOpen, setIsBulletMenuOpen] = useState(false);
   const bulletMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -196,7 +197,7 @@ export function RichTextEditor({
     [value, onChange, disabled]
   );
 
-  // Apply font family tag to selected text
+  // Apply font family tag to selected text or overall textarea
   const handleFontChange = (fontVal: string, fontLabel: string) => {
     setSelectedFont(fontVal);
     if (disabled) return;
@@ -206,7 +207,6 @@ export function RichTextEditor({
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     if (start !== end) {
-      // Selected text -> wrap in font tag
       applyInlineWrap(`[font:${fontLabel}]`, `[/font]`, 'text');
     }
   };
@@ -293,161 +293,191 @@ export function RichTextEditor({
   };
 
   return (
-    <div className={`word-editor-container ${className} ${disabled ? 'disabled' : ''}`} style={style}>
+    <div
+      className={`word-editor-container ${className} ${disabled ? 'disabled' : ''} ${
+        isToolbarOpen ? 'toolbar-open' : ''
+      }`}
+      style={style}
+    >
       {label && <div className="word-editor-label">{label}</div>}
 
-      {/* ── Word-Style Sleek Ribbon ── */}
-      <div className="word-ribbon">
-        {/* Font Family Selector */}
-        {showFontSelector && (
-          <div className="word-ribbon-item">
-            <select
-              className="word-font-select"
-              value={selectedFont}
-              onChange={(e) => {
-                const opt = WORD_FONTS.find((f) => f.value === e.target.value);
-                handleFontChange(e.target.value, opt ? opt.label : 'Calibri');
-              }}
-              disabled={disabled}
-              title="Font Family"
-            >
-              {WORD_FONTS.map((f) => (
-                <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+      {/* ── Discreet Format Trigger Button (Top-Right) ── */}
+      {!disabled && (
+        <button
+          type="button"
+          className={`rte-format-toggle ${isToolbarOpen ? 'active' : ''}`}
+          onClick={() => setIsToolbarOpen((v) => !v)}
+          title={isToolbarOpen ? 'Hide formatting tools' : 'Format text (Fonts, Bullets, Bold, Lists)'}
+        >
+          <span className="rte-format-icon">Aa</span>
+          <span className="rte-format-text">{isToolbarOpen ? 'Hide' : 'Format'}</span>
+        </button>
+      )}
 
-        <div className="word-ribbon-sep" />
-
-        {/* Headings */}
-        <div className="word-ribbon-group">
-          <button
-            type="button"
-            className="word-btn"
-            onClick={() => applyHeading(2)}
-            disabled={disabled}
-            title="Heading 2 (## Title)"
-          >
-            H2
-          </button>
-          <button
-            type="button"
-            className="word-btn"
-            onClick={() => applyHeading(3)}
-            disabled={disabled}
-            title="Heading 3 (### Subhead)"
-          >
-            H3
-          </button>
-        </div>
-
-        <div className="word-ribbon-sep" />
-
-        {/* Inline Formatting: Bold, Italic, Underline, Strike */}
-        <div className="word-ribbon-group">
-          <button
-            type="button"
-            className="word-btn bold"
-            onClick={() => applyInlineWrap('**', '**', 'bold text')}
-            disabled={disabled}
-            title="Bold (Ctrl+B)"
-          >
-            <strong>B</strong>
-          </button>
-          <button
-            type="button"
-            className="word-btn italic"
-            onClick={() => applyInlineWrap('*', '*', 'italic text')}
-            disabled={disabled}
-            title="Italic (Ctrl+I)"
-          >
-            <em>I</em>
-          </button>
-          <button
-            type="button"
-            className="word-btn underline"
-            onClick={() => applyInlineWrap('<u>', '</u>', 'underlined text')}
-            disabled={disabled}
-            title="Underline (Ctrl+U)"
-          >
-            <u>U</u>
-          </button>
-          <button
-            type="button"
-            className="word-btn strike"
-            onClick={() => applyInlineWrap('~~', '~~', 'strikethrough text')}
-            disabled={disabled}
-            title="Strikethrough"
-          >
-            <s>S</s>
-          </button>
-        </div>
-
-        <div className="word-ribbon-sep" />
-
-        {/* Word-Style Bullet Picker Popover */}
-        <div className="word-bullet-wrap" ref={bulletMenuRef}>
-          <button
-            type="button"
-            className="word-btn word-bullet-btn"
-            onClick={() => setIsBulletMenuOpen((v) => !v)}
-            disabled={disabled}
-            title="Select Bullet Style or Numbered List"
-          >
-            <span className="word-bullet-icon">•</span>
-            <span className="word-bullet-text">Bullets</span>
-            <span className="word-chevron">▼</span>
-          </button>
-
-          {isBulletMenuOpen && (
-            <div className="word-bullet-menu">
-              <div className="word-bullet-menu-title">Select Bullet & List Style</div>
-              <div className="word-bullet-grid">
-                {BULLET_STYLES.map((b) => (
-                  <button
-                    key={b.symbol}
-                    type="button"
-                    className="word-bullet-opt"
-                    onClick={() => applyBulletStyle(b.symbol)}
-                  >
-                    <span className="word-bullet-sample">{b.display.split(' ')[0]}</span>
-                    <span className="word-bullet-name">{b.label}</span>
-                  </button>
+      {/* ── Word-Style Sleek Ribbon (Visible only when user opens formatting) ── */}
+      {isToolbarOpen && (
+        <div className="word-ribbon">
+          {/* Font Family Selector */}
+          {showFontSelector && (
+            <div className="word-ribbon-item">
+              <select
+                className="word-font-select"
+                value={selectedFont}
+                onChange={(e) => {
+                  const opt = WORD_FONTS.find((f) => f.value === e.target.value);
+                  handleFontChange(e.target.value, opt ? opt.label : 'Calibri');
+                }}
+                disabled={disabled}
+                title="Font Family"
+              >
+                {WORD_FONTS.map((f) => (
+                  <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+                    {f.label}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
           )}
-        </div>
 
-        <div className="word-ribbon-sep" />
+          <div className="word-ribbon-sep" />
 
-        {/* Quick Survey Icons */}
-        <div className="word-ribbon-group">
+          {/* Headings */}
+          <div className="word-ribbon-group">
+            <button
+              type="button"
+              className="word-btn"
+              onClick={() => applyHeading(2)}
+              disabled={disabled}
+              title="Heading 2 (## Title)"
+            >
+              H2
+            </button>
+            <button
+              type="button"
+              className="word-btn"
+              onClick={() => applyHeading(3)}
+              disabled={disabled}
+              title="Heading 3 (### Subhead)"
+            >
+              H3
+            </button>
+          </div>
+
+          <div className="word-ribbon-sep" />
+
+          {/* Inline Formatting: Bold, Italic, Underline, Strike */}
+          <div className="word-ribbon-group">
+            <button
+              type="button"
+              className="word-btn bold"
+              onClick={() => applyInlineWrap('**', '**', 'bold text')}
+              disabled={disabled}
+              title="Bold (Ctrl+B)"
+            >
+              <strong>B</strong>
+            </button>
+            <button
+              type="button"
+              className="word-btn italic"
+              onClick={() => applyInlineWrap('*', '*', 'italic text')}
+              disabled={disabled}
+              title="Italic (Ctrl+I)"
+            >
+              <em>I</em>
+            </button>
+            <button
+              type="button"
+              className="word-btn underline"
+              onClick={() => applyInlineWrap('<u>', '</u>', 'underlined text')}
+              disabled={disabled}
+              title="Underline (Ctrl+U)"
+            >
+              <u>U</u>
+            </button>
+            <button
+              type="button"
+              className="word-btn strike"
+              onClick={() => applyInlineWrap('~~', '~~', 'strikethrough text')}
+              disabled={disabled}
+              title="Strikethrough"
+            >
+              <s>S</s>
+            </button>
+          </div>
+
+          <div className="word-ribbon-sep" />
+
+          {/* Word-Style Bullet Picker Popover */}
+          <div className="word-bullet-wrap" ref={bulletMenuRef}>
+            <button
+              type="button"
+              className="word-btn word-bullet-btn"
+              onClick={() => setIsBulletMenuOpen((v) => !v)}
+              disabled={disabled}
+              title="Select Bullet Style or Numbered List"
+            >
+              <span className="word-bullet-icon">•</span>
+              <span className="word-bullet-text">Bullets</span>
+              <span className="word-chevron">▼</span>
+            </button>
+
+            {isBulletMenuOpen && (
+              <div className="word-bullet-menu">
+                <div className="word-bullet-menu-title">Select Bullet & List Style</div>
+                <div className="word-bullet-grid">
+                  {BULLET_STYLES.map((b) => (
+                    <button
+                      key={b.symbol}
+                      type="button"
+                      className="word-bullet-opt"
+                      onClick={() => applyBulletStyle(b.symbol)}
+                    >
+                      <span className="word-bullet-sample">{b.display.split(' ')[0]}</span>
+                      <span className="word-bullet-name">{b.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="word-ribbon-sep" />
+
+          {/* Quick Survey Icons */}
+          <div className="word-ribbon-group">
+            <button
+              type="button"
+              className="word-btn symbol"
+              onClick={() => applyBulletStyle('✓')}
+              disabled={disabled}
+              title="Add Checkmark (✓)"
+            >
+              ✓
+            </button>
+            <button
+              type="button"
+              className="word-btn symbol alert"
+              onClick={() => applyInlineWrap('**▲ ', '**', 'DEFECT')}
+              disabled={disabled}
+              title="Add Defect Alert (▲)"
+            >
+              ▲
+            </button>
+          </div>
+
+          {/* Close Ribbon Button */}
           <button
             type="button"
-            className="word-btn symbol"
-            onClick={() => applyBulletStyle('✓')}
-            disabled={disabled}
-            title="Add Checkmark (✓)"
+            className="word-btn word-close-btn"
+            onClick={() => setIsToolbarOpen(false)}
+            title="Close formatting bar"
           >
-            ✓
-          </button>
-          <button
-            type="button"
-            className="word-btn symbol alert"
-            onClick={() => applyInlineWrap('**▲ ', '**', 'DEFECT')}
-            disabled={disabled}
-            title="Add Defect Alert (▲)"
-          >
-            ▲
+            ✕
           </button>
         </div>
-      </div>
+      )}
 
-      {/* ── Editor Body (Live Font Family Styling) ── */}
+      {/* ── Editor Textarea (Identical to original clean inputs, live font support) ── */}
       <textarea
         ref={textareaRef}
         className="word-textarea"
