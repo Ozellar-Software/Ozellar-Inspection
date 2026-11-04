@@ -7,10 +7,11 @@ import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, CameraIcon, PlusIcon, XIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon } from '../../icons';
+import { BackIcon, CameraIcon, PlusIcon, XIcon, EyeIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon } from '../../icons';
 import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
 import { DeleteInspectionModal } from './DeleteInspectionModal';
+import { PhotoGalleryPreviewModal } from './PhotoGalleryPreviewModal';
 import { loadReportData } from '../report/reportData';
 import { generateInspectionPdf } from '../report/pdf';
 import './SectionListPage.css';
@@ -50,6 +51,7 @@ export function SectionListPage() {
   const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [recheckedAccess, setRecheckedAccess] = useState(false);
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
@@ -525,6 +527,15 @@ export function SectionListPage() {
             <div className="ipdb-actions">
               <button
                 type="button"
+                className="btn btn-primary btn-sm btn-preview-photos"
+                onClick={() => setIsPreviewModalOpen(true)}
+                title="Preview all inspection photos in visual gallery"
+              >
+                <EyeIcon style={{ width: 15, height: 15 }} />
+                <span>Preview Photos ({activePhotos.length})</span>
+              </button>
+              <button
+                type="button"
                 className="btn btn-outline btn-sm"
                 onClick={() => void handleDownloadPhotoReportPdf()}
                 disabled={isExportingPdf}
@@ -827,6 +838,19 @@ export function SectionListPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {isPreviewModalOpen && (
+        <PhotoGalleryPreviewModal
+          isOpen={isPreviewModalOpen}
+          onClose={() => setIsPreviewModalOpen(false)}
+          photos={activePhotos}
+          title={`${displayInspection?.vesselName || 'Vessel'} Photo Gallery`}
+          vesselName={displayInspection?.vesselName}
+          allSections={sections}
+          locked={sectionsLocked}
+          onDownloadZip={handleDownloadInspectionPhotos}
+        />
       )}
 
       {canDelete && (

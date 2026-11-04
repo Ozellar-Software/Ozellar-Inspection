@@ -629,6 +629,28 @@
   background: #fee2e2 !important;
 }
 
+.btn-preview-photos {
+  background: linear-gradient(135deg, #105935 0%, #1e7a4b 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid #105935 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 6px rgba(16, 89, 53, 0.22);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.16s ease;
+}
+
+.btn-preview-photos:hover {
+  background: linear-gradient(135deg, #0d4a2b 0%, #16653e 100%) !important;
+  box-shadow: 0 4px 12px rgba(16, 89, 53, 0.32);
+  transform: translateY(-1px);
+}
+
+.btn-preview-photos svg {
+  color: #ffffff;
+}
+
 .ipdb-progress-banner {
   margin: 0 16px 14px;
   background: #0284c7;

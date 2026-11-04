@@ -754,10 +754,49 @@
 .photostrip-download-row {
   margin-top: 10px;
   width: 100%;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.photostrip-preview-all-btn {
+  flex: 1;
+  min-width: 170px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #105935 0%, #1e7a4b 100%);
+  color: #ffffff;
+  border: 1.5px solid #105935;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  box-shadow: 0 2px 6px rgba(16, 89, 53, 0.2);
+}
+
+.photostrip-preview-all-btn:hover {
+  background: linear-gradient(135deg, #0d4a2b 0%, #16653e 100%);
+  box-shadow: 0 4px 12px rgba(16, 89, 53, 0.3);
+  transform: translateY(-1px);
+}
+
+.photostrip-preview-all-btn:active {
+  transform: scale(0.99);
+}
+
+.photostrip-preview-all-btn svg {
+  color: #ffffff;
+  flex-shrink: 0;
 }
 
 .photostrip-download-all-btn {
-  width: 100%;
+  flex: 1;
+  min-width: 170px;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -20,6 +20,7 @@ import {
   TrashIcon,
 } from '../../icons';
 import { ImageViewerModal } from './ImageViewerModal';
+import { PhotoGalleryPreviewModal } from './PhotoGalleryPreviewModal';
 import { PhotoUploadModal } from './PhotoUploadModal';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { AssignPhotoModal } from './AssignPhotoModal';
@@ -77,6 +78,7 @@ export function PhotoStrip({
   const [tooltipTarget, setTooltipTarget] = useState<{ photo: SyncedPhoto; anchorEl: HTMLElement } | null>(null);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [isPreviewGalleryOpen, setIsPreviewGalleryOpen] = useState(false);
   const [photoToDelete, setPhotoToDelete] = useState<SyncedPhoto | null>(null);
   const [isBatchDeleteOpen, setIsBatchDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1164,6 +1166,25 @@ export function PhotoStrip({
       )}
 
       {/* ── Photo Download Options Modal (Defect, Normal, All) ── */}
+      {/* ── Photo Gallery Preview Modal ── */}
+      {isPreviewGalleryOpen && (
+        <PhotoGalleryPreviewModal
+          isOpen={isPreviewGalleryOpen}
+          onClose={() => setIsPreviewGalleryOpen(false)}
+          photos={activePhotos}
+          title={title || 'Section Photo Gallery'}
+          allSections={allSections}
+          currentSectionId={inspectionSectionId}
+          locked={locked}
+          onDownloadZip={(filter) => {
+            void handleBatchDownload(filter);
+          }}
+          onPhotoToggled={handleToggleDefect}
+          onMoveToSection={handleMoveToSection}
+          onMoveToQuestion={handleAssignToQuestion}
+        />
+      )}
+
       {isDownloadModalOpen && (
         <PhotoDownloadModal
           isOpen={isDownloadModalOpen}
