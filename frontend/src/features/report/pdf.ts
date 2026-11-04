@@ -274,7 +274,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     loadAssetImage(brandLogoSrc)
   ]);
 
-    // ─── Professional Photo Card Renderer ──
+    // ─── Professional High-Visibility Photo Card Renderer ──
   const drawPhotoCard = (
     px: number,
     py: number,
@@ -287,8 +287,13 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     const isDef = !!docPhoto?.isDefect;
     const desc = docPhoto?.description ? String(docPhoto.description).trim() : '';
 
-    // Caption banner height
-    const bannerH = desc ? 14 : 10;
+    // Split description into lines to dynamically fit within caption banner
+    const maxDescW = pW - 8;
+    doc.pdf.setFont('helvetica', isDef ? 'bold' : 'normal').setFontSize(6.5);
+    const descLines = desc ? (doc.pdf.splitTextToSize(desc, maxDescW) as string[]).slice(0, 2) : [];
+
+    // Caption banner height: 9mm (no desc), 13mm (1 line), 16mm (2 lines)
+    const bannerH = descLines.length > 1 ? 16 : descLines.length === 1 ? 13 : 9;
     const imgAreaH = pH - bannerH;
 
     // 1. Outer Card Container
@@ -302,56 +307,45 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       doc.pdf.rect(px, py, 2.5, pH, 'F');
     }
 
-    // 2. Image — fills full card width (cover-fit, edge-to-edge minus stripe)
+    // 2. Image Viewport — fills prominent upper area of card with clean neutral framing
     const imgLeft = px + (isDef ? 3 : 2.5);
     const imgAreaW = pW - (isDef ? 3 : 2.5);
+
+    doc.setFill(isDef ? [254, 242, 242] : [248, 250, 252]);
+    doc.pdf.rect(imgLeft, py, imgAreaW, imgAreaH, 'F');
+
     if (img) {
-      // Use cover scale: fill the whole area, cropping if needed
-      const sc = Math.max(imgAreaW / img.w, imgAreaH / img.h);
-      const iw = img.w * sc;
-      const ih = img.h * sc;
-      // Clip to image area before drawing
-      doc.pdf.saveGraphicsState?.();
-      try {
-        // jsPDF doesn't have clip API, so scale to fit instead (contain)
-        const scFit = Math.min(imgAreaW / img.w, imgAreaH / img.h);
-        const fw = img.w * scFit;
-        const fh = img.h * scFit;
-        const fx = imgLeft + (imgAreaW - fw) / 2;
-        const fy = py + (imgAreaH - fh) / 2;
-        doc.pdf.addImage(img.dataUrl, 'JPEG', fx, fy, fw, fh);
-      } finally {
-        doc.pdf.restoreGraphicsState?.();
-      }
+      const scFit = Math.min(imgAreaW / img.w, imgAreaH / img.h);
+      const fw = img.w * scFit;
+      const fh = img.h * scFit;
+      const fx = imgLeft + (imgAreaW - fw) / 2;
+      const fy = py + (imgAreaH - fh) / 2;
+      doc.pdf.addImage(img.dataUrl, 'JPEG', fx, fy, fw, fh);
     } else {
-      doc.setFill([240, 240, 240]);
-      doc.pdf.rect(imgLeft, py, imgAreaW, imgAreaH, 'F');
       doc.pdf.setFont('helvetica', 'italic').setFontSize(7);
       doc.setTextColor(TEXT_MUTED);
       doc.pdf.text('Photo unavailable', imgLeft + imgAreaW / 2, py + imgAreaH / 2, { align: 'center' });
     }
 
-    // 3. Compact status icon badge (top-right, small pill)
+    // 3. Compact status icon badge (top-right pill)
     if (isDef) {
-      // Small red pill: ▲ DEFECT
-      const bW = 16, bH = 4.2;
-      const bX = px + pW - bW - 2;
-      const bY = py + 2;
+      const bW = 18, bH = 5;
+      const bX = px + pW - bW - 2.5;
+      const bY = py + 2.5;
       doc.setFill([220, 38, 38]);
-      doc.pdf.roundedRect(bX, bY, bW, bH, 1, 1, 'F');
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
+      doc.pdf.roundedRect(bX, bY, bW, bH, 1.2, 1.2, 'F');
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
       doc.setTextColor(WHITE);
-      doc.pdf.text('▲ DEFECT', bX + 1.5, bY + 3);
+      doc.pdf.text('▲ DEFECT', bX + 2, bY + 3.6);
     } else {
-      // Small green pill: ✓ OK
-      const bW = 12, bH = 4.2;
-      const bX = px + pW - bW - 2;
-      const bY = py + 2;
+      const bW = 14, bH = 5;
+      const bX = px + pW - bW - 2.5;
+      const bY = py + 2.5;
       doc.setFill([6, 95, 70]);
-      doc.pdf.roundedRect(bX, bY, bW, bH, 1, 1, 'F');
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
+      doc.pdf.roundedRect(bX, bY, bW, bH, 1.2, 1.2, 'F');
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
       doc.setTextColor(WHITE);
-      doc.pdf.text('✓ OK', bX + 1.5, bY + 3);
+      doc.pdf.text('✓ OK', bX + 2.2, bY + 3.6);
     }
 
     // 4. Caption banner at bottom
@@ -368,41 +362,34 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       doc.pdf.line(imgLeft, capY, px + pW - 0.3, capY);
     }
 
-    // Label line
-    const labelY = capY + 3.8;
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
-    if (isDef) {
-      doc.setTextColor([185, 28, 28]);
-    } else {
-      doc.setTextColor(NAVY);
-    }
-    doc.pdf.text(label, imgLeft + 2.5, labelY);
+    // Line 1: Header Label (e.g. PHOTO #1)
+    const labelY = capY + 4;
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
+    doc.setTextColor(isDef ? [185, 28, 28] : NAVY);
+    doc.pdf.text(label, imgLeft + 3, labelY);
 
-    // Description / remark line (highlighted for defects)
-    if (desc) {
-      const descY = capY + 7.6;
-      const descMaxW = imgAreaW - 6;
-      let dText = desc;
-      doc.pdf.setFont('helvetica', isDef ? 'bold' : 'normal').setFontSize(6.0);
-      if (doc.pdf.getTextWidth(dText) > descMaxW) {
-        while (dText.length > 5 && doc.pdf.getTextWidth(dText + '…') > descMaxW) dText = dText.slice(0, -1);
-        dText += '…';
-      }
+    // Line 2: Description Text (bold & highlighted if defect)
+    if (descLines.length > 0) {
+      let descY = labelY + 4;
+      doc.pdf.setFont('helvetica', isDef ? 'bold' : 'normal').setFontSize(6.5);
       doc.setTextColor(isDef ? [153, 27, 27] : TEXT_BODY);
-      doc.pdf.text(dText, imgLeft + 2.5, descY);
+      for (const dLine of descLines) {
+        doc.pdf.text(dLine, imgLeft + 3, descY);
+        descY += 3.8;
+      }
     } else {
-      const descY = capY + 7.6;
-      doc.pdf.setFont('helvetica', 'italic').setFontSize(5.8);
+      doc.pdf.setFont('helvetica', 'italic').setFontSize(6.0);
       doc.setTextColor(TEXT_FAINT);
       doc.pdf.text(
-        isDef ? 'Defect identified during survey' : 'Visual record logged',
-        imgLeft + 2.5,
-        descY
+        isDef ? 'Defect identified during survey inspection' : 'Visual record logged for section survey',
+        imgLeft + 3,
+        labelY + 3.8
       );
     }
   };
 
-  const renderPhotoGrid8 = async (
+  // ─── 4 Photos Per Page Grid (High-Visibility, Big Scale) ───
+  const renderPhotoGrid4 = async (
     photoIds: string[],
     sectionName: string,
     zone: string,
@@ -416,13 +403,15 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     doc.pdf.text(gridTitle, MARGIN_LEFT, doc.y + 4);
     doc.y += 8;
 
-    const pW = (CONTENT_W - 6) / 2;
-    const pH = 55.5;
-    const rowH = 58;
+    const gapX = 8;
+    const gapY = 7;
+    const pW = (CONTENT_W - gapX) / 2; // 87 mm
+    const pH = 110;                     // 110 mm
+    const rowH = pH + gapY;             // 117 mm
     let photosOnCurrentPage = 0;
 
     for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
-      if (photosOnCurrentPage >= 8 || doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
+      if (photosOnCurrentPage >= 4 || doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
         doc.newPage();
         doc.sectionHeader(
           sectionName,
@@ -452,13 +441,14 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         photosOnCurrentPage++;
       }
       if (img2) {
-        drawPhotoCard(MARGIN_LEFT + pW + 6, curRowY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2}`);
+        drawPhotoCard(MARGIN_LEFT + pW + gapX, curRowY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2}`);
         photosOnCurrentPage++;
       }
 
       doc.y += rowH;
     }
   };
+  const renderPhotoGrid8 = renderPhotoGrid4; // Backwards-compatible alias
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 1: EXECUTIVE COVER PAGE
@@ -916,13 +906,21 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
           }
 
           const contentLinesCount = textLines.length + caLines.length + paLines.length;
-          let cardH = Math.max(18, contentLinesCount * 4.2 + 10);
+          const textH = 14 + contentLinesCount * 4.2;
 
           const photoIds = fRow.photoIds || [];
+          const singlePhoto = photoIds.length === 1;
           const photoRows = Math.ceil(photoIds.length / 2);
-          if (photoRows > 0) {
-            cardH += photoRows * 54 + 4;
+          const singlePH = 92;
+          const gridPH = 85;
+          let photoBlockH = 0;
+          if (singlePhoto) {
+            photoBlockH = singlePH + 8;
+          } else if (photoRows > 0) {
+            photoBlockH = photoRows * (gridPH + 6) + 4;
           }
+
+          const cardH = textH + photoBlockH + 4;
 
           doc.ensure(cardH + 4);
           const cardY = doc.y;
@@ -956,18 +954,19 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
           if (photoIds.length > 0) {
             curY += 2;
-            if (photoIds.length === 1) {
-              const pW = CONTENT_W - 16;
-              const pH = 68;
+            if (singlePhoto) {
+              const pW = 100;
+              const pH = singlePH;
+              const pX = MARGIN_LEFT + (CONTENT_W - pW) / 2;
               const id1 = photoIds[0];
               const [img1, photoDoc1] = await Promise.all([loadImage(id1), getPhotoDoc(id1)]);
               if (img1) {
-                drawPhotoCard(MARGIN_LEFT + 8, curY, pW, pH, img1, photoDoc1, `PHOTO #1 • OBS ${fIdx + 1}`);
+                drawPhotoCard(pX, curY, pW, pH, img1, photoDoc1, `PHOTO #1 • OBS ${fIdx + 1}`);
               }
               curY += pH + 4;
             } else {
               const pW = (CONTENT_W - 22) / 2;
-              const pH = 55.5;
+              const pH = gridPH;
               for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
                 const id1 = photoIds[pIdx];
                 const id2 = photoIds[pIdx + 1];
@@ -986,7 +985,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
                   drawPhotoCard(MARGIN_LEFT + 8 + pW + 6, curY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2} • OBS ${fIdx + 1}`);
                 }
 
-                curY += pH + 4;
+                curY += pH + 6;
               }
             }
           }
@@ -1041,10 +1040,12 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       }
 
       const photoRows = Math.ceil(photoIds.length / 2);
+      const qSinglePH = 92;
+      const qGridPH = 85;
       if (photoIds.length === 1) {
-        cardH += 72;
+        cardH += qSinglePH + 8;
       } else if (photoRows > 0) {
-        cardH += photoRows * 59 + 4;
+        cardH += photoRows * (qGridPH + 6) + 4;
       }
 
       // Ensure whole card fits or start fresh page
@@ -1110,23 +1111,24 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         innerY += defBoxH + 4;
       }
 
-      // Question Photos (Big Scale: Full-width for single photo, 2-per-row grid for multiple)
+      // Question Photos (High Visibility, Big Scale)
       if (photoIds.length > 0) {
         if (photoIds.length === 1) {
-          const pW = CONTENT_W - 12;
-          const pH = 68;
+          const pW = 100;
+          const pH = qSinglePH;
+          const pX = MARGIN_LEFT + (CONTENT_W - pW) / 2;
           const id1 = photoIds[0];
           const [img1, qPhotoDoc1] = await Promise.all([
             loadImage(id1),
             getPhotoDoc(id1),
           ]);
           if (img1) {
-            drawPhotoCard(MARGIN_LEFT + 6, innerY, pW, pH, img1, qPhotoDoc1, `PHOTO #1 • ${question.ref}`);
+            drawPhotoCard(pX, innerY, pW, pH, img1, qPhotoDoc1, `PHOTO #1 • ${question.ref}`);
           }
           innerY += pH + 4;
         } else {
           const pW = (CONTENT_W - 18) / 2;
-          const pH = 55.5;
+          const pH = qGridPH;
           for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
             const id1 = photoIds[pIdx];
             const id2 = photoIds[pIdx + 1];
@@ -1145,7 +1147,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
               drawPhotoCard(MARGIN_LEFT + 6 + pW + 6, innerY, pW, pH, img2, qPhotoDoc2, `PHOTO #${pIdx + 2} • ${question.ref}`);
             }
 
-            innerY += pH + 4;
+            innerY += pH + 6;
           }
         }
       }
@@ -1157,10 +1159,16 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
       const fRow = s.findings[fIdx];
       const photoIds = fRow.photoIds || [];
+      const obsSinglePH = 92;
+      const obsGridPH = 85;
       const photoRows = Math.ceil(photoIds.length / 2);
       let cardH = 28;
       if (fRow.finding.correctiveAction) cardH += 6;
-      if (photoRows > 0) cardH += photoRows * 50 + 4;
+      if (photoIds.length === 1) {
+        cardH += obsSinglePH + 8;
+      } else if (photoRows > 0) {
+        cardH += photoRows * (obsGridPH + 6) + 4;
+      }
 
       doc.ensure(cardH + 4);
       doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, cardH, SLATE_BG, BORDER, 2.5);
@@ -1190,17 +1198,18 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       if (photoIds.length > 0) {
         curY += 2;
         if (photoIds.length === 1) {
-          const pW = CONTENT_W - 16;
-          const pH = 68;
+          const pW = 100;
+          const pH = obsSinglePH;
+          const pX = MARGIN_LEFT + (CONTENT_W - pW) / 2;
           const id1 = photoIds[0];
           const [img1, photoDoc1] = await Promise.all([loadImage(id1), getPhotoDoc(id1)]);
           if (img1) {
-            drawPhotoCard(MARGIN_LEFT + 8, curY, pW, pH, img1, photoDoc1, `PHOTO #1 • OBS ${fIdx + 1}`);
+            drawPhotoCard(pX, curY, pW, pH, img1, photoDoc1, `PHOTO #1 • OBS ${fIdx + 1}`);
           }
           curY += pH + 4;
         } else {
           const pW = (CONTENT_W - 22) / 2;
-          const pH = 55.5;
+          const pH = obsGridPH;
           for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
             const id1 = photoIds[pIdx];
             const id2 = photoIds[pIdx + 1];
@@ -1219,7 +1228,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
               drawPhotoCard(MARGIN_LEFT + 8 + pW + 6, curY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2} • OBS ${fIdx + 1}`);
             }
 
-            curY += pH + 4;
+            curY += pH + 6;
           }
         }
       }
@@ -1369,13 +1378,15 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       doc.pdf.text('HIGH-RESOLUTION PHOTOGRAPHIC EVIDENCE FOR DEFICIENCIES & OBSERVATIONS', MARGIN_LEFT, doc.y + 4);
       doc.y += 8;
 
-      const pW = (CONTENT_W - 6) / 2;
-      const pH = 55.5;
-    const rowH = 58;
+      const evGapX = 8;
+      const evGapY = 7;
+      const pW = (CONTENT_W - evGapX) / 2; // 87 mm
+      const pH = 110;                       // 110 mm
+      const rowH = pH + evGapY;             // 117 mm
       let photosOnCurrentPage = 0;
 
       for (let pIdx = 0; pIdx < evidencePhotos.length; pIdx += 2) {
-        if (photosOnCurrentPage >= 8 || doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
+        if (photosOnCurrentPage >= 4 || doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
           doc.newPage();
           doc.sectionHeader(
             'Deficiency & Observation Visual Evidence',
@@ -1415,7 +1426,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
             isDefect: true,
             description: photoDoc2?.description || item2.desc,
           };
-          drawPhotoCard(MARGIN_LEFT + pW + 6, curRowY, pW, pH, img2, mergedDoc2, item2.label);
+          drawPhotoCard(MARGIN_LEFT + pW + evGapX, curRowY, pW, pH, img2, mergedDoc2, item2.label);
           photosOnCurrentPage++;
         }
 
