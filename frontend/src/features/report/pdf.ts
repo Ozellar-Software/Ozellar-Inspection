@@ -14,8 +14,8 @@ const PAGE_W = 210;
 const PAGE_H = 297;
 const MARGIN_LEFT = 14;
 const MARGIN_RIGHT = 14;
-const TOP_MARGIN = 20;
-const BOTTOM_MARGIN = 18;
+const TOP_MARGIN = 18;
+const BOTTOM_MARGIN = 16;
 const CONTENT_W = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT; // 182 mm
 
 // Palette (RGB tuples for jsPDF)
@@ -214,24 +214,24 @@ class Doc {
 
   sectionHeader(title: string, zone?: string, stat?: string) {
     this.ensure(16);
-    const h = 13;
+    const h = 12;
     // Dark navy full-width bar
     this.setFill(NAVY);
     this.pdf.rect(MARGIN_LEFT, this.y, CONTENT_W, h, 'F');
 
     // Left teal accent strip
     this.setFill(TEAL);
-    this.pdf.rect(MARGIN_LEFT, this.y, 4, h, 'F');
+    this.pdf.rect(MARGIN_LEFT, this.y, 3.5, h, 'F');
 
     // Section title
-    this.pdf.setFont('helvetica', 'bold').setFontSize(10.5);
+    this.pdf.setFont('helvetica', 'bold').setFontSize(10);
     this.setTextColor(WHITE);
-    this.pdf.text(title.toUpperCase(), MARGIN_LEFT + 7, this.y + 8.5);
+    this.pdf.text(title.toUpperCase(), MARGIN_LEFT + 7, this.y + 8);
 
     // Calculate stat width for correct zone spacing
     let statW = 0;
     if (stat) {
-      this.pdf.setFont('helvetica', 'normal').setFontSize(8);
+      this.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
       statW = this.pdf.getTextWidth(stat);
     }
 
@@ -241,18 +241,18 @@ class Doc {
       const zoneW = this.pdf.getTextWidth(zone.toUpperCase()) + 8;
       const zoneX = PAGE_W - MARGIN_RIGHT - zoneW - (stat ? statW + 6 : 0);
       this.setFill(NAVY_LIGHT);
-      this.pdf.roundedRect(zoneX, this.y + 3, zoneW, 7, 1.5, 1.5, 'F');
+      this.pdf.roundedRect(zoneX, this.y + 2.5, zoneW, 7, 1.5, 1.5, 'F');
       this.setTextColor([210, 235, 255]);
-      this.pdf.text(zone.toUpperCase(), zoneX + 4, this.y + 7.5);
+      this.pdf.text(zone.toUpperCase(), zoneX + 4, this.y + 7);
     }
 
     if (stat) {
-      this.pdf.setFont('helvetica', 'normal').setFontSize(8);
+      this.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
       this.setTextColor([190, 210, 230]);
-      this.pdf.text(stat, PAGE_W - MARGIN_RIGHT - 2, this.y + 8, { align: 'right' });
+      this.pdf.text(stat, PAGE_W - MARGIN_RIGHT - 2, this.y + 7.5, { align: 'right' });
     }
 
-    this.y += h + 6;
+    this.y += h + 4.5;
   }
 
   subSectionTitle(title: string) {
@@ -443,21 +443,31 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
   ) => {
     if (!photoIds.length) return;
 
-    doc.ensure(30);
+    const gapX = 8;
+    const gapY = 6;
+    const pW = (CONTENT_W - gapX) / 2; // 87 mm
+    const pH = 104;                     // 104 mm
+    const rowH = pH + gapY;             // 110 mm
+    let photosOnCurrentPage = 0;
+
+    // If starting on a page that already has content (like remarks) and cannot fit 2 full rows (4 photos):
+    if (photoIds.length >= 3 && doc.y + (2 * rowH) > PAGE_H - BOTTOM_MARGIN) {
+      doc.newPage();
+      doc.sectionHeader(
+        sectionName,
+        zone || 'Visual Evidence',
+        `${photoIds.length} Photographs`
+      );
+    }
+
+    doc.ensure(rowH + 10);
     doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
     doc.setTextColor(TEXT_MUTED);
     doc.pdf.text(gridTitle, MARGIN_LEFT, doc.y + 4);
-    doc.y += 8;
-
-    const gapX = 8;
-    const gapY = 7;
-    const pW = (CONTENT_W - gapX) / 2; // 87 mm
-    const pH = 110;                     // 110 mm
-    const rowH = pH + gapY;             // 117 mm
-    let photosOnCurrentPage = 0;
+    doc.y += 7;
 
     for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
-      if (photosOnCurrentPage >= 4 || doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
+      if (photosOnCurrentPage >= 4 || doc.y + pH > PAGE_H - BOTTOM_MARGIN) {
         doc.newPage();
         doc.sectionHeader(
           sectionName,
@@ -467,26 +477,26 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
         doc.setTextColor(TEXT_MUTED);
         doc.pdf.text(gridTitle + ' (CONTINUED)', MARGIN_LEFT, doc.y + 4);
-        doc.y += 8;
+        doc.y += 7;
         photosOnCurrentPage = 0;
       }
 
       const id1 = photoIds[pIdx];
-      const id2 = photoIds[pIdx + 1];
+      const id2 = pIdx + 1 < photoIds.length ? photoIds[pIdx + 1] : undefined;
 
       const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
         loadImage(id1),
         id2 ? loadImage(id2) : Promise.resolve(null),
         getPhotoDoc(id1),
-        getPhotoDoc(id2),
+        id2 ? getPhotoDoc(id2) : Promise.resolve(null),
       ]);
 
       const curRowY = doc.y;
-      if (img1) {
+      if (id1) {
         drawPhotoCard(MARGIN_LEFT, curRowY, pW, pH, img1, photoDoc1, `PHOTO #${pIdx + 1}`);
         photosOnCurrentPage++;
       }
-      if (img2) {
+      if (id2) {
         drawPhotoCard(MARGIN_LEFT + pW + gapX, curRowY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2}`);
         photosOnCurrentPage++;
       }
@@ -1474,14 +1484,14 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       doc.y += 8;
 
       const evGapX = 8;
-      const evGapY = 7;
+      const evGapY = 6;
       const pW = (CONTENT_W - evGapX) / 2; // 87 mm
-      const pH = 110;                       // 110 mm
-      const rowH = pH + evGapY;             // 117 mm
+      const pH = 104;                       // 104 mm
+      const rowH = pH + evGapY;             // 110 mm
       let photosOnCurrentPage = 0;
 
       for (let pIdx = 0; pIdx < evidencePhotos.length; pIdx += 2) {
-        if (photosOnCurrentPage >= 4 || doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
+        if (photosOnCurrentPage >= 4 || doc.y + pH > PAGE_H - BOTTOM_MARGIN) {
           doc.newPage();
           doc.sectionHeader(
             'Deficiency & Observation Visual Evidence',
@@ -1491,12 +1501,12 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
           doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
           doc.setTextColor(TEXT_MUTED);
           doc.pdf.text('DEFICIENCY & OBSERVATION VISUAL EVIDENCE (CONTINUED)', MARGIN_LEFT, doc.y + 4);
-          doc.y += 8;
+          doc.y += 7;
           photosOnCurrentPage = 0;
         }
 
         const item1 = evidencePhotos[pIdx];
-        const item2 = evidencePhotos[pIdx + 1];
+        const item2 = pIdx + 1 < evidencePhotos.length ? evidencePhotos[pIdx + 1] : undefined;
 
         const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
           loadImage(item1.photoId),
@@ -1506,7 +1516,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         ]);
 
         const curRowY = doc.y;
-        if (img1) {
+        if (item1) {
           const mergedDoc1 = {
             ...photoDoc1,
             isDefect: true,
@@ -1515,7 +1525,7 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
           drawPhotoCard(MARGIN_LEFT, curRowY, pW, pH, img1, mergedDoc1, item1.label);
           photosOnCurrentPage++;
         }
-        if (img2 && item2) {
+        if (item2) {
           const mergedDoc2 = {
             ...photoDoc2,
             isDefect: true,
