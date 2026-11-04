@@ -116,12 +116,16 @@ export function SectionDetailPage() {
   const photosByFinding = new Map<string, Photo[]>();
   const sectionPhotos: Photo[] = [];
   for (const p of photos) {
-    if (p.findingId)
+    if (p.findingId) {
       (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p);
-    else if (p.responseId)
+    }
+    if (p.responseId) {
       (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p);
-    else if (p.inspectionSectionId === sectionId)
+    }
+    // Show in section photos visual evidence row as well (both sides: section evidence and observation)
+    if (p.inspectionSectionId === sectionId && !p.responseId) {
       sectionPhotos.push(p);
+    }
   }
 
   function startRename() {

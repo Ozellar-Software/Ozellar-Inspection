@@ -77,9 +77,16 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
   const photosByFinding = new Map<string, string[]>();
   const photosBySection = new Map<string, string[]>();
   for (const p of photos) {
-    if (p.findingId) (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p.id);
-    else if (p.responseId) (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p.id);
-    else if (p.inspectionSectionId) (photosBySection.get(p.inspectionSectionId) ?? photosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
+    if (p.findingId) {
+      (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p.id);
+    }
+    if (p.responseId) {
+      (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p.id);
+    }
+    // Include in section visual evidence photos as well (both sides: section visual evidence and observation)
+    if (p.inspectionSectionId && !p.responseId) {
+      (photosBySection.get(p.inspectionSectionId) ?? photosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
+    }
   }
 
   const defectPhotoCount = photos.filter((p) => p.isDefect).length;
