@@ -1439,332 +1439,118 @@ export async function generateInspectionPdf(data: ReportData & {
 
   doc.y = execHdrY + 18.5;
 
-  // 2. High-Impact Executive Scorecard Ribbon (4 Refined KPI Cards)
-  const totalQuestions = stats.totalQuestions || 0;
-  const evaluatedQuestions = totalQuestions - (stats.na || 0);
-  const satisfactoryQuestions = stats.satisfactory || 0;
-  const complianceRate = evaluatedQuestions > 0 ? Math.round((satisfactoryQuestions / evaluatedQuestions) * 100) : 100;
-  const totalObs = observations.length;
-  const defectCount = observations.filter(o => !!(o as any).isDefect !== false).length;
-  const totalSecs = sections.length;
-  const totalPhotos = stats.photoCount || (data.photos || []).length;
+  // 2. Full-Width Executive Surveyor Remarks & Appraisal Container
+  const summaryText = inspection.summary?.trim() || 'Vessel physical survey conducted in accordance with international maritime regulations and approved company survey procedures. Individual compartment condition, structural integrity, and specific equipment findings are documented in the detailed section logs.';
 
-  const kpiScoreY = doc.y;
-  const kpiScoreH = 16.5;
-  const kpiScoreGap = 4;
-  const kpiScoreW = (CONTENT_W - 3 * kpiScoreGap) / 4;
+  const textWidth = CONTENT_W - 16;
+  const richH = measureRichText(doc.pdf, summaryText, textWidth, { size: 8.2, lineGap: 4.6 });
 
-  const scoreKpis = [
-    {
-      label: 'OVERALL COMPLIANCE',
-      val: evaluatedQuestions > 0 ? `${complianceRate}%` : 'PASS',
-      sub: evaluatedQuestions > 0 ? `${satisfactoryQuestions}/${evaluatedQuestions} Items Passed` : 'Standard Inspection',
-      accent: complianceRate >= 85 ? ([16, 122, 70] as [number, number, number]) : ([185, 28, 28] as [number, number, number]),
-    },
-    {
-      label: 'DEFICIENCIES LOGGED',
-      val: String(totalObs),
-      sub: defectCount > 0 ? `${defectCount} Defect${defectCount > 1 ? 's' : ''} Flagged` : 'Zero Critical Defects',
-      accent: defectCount > 0 ? ([185, 28, 28] as [number, number, number]) : ([16, 122, 70] as [number, number, number]),
-    },
-    {
-      label: 'SECTIONS SURVEYED',
-      val: String(totalSecs),
-      sub: `${sections.filter(s => !s.section.photoOnly).length} Checklist / ${sections.filter(s => !!s.section.photoOnly).length} Photo`,
-      accent: NAVY,
-    },
-    {
-      label: 'VISUAL EVIDENCE',
-      val: String(totalPhotos),
-      sub: 'Captured Photographs',
-      accent: [14, 124, 134] as [number, number, number],
-    },
-  ];
+  // Dynamic card height to comfortably fit all lines of remarks + header + metadata + signoff
+  const headerAreaH = 19; // Header bar (7.5mm) + Metadata row (11.5mm)
+  const signoffH = 16;   // Sign-off declaration and surveyor signature block
+  const minCardH = 90;
+  const maxSinglePageH = 185; // Maximum height on Page 3 before bottom seal panel
 
-  for (let ki = 0; ki < scoreKpis.length; ki++) {
-    const item = scoreKpis[ki];
-    const kx = MARGIN_LEFT + ki * (kpiScoreW + kpiScoreGap);
+  const remarksCardH = Math.min(Math.max(richH + headerAreaH + signoffH + 6, minCardH), maxSinglePageH);
+  const cardStartY = doc.y;
 
-    doc.roundedBox(kx, kpiScoreY, kpiScoreW, kpiScoreH, WHITE, BORDER, 1.8);
+  // Outer container
+  doc.roundedBox(MARGIN_LEFT, cardStartY, CONTENT_W, remarksCardH, WHITE, BORDER, 2.5);
 
-    // Top hairline accent
-    doc.setFill(item.accent);
-    doc.pdf.rect(kx, kpiScoreY, kpiScoreW, 1.8, 'F');
-
-    // Label
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
-    doc.setTextColor(TEXT_MUTED);
-    doc.pdf.text(item.label, kx + 4, kpiScoreY + 5.8);
-
-    // Value
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(9.5);
-    doc.setTextColor(item.accent);
-    doc.pdf.text(item.val, kx + 4, kpiScoreY + 11.2);
-
-    // Subtitle
-    doc.pdf.setFont('helvetica', 'normal').setFontSize(5.5);
-    doc.setTextColor(TEXT_FAINT);
-    let sStr = item.sub;
-    while (sStr.length > 3 && doc.pdf.getTextWidth(sStr) > kpiScoreW - 8) {
-      sStr = sStr.slice(0, -1);
-    }
-    doc.pdf.text(sStr, kx + 4, kpiScoreY + 14.8);
-  }
-
-  doc.y = kpiScoreY + kpiScoreH + 4.5;
-
-  // 3. Two-Column Analytical Matrix: Remarks (Left) & Section Breakdown (Right)
-  const matrixY = doc.y;
-  const col1W = 100; // Left column width (Remarks)
-  const colGap = 4;
-  const col2W = CONTENT_W - col1W - colGap; // 78 mm (Section Table)
-  const matrixCol2X = MARGIN_LEFT + col1W + colGap;
-
-  const summaryText = inspection.summary?.trim() || 'Vessel physical survey conducted in accordance with international maritime regulations and approved survey protocol. Individual compartment condition and specific equipment findings are documented in the detailed section logs.';
-
-  // Determine height of matrix cards
-  const neededSummaryH = measureRichText(doc.pdf, summaryText, col1W - 14, { size: 7.8, lineGap: 4.2 });
-  const matrixH = Math.min(Math.max(neededSummaryH + 28, 70), 92);
-
-  // ── Card A (Left): Surveyor Remarks & Executive Appraisal ──
-  doc.roundedBox(MARGIN_LEFT, matrixY, col1W, matrixH, WHITE, BORDER, 2);
+  // Left solid accent (inset pill so it stays neatly inside rounded corners)
+  doc.setFill(NAVY);
+  doc.pdf.roundedRect(MARGIN_LEFT + 1.5, cardStartY + 2, 2.5, remarksCardH - 4, 1, 1, 'F');
 
   // Header band
   doc.setFill([241, 245, 249]);
-  doc.pdf.roundedRect(MARGIN_LEFT, matrixY, col1W, 6.8, 2, 2, 'F');
-  doc.pdf.rect(MARGIN_LEFT, matrixY + 6.8 - 1.5, col1W, 1.5, 'F');
+  doc.pdf.roundedRect(MARGIN_LEFT, cardStartY, CONTENT_W, 7.5, 2.5, 2.5, 'F');
+  doc.pdf.rect(MARGIN_LEFT, cardStartY + 7.5 - 2, CONTENT_W, 2, 'F');
   doc.setDraw(BORDER_DARK, 0.2);
-  doc.pdf.line(MARGIN_LEFT, matrixY + 6.8, MARGIN_LEFT + col1W, matrixY + 6.8);
+  doc.pdf.line(MARGIN_LEFT, cardStartY + 7.5, PAGE_W - MARGIN_RIGHT, cardStartY + 7.5);
 
-  // Header Badge 'A'
+  // Left Geometric Badge 'A'
   doc.setFill(NAVY);
-  doc.pdf.roundedRect(MARGIN_LEFT + 3.2, matrixY + 1.3, 4.2, 4.2, 0.8, 0.8, 'F');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.0);
-  doc.setTextColor(WHITE);
-  doc.pdf.text('A', MARGIN_LEFT + 5.3, matrixY + 4.3, { align: 'center' });
-
-  // Header Title & Tag
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-  doc.setTextColor(NAVY);
-  doc.pdf.text('SURVEYOR REMARKS & APPRAISAL', MARGIN_LEFT + 9.5, matrixY + 4.6);
+  doc.pdf.roundedRect(MARGIN_LEFT + 3.5, cardStartY + 1.6, 4.5, 4.5, 1, 1, 'F');
   doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
+  doc.setTextColor(WHITE);
+  doc.pdf.text('A', MARGIN_LEFT + 5.7, cardStartY + 4.8, { align: 'center' });
+
+  // Header Title
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
+  doc.setTextColor(NAVY);
+  doc.pdf.text('ATTENDING SURVEYOR EXECUTIVE REMARKS & CONDITION APPRAISAL', MARGIN_LEFT + 10.5, cardStartY + 5.2);
+
+  // Right Header Tag
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
   doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text('AUDIT OPINION', MARGIN_LEFT + col1W - 4, matrixY + 4.6, { align: 'right' });
+  doc.pdf.text('OFFICIAL STATUTORY OPINION', PAGE_W - MARGIN_RIGHT - 6, cardStartY + 5.2, { align: 'right' });
+
+  // Metadata Strip under header (4 columns)
+  const metaY = cardStartY + 7.5;
+  const metaH = 10.5;
+  doc.setFill(SLATE_BG);
+  doc.pdf.rect(MARGIN_LEFT + 0.5, metaY, CONTENT_W - 1, metaH, 'F');
+  doc.setDraw(BORDER, 0.2);
+  doc.pdf.line(MARGIN_LEFT, metaY + metaH, PAGE_W - MARGIN_RIGHT, metaY + metaH);
+
+  const metaCols = [
+    { label: 'LEAD SURVEYOR', val: inspection.inspector || '-' },
+    { label: 'SURVEY PORT / LOCATION', val: inspection.port || '-' },
+    { label: 'SURVEY AGENCY', val: inspection.company || 'Ozellar Marine Global' },
+    { label: 'INSPECTION PERIOD', val: `${fmtDate(inspection.startDate)} - ${fmtDate(inspection.completionDate || inspection.startDate)}` },
+  ];
+  const mColW = (CONTENT_W - 6) / 4;
+
+  for (let mi = 0; mi < metaCols.length; mi++) {
+    const mcX = MARGIN_LEFT + 3 + mi * mColW;
+    if (mi > 0) {
+      doc.setDraw(BORDER, 0.2);
+      doc.pdf.line(mcX, metaY + 2, mcX, metaY + metaH - 2);
+    }
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.2);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(metaCols[mi].label, mcX + 4, metaY + 4.2);
+
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+    doc.setTextColor(TEXT_DARK);
+    let mVal = metaCols[mi].val;
+    while (mVal.length > 3 && doc.pdf.getTextWidth(mVal) > mColW - 6) {
+      mVal = mVal.slice(0, -1);
+    }
+    doc.pdf.text(mVal, mcX + 4, metaY + 8.4);
+  }
 
   // Remarks Rich Text Content
-  renderRichText(doc.pdf, summaryText, MARGIN_LEFT + 6, matrixY + 11.5, col1W - 12, {
-    size: 7.6,
-    lineGap: 4.0,
+  const textStartY = metaY + metaH + 4;
+  renderRichText(doc.pdf, summaryText, MARGIN_LEFT + 8, textStartY, textWidth, {
+    size: 8.2,
+    lineGap: 4.6,
     color: TEXT_BODY,
     bulletColor: NAVY,
   });
 
-  // Surveyor Sign-off footer strip inside Remarks card
-  const signY = matrixY + matrixH - 12;
+  // Surveyor Formal Sign-off footer strip inside Remarks card
+  const signY = cardStartY + remarksCardH - signoffH;
   doc.setDraw(BORDER, 0.25);
-  doc.pdf.line(MARGIN_LEFT + 4, signY, MARGIN_LEFT + col1W - 4, signY);
+  doc.pdf.line(MARGIN_LEFT + 4, signY, PAGE_W - MARGIN_RIGHT - 4, signY);
 
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
+  doc.pdf.setFont('helvetica', 'italic').setFontSize(5.4);
+  doc.setTextColor(TEXT_MUTED);
+  doc.pdf.text(
+    'I hereby confirm that this survey appraisal and executive summary represents an accurate on-site evaluation of the vessel\'s physical condition and operational status at the time of inspection.',
+    MARGIN_LEFT + 8,
+    signY + 4.5
+  );
+
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.2);
   doc.setTextColor(NAVY);
-  doc.pdf.text(`Lead Surveyor: ${inspection.inspector || 'Official Marine Surveyor'}`, MARGIN_LEFT + 6, signY + 4.5);
+  doc.pdf.text(`ATTENDING SURVEYOR: ${(inspection.inspector || 'Official Marine Surveyor').toUpperCase()}`, MARGIN_LEFT + 8, signY + 11.2);
 
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(5.4);
+  doc.pdf.setFont('helvetica', 'normal').setFontSize(5.8);
   doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text(`Port: ${inspection.port || 'Survey Port'}  |  Date: ${fmtDate(inspection.startDate)}`, MARGIN_LEFT + 6, signY + 8.8);
+  doc.pdf.text(`DATE OF ATTESTATION: ${fmtDate(inspection.completionDate || inspection.startDate)}  |  STATUS: ${execStatusLabel}`, PAGE_W - MARGIN_RIGHT - 8, signY + 11.2, { align: 'right' });
 
-  // ── Card B (Right): Section Evaluation Matrix ──
-  doc.roundedBox(matrixCol2X, matrixY, col2W, matrixH, WHITE, BORDER, 2);
-
-  // Header band
-  doc.setFill([241, 245, 249]);
-  doc.pdf.roundedRect(matrixCol2X, matrixY, col2W, 6.8, 2, 2, 'F');
-  doc.pdf.rect(matrixCol2X, matrixY + 6.8 - 1.5, col2W, 1.5, 'F');
-  doc.setDraw(BORDER_DARK, 0.2);
-  doc.pdf.line(matrixCol2X, matrixY + 6.8, matrixCol2X + col2W, matrixY + 6.8);
-
-  // Header Badge 'B'
-  doc.setFill(NAVY);
-  doc.pdf.roundedRect(matrixCol2X + 3.2, matrixY + 1.3, 4.2, 4.2, 0.8, 0.8, 'F');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.0);
-  doc.setTextColor(WHITE);
-  doc.pdf.text('B', matrixCol2X + 5.3, matrixY + 4.3, { align: 'center' });
-
-  // Header Title & Tag
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-  doc.setTextColor(NAVY);
-  doc.pdf.text('SECTION EVALUATION MATRIX', matrixCol2X + 9.5, matrixY + 4.6);
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text('AUDIT BREAKDOWN', matrixCol2X + col2W - 4, matrixY + 4.6, { align: 'right' });
-
-  // Display top sections (up to 6)
-  const previewSections = sections.slice(0, 6);
-  const sRowH = 6.2;
-  let sY = matrixY + 6.8;
-
-  for (let si = 0; si < previewSections.length; si++) {
-    const sec = previewSections[si];
-    const isAlt = si % 2 === 1;
-
-    if (isAlt) {
-      doc.setFill(SLATE_BG);
-      doc.pdf.rect(matrixCol2X + 0.5, sY, col2W - 1, sRowH, 'F');
-    }
-
-    if (si < previewSections.length - 1) {
-      doc.setDraw(BORDER, 0.15);
-      doc.pdf.line(matrixCol2X + 3, sY + sRowH, matrixCol2X + col2W - 3, sY + sRowH);
-    }
-
-    // Has defect or observation?
-    const secObs = observations.filter(o => o.sectionId === sec.section.id);
-    const hasDef = secObs.some(o => !!(o as any).isDefect);
-    const hasObs = secObs.length > 0;
-
-    // Left indicator dot
-    doc.setFill(hasDef ? [220, 38, 38] : hasObs ? [245, 158, 11] : [16, 122, 70]);
-    doc.pdf.circle(matrixCol2X + 4.5, sY + sRowH / 2, 0.6, 'F');
-
-    // Section Name
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.2);
-    doc.setTextColor(TEXT_DARK);
-    let sTitle = `${si + 1}. ${sec.section.name}`;
-    const maxTitleW = col2W - 28;
-    while (sTitle.length > 3 && doc.pdf.getTextWidth(sTitle) > maxTitleW) {
-      sTitle = sTitle.slice(0, -1);
-    }
-    doc.pdf.text(sTitle, matrixCol2X + 7.5, sY + 4.2);
-
-    // Status Pill on right
-    const statusTagW = 16;
-    const statusTagX = matrixCol2X + col2W - statusTagW - 3.5;
-    if (hasDef) {
-      doc.setFill([254, 242, 242]);
-      doc.setDraw([254, 202, 202], 0.25);
-      doc.pdf.roundedRect(statusTagX, sY + 1.2, statusTagW, 4.0, 0.8, 0.8, 'FD');
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(5.0);
-      doc.setTextColor([153, 27, 27]);
-      doc.pdf.text('DEFECT', statusTagX + statusTagW / 2, sY + 3.9, { align: 'center' });
-    } else if (hasObs) {
-      doc.setFill([255, 251, 235]);
-      doc.setDraw([253, 230, 138], 0.25);
-      doc.pdf.roundedRect(statusTagX, sY + 1.2, statusTagW, 4.0, 0.8, 0.8, 'FD');
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(5.0);
-      doc.setTextColor([146, 64, 14]);
-      doc.pdf.text('NOTED', statusTagX + statusTagW / 2, sY + 3.9, { align: 'center' });
-    } else {
-      doc.setFill([236, 253, 245]);
-      doc.setDraw([167, 243, 208], 0.25);
-      doc.pdf.roundedRect(statusTagX, sY + 1.2, statusTagW, 4.0, 0.8, 0.8, 'FD');
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(5.0);
-      doc.setTextColor([6, 95, 70]);
-      doc.pdf.text('PASS', statusTagX + statusTagW / 2, sY + 3.9, { align: 'center' });
-    }
-
-    sY += sRowH;
-  }
-
-  // Summary Checklist Tally Footer at bottom of right card
-  const tallyY = matrixY + matrixH - 12;
-  doc.setDraw(BORDER, 0.25);
-  doc.pdf.line(matrixCol2X + 4, tallyY, matrixCol2X + col2W - 4, tallyY);
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text('CHECKLIST TALLY:', matrixCol2X + 5, tallyY + 4.5);
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
-  doc.setTextColor([16, 122, 70]);
-  doc.pdf.text(`${stats.satisfactory} Passed`, matrixCol2X + 38, tallyY + 4.5);
-
-  doc.setTextColor(totalObs > 0 ? [185, 28, 28] : TEXT_MUTED);
-  doc.pdf.text(`${totalObs} Noted`, matrixCol2X + 56, tallyY + 4.5);
-
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(5.2);
-  doc.setTextColor(TEXT_FAINT);
-  doc.pdf.text(`(${stats.na || 0} N/A • ${stats.pending || 0} Pending • ${stats.totalQuestions} Total)`, matrixCol2X + 5, tallyY + 8.8);
-
-  doc.y = matrixY + matrixH + 4.5;
-
-  // 4. Full-Width Technical Findings & Condition Summary Panel
-  const findBoxY = doc.y;
-  const findBoxH = 26;
-
-  if (observations.length > 0) {
-    doc.roundedBox(MARGIN_LEFT, findBoxY, CONTENT_W, findBoxH, [255, 250, 250], [254, 202, 202], 2);
-    // Left inset accent
-    doc.setFill([185, 28, 28]);
-    doc.pdf.roundedRect(MARGIN_LEFT + 1.5, findBoxY + 2, 2.5, findBoxH - 4, 1, 1, 'F');
-
-    // Header
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-    doc.setTextColor([185, 28, 28]);
-    doc.pdf.text(`KEY TECHNICAL FINDINGS & DEFECT NOTICES (${observations.length} RECORDED)`, MARGIN_LEFT + 7, findBoxY + 5.2);
-
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
-    doc.setTextColor([153, 27, 27]);
-    doc.pdf.text(`${defectCount} CRITICAL DEFECT${defectCount === 1 ? '' : 'S'} REQUIRING ATTENTION`, PAGE_W - MARGIN_RIGHT - 6, findBoxY + 5.2, { align: 'right' });
-
-    // Show up to 2 top observations with clean line
-    const topObs = observations.slice(0, 2);
-    let oY = findBoxY + 9.5;
-    for (let oi = 0; oi < topObs.length; oi++) {
-      const o = topObs[oi];
-      const isDef = !!(o as any).isDefect;
-
-      doc.setFill(isDef ? [220, 38, 38] : [245, 158, 11]);
-      doc.pdf.circle(MARGIN_LEFT + 8, oY + 1.2, 0.7, 'F');
-
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.2);
-      doc.setTextColor(isDef ? [185, 28, 28] : TEXT_DARK);
-      const prefix = `[ ${o.ref || 'OBS'} ] ${o.sectionName}: `;
-      doc.pdf.text(prefix, MARGIN_LEFT + 11, oY + 2.2);
-
-      const prefW = doc.pdf.getTextWidth(prefix);
-      doc.pdf.setFont('helvetica', 'normal').setFontSize(6.0);
-      doc.setTextColor(TEXT_BODY);
-
-      let oDesc = o.text || 'Technical observation logged by surveyor';
-      const maxOW = CONTENT_W - 20 - prefW;
-      while (oDesc.length > 3 && doc.pdf.getTextWidth(oDesc) > maxOW) {
-        oDesc = oDesc.slice(0, -1);
-      }
-      doc.pdf.text(oDesc, MARGIN_LEFT + 11 + prefW, oY + 2.2);
-
-      oY += 5.2;
-    }
-
-    doc.pdf.setFont('helvetica', 'italic').setFontSize(5.2);
-    doc.setTextColor(TEXT_MUTED);
-    doc.pdf.text('Refer to detailed Section Observations & Findings chapters for complete photographic records and corrective actions.', MARGIN_LEFT + 7, findBoxY + 22.0);
-  } else {
-    // Zero Defects Statement
-    doc.roundedBox(MARGIN_LEFT, findBoxY, CONTENT_W, findBoxH, [240, 253, 244], [167, 243, 208], 2);
-    // Left inset accent
-    doc.setFill([16, 122, 70]);
-    doc.pdf.roundedRect(MARGIN_LEFT + 1.5, findBoxY + 2, 2.5, findBoxH - 4, 1, 1, 'F');
-
-    // Header
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-    doc.setTextColor([16, 122, 70]);
-    doc.pdf.text('DEFICIENCY-FREE CONDITION STATEMENT', MARGIN_LEFT + 7, findBoxY + 5.2);
-
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
-    doc.setTextColor([6, 95, 70]);
-    doc.pdf.text('ALL AUDITED AREAS SATISFACTORY', PAGE_W - MARGIN_RIGHT - 6, findBoxY + 5.2, { align: 'right' });
-
-    doc.pdf.setFont('helvetica', 'normal').setFontSize(5.8);
-    doc.setTextColor(TEXT_BODY);
-    const zeroDefText = 'No critical technical defects, structural deformations, or immediate safety non-conformities were identified during this physical survey inspection. Vessel equipment, machinery spaces, and audited structures were found in satisfactory operating condition consistent with vessel age and trading profile.';
-    const zLines = doc.pdf.splitTextToSize(zeroDefText, CONTENT_W - 16) as string[];
-    doc.pdf.text(zLines, MARGIN_LEFT + 7, findBoxY + 10.5);
-
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
-    doc.setTextColor([6, 95, 70]);
-    doc.pdf.text('Formal condition grade: SATISFACTORY / STANDARD MARITIME COMPLIANCE', MARGIN_LEFT + 7, findBoxY + 22.0);
-  }
-
-  doc.y = findBoxY + findBoxH + 4.5;
+  doc.y = cardStartY + remarksCardH + 5;
 
   // 5. Official Quality Audit & Sign-off Footer Panel (Matching Page 2)
   const execSealBoxY = doc.y;
