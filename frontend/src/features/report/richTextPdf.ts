@@ -57,7 +57,7 @@ export function parseInlineFormatting(
 ): InlineToken[] {
   const tokens: InlineToken[] = [];
   const pattern =
-    /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|<b>[\s\S]+?<\/b>|<i>[\s\S]+?<\/i>|<u>[\s\S]+?<\/u>|~~[\s\S]+?~~|\[font:[^\]]+\][\s\S]+?\[\/font\])/gi;
+    /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|<b>[\s\S]+?<\/b>|<strong>[\s\S]+?<\/strong>|<i>[\s\S]+?<\/i>|<em>[\s\S]+?<\/em>|<u>[\s\S]+?<\/u>|~~[\s\S]+?~~|\[font:[^\]]+\][\s\S]+?\[\/font\])/gi;
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -149,6 +149,62 @@ export function parseInlineFormatting(
 }
 
 /**
+ * Normalizes rich HTML from WYSIWYG editors into line-based formatted text for jsPDF.
+ */
+export function htmlToPdfLines(rawText: string): string {
+  if (!rawText) return '';
+  if (!rawText.includes('<') && !rawText.includes('>')) return rawText;
+
+  // Handle ordered lists by numbering each <li>
+  let processed = rawText.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_, listContent) => {
+    let num = 1;
+    return listContent.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_2: string, item: string) => {
+      return `\n${num++}. ${item.trim()}\n`;
+    });
+  });
+
+  // Handle unordered lists with bullet symbol
+  processed = processed.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_, listContent) => {
+    return listContent.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_2: string, item: string) => {
+      return `\n• ${item.trim()}\n`;
+    });
+  });
+
+  // Convert line breaks and blocks
+  processed = processed
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<h2[^>]*>/gi, '## ')
+    .replace(/<\/h2>/gi, '\n')
+    .replace(/<h3[^>]*>/gi, '### ')
+    .replace(/<\/h3>/gi, '\n')
+    .replace(/<strong[^>]*>/gi, '<b>')
+    .replace(/<\/strong>/gi, '</b>')
+    .replace(/<em[^>]*>/gi, '<i>')
+    .replace(/<\/em>/gi, '</i>')
+    .replace(/<font\s+face=["']([^"']+)["'][^>]*>([\s\S]*?)<\/font>/gi, '[font:$1]$2[/font]')
+    .replace(/<span\s+style=["'][^"']*font-family:\s*([^;"']+)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, '[font:$1]$2[/font]');
+
+  // Strip any remaining unhandled HTML tags
+  processed = processed.replace(/<(?!\/?(b|i|u)\b)[^>]+>/gi, '');
+
+  // Decode common HTML entities
+  processed = processed
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+
+  // Collapse excessive blank lines
+  processed = processed.replace(/\n{3,}/g, '\n\n');
+
+  return processed.trim();
+}
+
+/**
  * Render multi-line rich text with Word-style bullet types, numbered lists,
  * bold, italics, font tags, and wrapping into jsPDF.
  */
@@ -169,7 +225,8 @@ export function renderRichText(
   const bulletColor = options.bulletColor || [16, 89, 53];
   const dryRun = !!options.dryRun;
 
-  const rawLines = rawText.split('\n');
+  const normalizedText = htmlToPdfLines(rawText);
+  const rawLines = normalizedText.split('\n');
   let curY = startY;
 
   for (let lIdx = 0; lIdx < rawLines.length; lIdx++) {

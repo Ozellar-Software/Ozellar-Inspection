@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './RichTextEditor.css';
 
 export interface RichTextEditorProps {
@@ -14,50 +14,70 @@ export interface RichTextEditorProps {
   style?: React.CSSProperties;
 }
 
-const WORD_FONTS = [
-  // Standard & System
+const POPULAR_FONTS = [
   { label: 'Calibri', value: 'Calibri, sans-serif' },
   { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
-  { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
-  { label: 'Segoe UI', value: '"Segoe UI", Tahoma, sans-serif' },
-  { label: 'Trebuchet MS', value: '"Trebuchet MS", sans-serif' },
-  { label: 'Verdana', value: 'Verdana, sans-serif' },
-  { label: 'Tahoma', value: 'Tahoma, sans-serif' },
-
-  // Editorial & Formal Serif
   { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+  { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
   { label: 'Georgia', value: 'Georgia, serif' },
-  { label: 'Garamond', value: 'Garamond, serif' },
-  { label: 'Cambria', value: 'Cambria, Georgia, serif' },
-  { label: 'Palatino', value: '"Palatino Linotype", Palatino, serif' },
-
-  // Modern Clean Sans
   { label: 'Inter', value: 'Inter, sans-serif' },
   { label: 'Roboto', value: 'Roboto, sans-serif' },
-  { label: 'Montserrat', value: 'Montserrat, sans-serif' },
-  { label: 'Poppins', value: 'Poppins, sans-serif' },
-  { label: 'Open Sans', value: '"Open Sans", sans-serif' },
-  { label: 'Lato', value: 'Lato, sans-serif' },
-
-  // Technical & Monospace
-  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
   { label: 'Consolas', value: 'Consolas, monospace' },
-  { label: 'SF Mono', value: '"SF Mono", Menlo, monospace' },
 ];
 
-const BULLET_STYLES = [
-  { label: 'Disc (Solid Round)', symbol: '•', display: '• Disc' },
-  { label: 'Circle (Hollow)', symbol: '○', display: '○ Circle' },
-  { label: 'Square (Solid)', symbol: '■', display: '■ Square' },
-  { label: 'Checkbox (Hollow)', symbol: '□', display: '□ Checkbox' },
-  { label: 'Diamond', symbol: '◆', display: '◆ Diamond' },
-  { label: 'Arrow', symbol: '➢', display: '➢ Arrow' },
-  { label: 'Checkmark', symbol: '✓', display: '✓ Check' },
-  { label: 'Dash', symbol: '–', display: '– Dash' },
-  { label: 'Numbered (1, 2, 3)', symbol: 'num', display: '1. Number' },
-  { label: 'Alphabet (a, b, c)', symbol: 'alpha', display: 'a. Alphabet' },
-  { label: 'Roman (i, ii, iii)', symbol: 'roman', display: 'i. Roman' },
-];
+/**
+ * Normalizes plain text or markdown from existing inspections into standard HTML.
+ */
+function toInitialHtml(val: string): string {
+  if (!val) return '';
+  // If already contains HTML markup, pass through directly
+  if (/<(p|div|ul|ol|li|b|strong|i|em|u|font|span|br|h[1-6])[^>]*>/i.test(val)) {
+    return val;
+  }
+
+  // Convert markdown bold, italics, font tags
+  let converted = val
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/\*(.+?)\*/g, '<i>$1</i>')
+    .replace(/\[font:([^\]]+)\]([\s\S]+?)\[\/font\]/g, '<span style="font-family: $1">$2</span>');
+
+  const lines = converted.split('\n');
+  const blocks: string[] = [];
+  let inUl = false;
+  let inOl = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (inUl) { blocks.push('</ul>'); inUl = false; }
+      if (inOl) { blocks.push('</ol>'); inOl = false; }
+      blocks.push('<p><br></p>');
+      continue;
+    }
+
+    const bulletMatch = line.match(/^(\s*)([•○■□◆➢➔→✓–\-\*])\s+(.*)$/);
+    const numMatch = line.match(/^(\s*)(\d+)[\.\)]\s+(.*)$/);
+
+    if (bulletMatch) {
+      if (inOl) { blocks.push('</ol>'); inOl = false; }
+      if (!inUl) { blocks.push('<ul>'); inUl = true; }
+      blocks.push(`<li>${bulletMatch[3]}</li>`);
+    } else if (numMatch) {
+      if (inUl) { blocks.push('</ul>'); inUl = false; }
+      if (!inOl) { blocks.push('<ol>'); inOl = true; }
+      blocks.push(`<li>${numMatch[3]}</li>`);
+    } else {
+      if (inUl) { blocks.push('</ul>'); inUl = false; }
+      if (inOl) { blocks.push('</ol>'); inOl = false; }
+      blocks.push(`<p>${line}</p>`);
+    }
+  }
+
+  if (inUl) blocks.push('</ul>');
+  if (inOl) blocks.push('</ol>');
+
+  return blocks.join('');
+}
 
 export function RichTextEditor({
   value = '',
@@ -71,425 +91,230 @@ export function RichTextEditor({
   className = '',
   style = {},
 }: RichTextEditorProps) {
-  const [selectedFont, setSelectedFont] = useState(WORD_FONTS[0].value);
-  const [isToolbarOpen, setIsToolbarOpen] = useState(false);
-  const [isBulletMenuOpen, setIsBulletMenuOpen] = useState(false);
-  const bulletMenuRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const isInternalUpdate = useRef(false);
 
-  // Close bullet menu on outside click
+  const [activeFont, setActiveFont] = useState(POPULAR_FONTS[0].value);
+  const [isBold, setIsBold] = useState(false);
+  const [isItalic, setIsItalic] = useState(false);
+  const [isUnderline, setIsUnderline] = useState(false);
+  const [isUl, setIsUl] = useState(false);
+  const [isOl, setIsOl] = useState(false);
+  const [isEmpty, setIsEmpty] = useState(!value || value.trim() === '');
+
+  // Synchronize incoming value into editor without resetting user cursor
   useEffect(() => {
-    if (!isBulletMenuOpen) return;
-    function handleClickOutside(e: MouseEvent) {
-      if (bulletMenuRef.current && !bulletMenuRef.current.contains(e.target as Node)) {
-        setIsBulletMenuOpen(false);
+    if (editorRef.current && !isInternalUpdate.current) {
+      const targetHtml = toInitialHtml(value);
+      if (editorRef.current.innerHTML !== targetHtml) {
+        editorRef.current.innerHTML = targetHtml;
       }
+      const raw = editorRef.current.textContent || '';
+      setIsEmpty(!raw.trim());
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isBulletMenuOpen]);
+    isInternalUpdate.current = false;
+  }, [value]);
 
-  // Wrap or insert text
-  const applyInlineWrap = useCallback(
-    (prefix: string, suffix: string, defaultText: string) => {
-      if (disabled) return;
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const selected = value.substring(start, end);
-
-      const replacement = selected ? `${prefix}${selected}${suffix}` : `${prefix}${defaultText}${suffix}`;
-      const nextValue = value.substring(0, start) + replacement + value.substring(end);
-
-      onChange(nextValue);
-
-      setTimeout(() => {
-        textarea.focus();
-        if (selected) {
-          textarea.setSelectionRange(start + prefix.length, end + prefix.length);
-        } else {
-          textarea.setSelectionRange(start + prefix.length, start + prefix.length + defaultText.length);
-        }
-      }, 0);
-    },
-    [value, onChange, disabled]
-  );
-
-  // Apply chosen bullet or number style
-  const applyBulletStyle = useCallback(
-    (symbol: string) => {
-      if (disabled) return;
-      setIsBulletMenuOpen(false);
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-
-      const before = value.substring(0, start);
-      const lineStart = before.lastIndexOf('\n') + 1;
-      const after = value.substring(end);
-      const lineEnd = end + (after.indexOf('\n') === -1 ? after.length : after.indexOf('\n'));
-
-      const selectedBlock = value.substring(lineStart, lineEnd);
-      const lines = selectedBlock.split('\n');
-
-      const newLines = lines.map((line, idx) => {
-        // Strip any existing bullet/number prefix
-        const clean = line.replace(/^(\s*)([•○■□◆➢➔→✓–\-\*]|\d+[\.\)]|[a-zA-Z][\.\)]|[ivxlcdmIVXLCDM]+[\.\)])\s+/, '$1');
-        const indentMatch = line.match(/^(\s*)/);
-        const indent = indentMatch ? indentMatch[1] : '';
-
-        if (symbol === 'num') {
-          return `${indent}${idx + 1}. ${clean.trimStart()}`;
-        } else if (symbol === 'alpha') {
-          const letter = String.fromCharCode(97 + (idx % 26));
-          return `${indent}${letter}. ${clean.trimStart()}`;
-        } else if (symbol === 'roman') {
-          const romanNumerals = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x'];
-          const r = romanNumerals[idx % romanNumerals.length];
-          return `${indent}${r}. ${clean.trimStart()}`;
-        } else {
-          return `${indent}${symbol} ${clean.trimStart()}`;
-        }
-      });
-
-      const nextBlock = newLines.join('\n');
-      const nextValue = value.substring(0, lineStart) + nextBlock + value.substring(lineEnd);
-      onChange(nextValue);
-
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(lineStart, lineStart + nextBlock.length);
-      }, 0);
-    },
-    [value, onChange, disabled]
-  );
-
-  // Apply heading (H2, H3)
-  const applyHeading = useCallback(
-    (level: 2 | 3) => {
-      if (disabled) return;
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-
-      const start = textarea.selectionStart;
-      const before = value.substring(0, start);
-      const lineStart = before.lastIndexOf('\n') + 1;
-      const after = value.substring(start);
-      const lineEnd = start + (after.indexOf('\n') === -1 ? after.length : after.indexOf('\n'));
-
-      const line = value.substring(lineStart, lineEnd);
-      const cleanLine = line.replace(/^(#{1,3}\s*)/, '');
-      const prefix = '#'.repeat(level) + ' ';
-      const newLine = prefix + cleanLine;
-
-      const nextValue = value.substring(0, lineStart) + newLine + value.substring(lineEnd);
-      onChange(nextValue);
-
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(lineStart + newLine.length, lineStart + newLine.length);
-      }, 0);
-    },
-    [value, onChange, disabled]
-  );
-
-  // Apply font family tag to selected text or overall textarea
-  const handleFontChange = (fontVal: string, fontLabel: string) => {
-    setSelectedFont(fontVal);
-    if (disabled) return;
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    if (start !== end) {
-      applyInlineWrap(`[font:${fontLabel}]`, `[/font]`, 'text');
+  // Query and reflect current formatting states at cursor position
+  const updateActiveStates = useCallback(() => {
+    if (disabled || !document.queryCommandState) return;
+    try {
+      setIsBold(document.queryCommandState('bold'));
+      setIsItalic(document.queryCommandState('italic'));
+      setIsUnderline(document.queryCommandState('underline'));
+      setIsUl(document.queryCommandState('insertUnorderedList'));
+      setIsOl(document.queryCommandState('insertOrderedList'));
+    } catch {
+      // Safe fallback if command query not supported in test environments
     }
+  }, [disabled]);
+
+  const handleInput = () => {
+    if (!editorRef.current) return;
+    isInternalUpdate.current = true;
+    const html = editorRef.current.innerHTML;
+    const text = editorRef.current.textContent || '';
+    setIsEmpty(!text.trim());
+    onChange(html);
+    updateActiveStates();
   };
 
-  // Smart enter key handling: carry current bullet or increment number
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const exec = (command: string, arg?: string) => {
     if (disabled) return;
+    editorRef.current?.focus();
+    document.execCommand(command, false, arg);
+    handleInput();
+  };
 
-    // Shortcuts: Ctrl+B, Ctrl+I, Ctrl+U
-    if (e.ctrlKey || e.metaKey) {
-      if (e.key === 'b' || e.key === 'B') {
-        e.preventDefault();
-        applyInlineWrap('**', '**', 'bold text');
-        return;
-      }
-      if (e.key === 'i' || e.key === 'I') {
-        e.preventDefault();
-        applyInlineWrap('*', '*', 'italic text');
-        return;
-      }
-      if (e.key === 'u' || e.key === 'U') {
-        e.preventDefault();
-        applyInlineWrap('<u>', '</u>', 'underlined text');
-        return;
-      }
-    }
+  const handleFontChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const font = e.target.value;
+    setActiveFont(font);
+    exec('fontName', font);
+  };
 
-    if (e.key === 'Enter') {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-
-      const start = textarea.selectionStart;
-      const beforeCursor = value.substring(0, start);
-      const lineStart = beforeCursor.lastIndexOf('\n') + 1;
-      const currentLine = beforeCursor.substring(lineStart);
-
-      // Bullet continuation
-      const bulletMatch = currentLine.match(/^(\s*)([•○■□◆➢➔→✓–\-\*])\s+(.*)$/);
-      if (bulletMatch) {
-        const indent = bulletMatch[1];
-        const symbol = bulletMatch[2];
-        const content = bulletMatch[3];
-
-        if (content.trim() === '') {
-          // Empty bullet line -> exit list
-          e.preventDefault();
-          const nextVal = value.substring(0, lineStart) + value.substring(start);
-          onChange(nextVal);
-          setTimeout(() => textarea.setSelectionRange(lineStart, lineStart), 0);
-          return;
-        } else {
-          e.preventDefault();
-          const insertion = `\n${indent}${symbol} `;
-          const nextVal = value.substring(0, start) + insertion + value.substring(start);
-          onChange(nextVal);
-          setTimeout(() => textarea.setSelectionRange(start + insertion.length, start + insertion.length), 0);
-          return;
-        }
-      }
-
-      // Number continuation
-      const numMatch = currentLine.match(/^(\s*)(\d+)[\.\)]\s+(.*)$/);
-      if (numMatch) {
-        const indent = numMatch[1];
-        const num = parseInt(numMatch[2], 10);
-        const content = numMatch[3];
-
-        if (content.trim() === '') {
-          e.preventDefault();
-          const nextVal = value.substring(0, lineStart) + value.substring(start);
-          onChange(nextVal);
-          setTimeout(() => textarea.setSelectionRange(lineStart, lineStart), 0);
-          return;
-        } else {
-          e.preventDefault();
-          const insertion = `\n${indent}${num + 1}. `;
-          const nextVal = value.substring(0, start) + insertion + value.substring(start);
-          onChange(nextVal);
-          setTimeout(() => textarea.setSelectionRange(start + insertion.length, start + insertion.length), 0);
-          return;
-        }
-      }
+  const handleBlockChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val === 'h2' || val === 'h3') {
+      exec('formatBlock', `<${val}>`);
+    } else {
+      exec('formatBlock', '<p>');
     }
   };
 
   return (
     <div
-      className={`word-editor-container ${className} ${disabled ? 'disabled' : ''} ${
-        isToolbarOpen ? 'toolbar-open' : ''
-      }`}
+      className={`normal-word-editor ${className} ${disabled ? 'disabled' : ''}`}
       style={style}
     >
-      {label && <div className="word-editor-label">{label}</div>}
+      {label && <div className="normal-editor-label">{label}</div>}
 
-      {/* ── Discreet Format Trigger Button (Top-Right) ── */}
-      {!disabled && (
-        <button
-          type="button"
-          className={`rte-format-toggle ${isToolbarOpen ? 'active' : ''}`}
-          onClick={() => setIsToolbarOpen((v) => !v)}
-          title={isToolbarOpen ? 'Hide formatting tools' : 'Format text (Fonts, Bullets, Bold, Lists)'}
-        >
-          <span className="rte-format-icon">Aa</span>
-          <span className="rte-format-text">{isToolbarOpen ? 'Hide' : 'Format'}</span>
-        </button>
-      )}
-
-      {/* ── Word-Style Sleek Ribbon (Visible only when user opens formatting) ── */}
-      {isToolbarOpen && (
-        <div className="word-ribbon">
-          {/* Font Family Selector */}
-          {showFontSelector && (
-            <div className="word-ribbon-item">
-              <select
-                className="word-font-select"
-                value={selectedFont}
-                onChange={(e) => {
-                  const opt = WORD_FONTS.find((f) => f.value === e.target.value);
-                  handleFontChange(e.target.value, opt ? opt.label : 'Calibri');
-                }}
-                disabled={disabled}
-                title="Font Family"
-              >
-                {WORD_FONTS.map((f) => (
-                  <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="word-ribbon-sep" />
-
-          {/* Headings */}
-          <div className="word-ribbon-group">
-            <button
-              type="button"
-              className="word-btn"
-              onClick={() => applyHeading(2)}
+      {/* ── Standard Word-Style Formatting Ribbon ── */}
+      <div className="normal-word-toolbar">
+        {/* Font Family Selector */}
+        {showFontSelector && (
+          <div className="toolbar-item">
+            <select
+              className="toolbar-select font-select"
+              value={activeFont}
+              onChange={handleFontChange}
               disabled={disabled}
-              title="Heading 2 (## Title)"
+              title="Font Family"
+              onMouseDown={(e) => e.stopPropagation()}
             >
-              H2
-            </button>
-            <button
-              type="button"
-              className="word-btn"
-              onClick={() => applyHeading(3)}
-              disabled={disabled}
-              title="Heading 3 (### Subhead)"
-            >
-              H3
-            </button>
+              {POPULAR_FONTS.map((f) => (
+                <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
           </div>
+        )}
 
-          <div className="word-ribbon-sep" />
+        {/* Normal / Heading */}
+        <div className="toolbar-item">
+          <select
+            className="toolbar-select block-select"
+            defaultValue="p"
+            onChange={handleBlockChange}
+            disabled={disabled}
+            title="Text Style"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <option value="p">Normal</option>
+            <option value="h2">Heading 2</option>
+            <option value="h3">Heading 3</option>
+          </select>
+        </div>
 
-          {/* Inline Formatting: Bold, Italic, Underline, Strike */}
-          <div className="word-ribbon-group">
-            <button
-              type="button"
-              className="word-btn bold"
-              onClick={() => applyInlineWrap('**', '**', 'bold text')}
-              disabled={disabled}
-              title="Bold (Ctrl+B)"
-            >
-              <strong>B</strong>
-            </button>
-            <button
-              type="button"
-              className="word-btn italic"
-              onClick={() => applyInlineWrap('*', '*', 'italic text')}
-              disabled={disabled}
-              title="Italic (Ctrl+I)"
-            >
-              <em>I</em>
-            </button>
-            <button
-              type="button"
-              className="word-btn underline"
-              onClick={() => applyInlineWrap('<u>', '</u>', 'underlined text')}
-              disabled={disabled}
-              title="Underline (Ctrl+U)"
-            >
-              <u>U</u>
-            </button>
-            <button
-              type="button"
-              className="word-btn strike"
-              onClick={() => applyInlineWrap('~~', '~~', 'strikethrough text')}
-              disabled={disabled}
-              title="Strikethrough"
-            >
-              <s>S</s>
-            </button>
-          </div>
+        <div className="toolbar-sep" />
 
-          <div className="word-ribbon-sep" />
-
-          {/* Word-Style Bullet Picker Popover */}
-          <div className="word-bullet-wrap" ref={bulletMenuRef}>
-            <button
-              type="button"
-              className="word-btn word-bullet-btn"
-              onClick={() => setIsBulletMenuOpen((v) => !v)}
-              disabled={disabled}
-              title="Select Bullet Style or Numbered List"
-            >
-              <span className="word-bullet-icon">•</span>
-              <span className="word-bullet-text">Bullets</span>
-              <span className="word-chevron">▼</span>
-            </button>
-
-            {isBulletMenuOpen && (
-              <div className="word-bullet-menu">
-                <div className="word-bullet-menu-title">Select Bullet & List Style</div>
-                <div className="word-bullet-grid">
-                  {BULLET_STYLES.map((b) => (
-                    <button
-                      key={b.symbol}
-                      type="button"
-                      className="word-bullet-opt"
-                      onClick={() => applyBulletStyle(b.symbol)}
-                    >
-                      <span className="word-bullet-sample">{b.display.split(' ')[0]}</span>
-                      <span className="word-bullet-name">{b.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="word-ribbon-sep" />
-
-          {/* Quick Survey Icons */}
-          <div className="word-ribbon-group">
-            <button
-              type="button"
-              className="word-btn symbol"
-              onClick={() => applyBulletStyle('✓')}
-              disabled={disabled}
-              title="Add Checkmark (✓)"
-            >
-              ✓
-            </button>
-            <button
-              type="button"
-              className="word-btn symbol alert"
-              onClick={() => applyInlineWrap('**▲ ', '**', 'DEFECT')}
-              disabled={disabled}
-              title="Add Defect Alert (▲)"
-            >
-              ▲
-            </button>
-          </div>
-
-          {/* Close Ribbon Button */}
+        {/* Bold, Italic, Underline */}
+        <div className="toolbar-group">
           <button
             type="button"
-            className="word-btn word-close-btn"
-            onClick={() => setIsToolbarOpen(false)}
-            title="Close formatting bar"
+            className={`toolbar-btn bold-btn ${isBold ? 'active' : ''}`}
+            onMouseDown={(e) => { e.preventDefault(); exec('bold'); }}
+            disabled={disabled}
+            title="Bold (Ctrl+B)"
           >
-            ✕
+            <strong>B</strong>
+          </button>
+          <button
+            type="button"
+            className={`toolbar-btn italic-btn ${isItalic ? 'active' : ''}`}
+            onMouseDown={(e) => { e.preventDefault(); exec('italic'); }}
+            disabled={disabled}
+            title="Italic (Ctrl+I)"
+          >
+            <em>I</em>
+          </button>
+          <button
+            type="button"
+            className={`toolbar-btn underline-btn ${isUnderline ? 'active' : ''}`}
+            onMouseDown={(e) => { e.preventDefault(); exec('underline'); }}
+            disabled={disabled}
+            title="Underline (Ctrl+U)"
+          >
+            <u>U</u>
           </button>
         </div>
-      )}
 
-      {/* ── Editor Textarea (Identical to original clean inputs, live font support) ── */}
-      <textarea
-        ref={textareaRef}
-        className="word-textarea"
-        value={value}
-        placeholder={placeholder}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
+        <div className="toolbar-sep" />
+
+        {/* Bullet and Numbered Lists */}
+        <div className="toolbar-group">
+          <button
+            type="button"
+            className={`toolbar-btn list-btn ${isUl ? 'active' : ''}`}
+            onMouseDown={(e) => { e.preventDefault(); exec('insertUnorderedList'); }}
+            disabled={disabled}
+            title="Bullet List"
+          >
+            <span style={{ fontSize: 13, marginRight: 2 }}>•</span> List
+          </button>
+          <button
+            type="button"
+            className={`toolbar-btn list-btn ${isOl ? 'active' : ''}`}
+            onMouseDown={(e) => { e.preventDefault(); exec('insertOrderedList'); }}
+            disabled={disabled}
+            title="Numbered List"
+          >
+            <span style={{ fontSize: 11, marginRight: 2 }}>1.</span> List
+          </button>
+        </div>
+
+        <div className="toolbar-sep" />
+
+        {/* Quick Survey Symbols */}
+        <div className="toolbar-group">
+          <button
+            type="button"
+            className="toolbar-btn check-btn"
+            onMouseDown={(e) => { e.preventDefault(); exec('insertText', '✓ '); }}
+            disabled={disabled}
+            title="Insert Checkmark (✓)"
+          >
+            ✓
+          </button>
+          <button
+            type="button"
+            className="toolbar-btn defect-btn"
+            onMouseDown={(e) => { e.preventDefault(); exec('insertText', '▲ DEFECT: '); }}
+            disabled={disabled}
+            title="Insert Defect Tag (▲)"
+          >
+            ▲ Defect
+          </button>
+        </div>
+
+        {/* Clear formatting */}
+        <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
+          <button
+            type="button"
+            className="toolbar-btn clear-btn"
+            onMouseDown={(e) => { e.preventDefault(); exec('removeFormat'); }}
+            disabled={disabled}
+            title="Clear Formatting"
+          >
+            T<span style={{ fontSize: 9 }}>x</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Visual WYSIWYG Editor Body ── */}
+      <div
+        ref={editorRef}
+        contentEditable={!disabled}
+        className={`normal-word-body ${isEmpty ? 'is-empty' : ''}`}
+        data-placeholder={placeholder}
+        onInput={handleInput}
         onBlur={onBlur}
-        onKeyDown={handleKeyDown}
+        onKeyUp={updateActiveStates}
+        onMouseUp={updateActiveStates}
+        onSelect={updateActiveStates}
         style={{
           minHeight,
-          fontFamily: selectedFont,
+          fontFamily: activeFont,
         }}
       />
     </div>

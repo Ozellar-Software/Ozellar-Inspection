@@ -1957,9 +1957,12 @@ export function ReportPage() {
                   }}>
                     {o.ref.startsWith('Observation') ? `${o.ref} • ${o.sectionName}` : `${o.sectionName} — Question ${o.ref}`}
                   </div>
-                  <div style={{ fontSize: 13.5, color: 'var(--ink)' }}>
-                    {o.text || '(no description)'}
-                  </div>
+                  <div
+                    style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }}
+                    dangerouslySetInnerHTML={{
+                      __html: o.text && o.text.trim() ? o.text : '<em>(no description)</em>',
+                    }}
+                  />
                   {o.photoIds && o.photoIds.length > 0 && (
                     <ObservationPhotoStrip
                       photoIds={o.photoIds}
