@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { InspectionQuestion, InspectionSection, Photo } from '@ozellar/shared';
+import type { Finding, InspectionQuestion, InspectionSection, Photo } from '@ozellar/shared';
 import { db } from '../../offline/db';
 import {
   XIcon,
@@ -23,6 +23,7 @@ interface MovePhotoModalProps {
   sections: InspectionSection[];
   onMoveToSection?: (targetSectionId: string) => Promise<void> | void;
   onMoveToQuestion?: (questionId: string, sectionId: string) => Promise<void> | void;
+  onMoveToFinding?: (findingId: string, sectionId: string) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -34,6 +35,7 @@ export function MovePhotoModal({
   sections,
   onMoveToSection,
   onMoveToQuestion,
+  onMoveToFinding,
   onClose,
 }: MovePhotoModalProps) {
   const [filter, setFilter] = useState('');
@@ -44,6 +46,12 @@ export function MovePhotoModal({
   // Query all checklist questions in database
   const allDbQuestions = useLiveQuery(
     () => db.inspectionQuestions.toArray(),
+    []
+  ) ?? [];
+
+  // Query all findings / observations in database
+  const allDbFindings = useLiveQuery(
+    () => db.findings.toArray(),
     []
   ) ?? [];
 
@@ -63,6 +71,22 @@ export function MovePhotoModal({
     return map;
   }, [allDbQuestions, sections]);
 
+  // Group findings by inspectionSectionId for the current inspection's sections
+  const findingsBySection = useMemo(() => {
+    const sectionIdSet = new Set(sections.map((s) => s.id));
+    const map: Record<string, Finding[]> = {};
+    for (const f of allDbFindings) {
+      if (!f.deletedAt && sectionIdSet.has(f.inspectionSectionId)) {
+        if (!map[f.inspectionSectionId]) map[f.inspectionSectionId] = [];
+        map[f.inspectionSectionId].push(f);
+      }
+    }
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    }
+    return map;
+  }, [allDbFindings, sections]);
+
   const totalQuestions = useMemo(() => {
     let count = 0;
     for (const sec of sections) {
@@ -70,6 +94,14 @@ export function MovePhotoModal({
     }
     return count;
   }, [sections, questionsBySection]);
+
+  const totalFindings = useMemo(() => {
+    let count = 0;
+    for (const sec of sections) {
+      count += findingsBySection[sec.id]?.length || 0;
+    }
+    return count;
+  }, [sections, findingsBySection]);
 
   // Handle ESC key and scroll lock
   useEffect(() => {
@@ -108,6 +140,7 @@ export function MovePhotoModal({
   // Filter sections and questions
   const filteredSections = sections.filter((sec) => {
     const secQuestions = questionsBySection[sec.id] || [];
+    const secFindings = findingsBySection[sec.id] || [];
     const secNameMatches =
       sec.name.toLowerCase().includes(normalizedFilter) ||
       (sec.zone && sec.zone.toLowerCase().includes(normalizedFilter));
@@ -118,13 +151,19 @@ export function MovePhotoModal({
         (q.text && q.text.toLowerCase().includes(normalizedFilter))
     );
 
+    const matchingFindings = secFindings.filter(
+      (f, idx) =>
+        `observation ${idx + 1}`.includes(normalizedFilter) ||
+        (f.text && f.text.toLowerCase().includes(normalizedFilter))
+    );
+
     if (tab === 'sections') {
       return secNameMatches;
     }
     if (tab === 'questions') {
-      return matchingQuestions.length > 0;
+      return matchingQuestions.length > 0 || matchingFindings.length > 0;
     }
-    return secNameMatches || matchingQuestions.length > 0;
+    return secNameMatches || matchingQuestions.length > 0 || matchingFindings.length > 0;
   });
 
   function toggleSectionExpand(secId: string) {
@@ -165,6 +204,23 @@ export function MovePhotoModal({
       onClose();
     } catch (err) {
       console.error('Failed to move photo(s) to question', err);
+    } finally {
+      setMovingTarget(null);
+    }
+  }
+
+  // Handle moving to Finding / Observation
+  async function handleSelectFinding(targetFindingId: string, sectionId: string) {
+    if (movingTarget) return;
+
+    setMovingTarget(targetFindingId);
+    try {
+      if (onMoveToFinding) {
+        await onMoveToFinding(targetFindingId, sectionId);
+      }
+      onClose();
+    } catch (err) {
+      console.error('Failed to move photo(s) to observation', err);
     } finally {
       setMovingTarget(null);
     }
@@ -315,6 +371,7 @@ export function MovePhotoModal({
           ) : (
             filteredSections.map((sec) => {
               const secQuestions = questionsBySection[sec.id] || [];
+              const secFindings = findingsBySection[sec.id] || [];
               const isCurrentSection = sec.id === currentSectionId;
               const isSectionMoving = movingTarget === sec.id;
               const isExpanded = !!expandedSections[sec.id] || tab === 'questions';
@@ -328,6 +385,16 @@ export function MovePhotoModal({
                 );
               });
 
+              // Filter findings inside this section
+              const displayedFindings = secFindings.filter((f, idx) => {
+                if (!normalizedFilter) return true;
+                return (
+                  `observation ${idx + 1}`.includes(normalizedFilter) ||
+                  (f.text && f.text.toLowerCase().includes(normalizedFilter))
+                );
+              });
+
+              const hasSubItems = secQuestions.length > 0 || secFindings.length > 0;
               const isAlreadySectionPhotoHere = photos.every(p => p.target === 'section' && isCurrentSection);
 
               return (
@@ -339,7 +406,7 @@ export function MovePhotoModal({
                   <div
                     className="mpm-sec-header-row"
                     onClick={() => {
-                      if (secQuestions.length > 0 && tab !== 'sections') {
+                      if (hasSubItems && tab !== 'sections') {
                         toggleSectionExpand(sec.id);
                       }
                     }}
@@ -382,16 +449,20 @@ export function MovePhotoModal({
                         </button>
                       )}
 
-                      {/* Expand / Collapse toggle for questions */}
-                      {secQuestions.length > 0 && tab !== 'sections' && (
+                      {/* Expand / Collapse toggle for questions and observations */}
+                      {hasSubItems && tab !== 'sections' && (
                         <button
                           type="button"
                           className={`mpm-btn-toggle-q ${isExpanded ? 'active' : ''}`}
                           onClick={() => toggleSectionExpand(sec.id)}
-                          aria-label="Toggle questions"
-                          title="Show checklist questions in this section"
+                          aria-label="Toggle items"
+                          title="Show checklist questions and observations in this section"
                         >
-                          <span>{secQuestions.length} Qs</span>
+                          <span>
+                            {secQuestions.length > 0 ? `${secQuestions.length} Qs` : ''}
+                            {secQuestions.length > 0 && secFindings.length > 0 ? ' · ' : ''}
+                            {secFindings.length > 0 ? `${secFindings.length} Obs` : ''}
+                          </span>
                           {isExpanded ? (
                             <ChevronDownIcon width={12} height={12} />
                           ) : (
@@ -402,8 +473,8 @@ export function MovePhotoModal({
                     </div>
                   </div>
 
-                  {/* Questions Sublist (Accordion) */}
-                  {isExpanded && displayedQuestions.length > 0 && tab !== 'sections' && (
+                  {/* Sublist (Accordion) for Questions and Observations */}
+                  {isExpanded && (displayedQuestions.length > 0 || displayedFindings.length > 0) && tab !== 'sections' && (
                     <div className="mpm-questions-box">
                       {displayedQuestions.map((q) => {
                         const isQuestionMoving = movingTarget === q.id;
@@ -434,6 +505,45 @@ export function MovePhotoModal({
                           </button>
                         );
                       })}
+
+                      {displayedFindings.map((f, idx) => {
+                        const isFindingMoving = movingTarget === f.id;
+                        const fLabel = `Observation ${idx + 1}`;
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            className="mpm-q-item"
+                            style={{ borderLeft: '3px solid var(--accent, #0e7c86)' }}
+                            onClick={() => handleSelectFinding(f.id, sec.id)}
+                            disabled={!!movingTarget}
+                            title={`Attach photo to ${fLabel}`}
+                          >
+                            <div className="mpm-q-left">
+                              <span
+                                className="mpm-q-ref"
+                                style={{ background: 'rgba(14, 124, 134, 0.12)', color: 'var(--accent, #0e7c86)' }}
+                              >
+                                {fLabel}
+                              </span>
+                              <span className="mpm-q-text">
+                                {f.text || 'Observation item (no text)'}
+                              </span>
+                            </div>
+
+                            <div className="mpm-q-action">
+                              {isFindingMoving ? (
+                                <span className="mpm-spinner" />
+                              ) : (
+                                <>
+                                  <ArrowRightCircleIcon width={13} height={13} />
+                                  <span>{isMultiple ? `Attach (${photos.length})` : 'Attach'}</span>
+                                </>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -445,7 +555,7 @@ export function MovePhotoModal({
         {/* Footer */}
         <div className="mpm-footer">
           <span className="mpm-footer-text">
-            {sections.length} sections · {totalQuestions} checklist questions
+            {sections.length} sections · {totalQuestions} checklist questions{totalFindings > 0 ? ` · ${totalFindings} observations` : ''}
           </span>
           <button
             type="button"

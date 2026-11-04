@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Finding, InspectionSection, Photo } from '@ozellar/shared';
+import { db } from '../../offline/db';
 import { localWrite, localDelete } from '../../offline/outbox';
+import { addPhoto } from '../../offline/photoQueue';
 import { PhotoStrip } from './PhotoStrip';
-import { TrashIcon, CheckIcon, XIcon } from '../../icons';
+import { TrashIcon, CheckIcon, XIcon, CameraIcon, WarningIcon } from '../../icons';
 import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
+import { getDraggedPhoto, endPhotoDrag, showDragNotification } from './photoDragService';
 import './QuestionCard.css';
 
 function stateClass(f: Finding): string {
@@ -61,6 +64,9 @@ export function FindingCard({
   const [preventiveAction, setPreventiveAction] = useState(finding.preventiveAction);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isSameFindingDrag, setIsSameFindingDrag] = useState(false);
+  const dragCounter = useRef(0);
 
   useEffect(() => {
     setText(finding.text);
@@ -87,8 +93,171 @@ export function FindingCard({
   const isSatisfactory = finding.answer === 'yes';
   const obsLabel = index ? `Observation ${index}` : 'Observation';
 
+  function handleCardDragEnter(e: React.DragEvent) {
+    if (locked) return;
+    e.preventDefault();
+    dragCounter.current += 1;
+
+    const dragged = getDraggedPhoto();
+    if (dragged && dragged.fromFindingId && dragged.fromFindingId === finding.id) {
+      setIsSameFindingDrag(true);
+      setIsDragOver(false);
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
+    setIsSameFindingDrag(false);
+    setIsDragOver(true);
+  }
+
+  function handleCardDragOver(e: React.DragEvent) {
+    if (locked) return;
+    e.preventDefault();
+
+    const dragged = getDraggedPhoto();
+    if (dragged && dragged.fromFindingId && dragged.fromFindingId === finding.id) {
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
+    e.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleCardDragLeave(e: React.DragEvent) {
+    if (locked) return;
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    dragCounter.current = 0;
+    setIsDragOver(false);
+    setIsSameFindingDrag(false);
+  }
+
+  async function handleCardDrop(e: React.DragEvent) {
+    if (locked) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
+    setIsDragOver(false);
+    setIsSameFindingDrag(false);
+    endPhotoDrag();
+
+    let photoIds: string[] = [];
+    let fromFindingId: string | null = null;
+    try {
+      const json = e.dataTransfer.getData('application/json');
+      if (json) {
+        const parsed = JSON.parse(json);
+        if (parsed.photoIds && Array.isArray(parsed.photoIds)) {
+          photoIds = parsed.photoIds;
+        } else if (parsed.photoId) {
+          photoIds = [parsed.photoId];
+        }
+        if (parsed.fromFindingId) fromFindingId = parsed.fromFindingId;
+      }
+    } catch {}
+    if (!photoIds.length) {
+      const singleId = e.dataTransfer.getData('text/plain');
+      if (singleId) photoIds = [singleId];
+    }
+
+    const activePhoto = getDraggedPhoto();
+    const sourceFindingId = fromFindingId || activePhoto?.fromFindingId;
+    if (sourceFindingId && sourceFindingId === finding.id) {
+      showDragNotification(`Photo is already attached to ${obsLabel}`, 'warning');
+      return;
+    }
+
+    // 1. Move/assign existing photos (from Section Photos, question, or another observation)
+    if (photoIds.length > 0) {
+      try {
+        let pos = photos.length;
+        let assignedCount = 0;
+        for (const pId of photoIds) {
+          const existingPhoto = await db.photos.get(pId);
+          if (existingPhoto?.target === 'finding' && existingPhoto?.findingId === finding.id) {
+            continue;
+          }
+          if (existingPhoto) {
+            await localWrite('photos', pId, {
+              ...existingPhoto,
+              target: 'finding',
+              findingId: finding.id,
+              inspectionSectionId: finding.inspectionSectionId || existingPhoto.inspectionSectionId || null,
+              responseId: null,
+              position: pos++,
+            });
+            assignedCount++;
+          }
+        }
+
+        if (assignedCount > 0) {
+          const msg = assignedCount > 1
+            ? `${assignedCount} photos assigned to ${obsLabel}`
+            : `Photo assigned to ${obsLabel}`;
+          showDragNotification(msg, 'success');
+        } else {
+          showDragNotification(`Already attached to ${obsLabel}`, 'warning');
+        }
+      } catch (err) {
+        console.error('Failed to assign photo(s) to observation', err);
+      }
+      return;
+    }
+
+    // 2. Upload dropped image files from desktop/device
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+      if (!files.length) return;
+
+      try {
+        let pos = photos.length;
+        for (const file of files) {
+          await addPhoto({
+            file,
+            target: 'finding',
+            inspectionId: finding.inspectionId,
+            inspectionSectionId: finding.inspectionSectionId,
+            findingId: finding.id,
+            position: pos++,
+            isDefect: false,
+          });
+        }
+        showDragNotification(`${files.length} photo${files.length > 1 ? 's' : ''} added to ${obsLabel}!`, 'success');
+      } catch (err) {
+        console.error('Failed to upload dropped files to observation', err);
+      }
+    }
+  }
+
   return (
-    <div className={`qcard ${stateClass(finding)}`}>
+    <div
+      className={`qcard ${stateClass(finding)}${isDragOver ? ' drag-over' : ''}${isSameFindingDrag ? ' drag-same-question' : ''}`}
+      data-finding-card-id={finding.id}
+      onDragEnter={handleCardDragEnter}
+      onDragOver={handleCardDragOver}
+      onDragLeave={handleCardDragLeave}
+      onDrop={handleCardDrop}
+    >
+      {/* ── Drag overlay ── */}
+      {isDragOver && (
+        <div className="qcard-drag-overlay">
+          <div className="qcard-drag-overlay-inner">
+            <CameraIcon width={28} height={28} />
+            <div className="qcard-drag-title">Drop photo to assign to {obsLabel}</div>
+            <div className="qcard-drag-sub">Release to attach this photo evidence</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Same Observation Disabled Drag Overlay ── */}
+      {isSameFindingDrag && (
+        <div className="qcard-drag-overlay same-question">
+          <div className="qcard-drag-overlay-inner">
+            <WarningIcon width={28} height={28} />
+            <div className="qcard-drag-title">Already attached to {obsLabel}</div>
+            <div className="qcard-drag-sub">Photo is already part of this observation</div>
+          </div>
+        </div>
+      )}
       {/* ── Card Header ── */}
       <div className="qhead" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -192,8 +361,11 @@ export function FindingCard({
 
       {/* ── Photos Section ── */}
       <div className="observation-block" style={{ paddingTop: 8 }}>
-        <div className="seg-label" style={{ margin: '0 0 8px' }}>
-          {obsLabel} Photos {photos.length > 0 ? `(${photos.length})` : ''}
+        <div className="seg-label" style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>{obsLabel} Photos {photos.length > 0 ? `(${photos.length})` : ''}</span>
+          {!locked && (
+            <span className="qcard-drag-hint">Drag section photos here to attach</span>
+          )}
         </div>
         <PhotoStrip
           photos={photos}
@@ -205,6 +377,14 @@ export function FindingCard({
           title={`${obsLabel} Photos`}
           allSections={allSections}
         />
+        {!locked && photos.length === 0 && (
+          <div className="qcard-dropzone-prompt" style={{ margin: '8px 0 6px' }}>
+            <CameraIcon width={22} height={22} style={{ color: 'var(--accent)' }} />
+            <div className="qcard-dropzone-text">
+              No photos yet — <strong>drag a section photo here</strong> or tap below to upload
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Confirm Delete Observation Modal ── */}

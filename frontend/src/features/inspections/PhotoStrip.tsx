@@ -296,6 +296,41 @@ export function PhotoStrip({
     }
   };
 
+  // Assign or move photo to a chosen observation finding
+  const handleAssignToFinding = async (
+    photoId: string,
+    targetFindingId: string,
+    targetSectionId?: string,
+    customPosition?: number
+  ) => {
+    try {
+      let position = customPosition;
+      if (position === undefined) {
+        const fPhotos = await db.photos
+          .where('inspectionId')
+          .equals(inspectionId)
+          .filter((p) => p.target === 'finding' && p.findingId === targetFindingId && !p.deletedAt)
+          .toArray();
+        position = fPhotos.length;
+      }
+
+      const targetPhoto = await db.photos.get(photoId);
+      if (targetPhoto) {
+        if (targetPhoto.target === 'finding' && targetPhoto.findingId === targetFindingId) return;
+        await localWrite('photos', photoId, {
+          ...targetPhoto,
+          target: 'finding',
+          findingId: targetFindingId,
+          inspectionSectionId: targetSectionId || inspectionSectionId || targetPhoto.inspectionSectionId || null,
+          responseId: null,
+          position,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to assign photo to observation', err);
+    }
+  };
+
   // ── Thumbnail interaction: Single-click (view), Double-click (tooltip), Long hold (drag & drop) ──
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const isHoldingTouchRef = useRef(false);
@@ -373,6 +408,7 @@ export function PhotoStrip({
           fromTarget: target,
           fromSectionId: inspectionSectionId,
           fromResponseId: responseId,
+          fromFindingId: findingId,
           isDefect: photo.isDefect,
           photoUrl: urls[photo.id],
         },
@@ -381,6 +417,13 @@ export function PhotoStrip({
             const idsToMove = (droppedIds && droppedIds.length > 0) ? droppedIds : [photoId];
             for (const id of idsToMove) {
               await handleAssignToQuestion(id, questionId, targetSecId);
+            }
+            setSelectedPhotoIds(new Set());
+          },
+          onDropToFinding: async (photoId, targetFindingId, targetSecId, droppedIds) => {
+            const idsToMove = (droppedIds && droppedIds.length > 0) ? droppedIds : [photoId];
+            for (const id of idsToMove) {
+              await handleAssignToFinding(id, targetFindingId, targetSecId);
             }
             setSelectedPhotoIds(new Set());
           },
@@ -393,6 +436,9 @@ export function PhotoStrip({
           },
           onSameQuestionAttempt: () => {
             showDragNotification('Photo is already attached to this question', 'warning');
+          },
+          onSameFindingAttempt: () => {
+            showDragNotification('Photo is already attached to this observation', 'warning');
           },
           onSameSectionAttempt: () => {
             showDragNotification('Photo is already in section photos', 'warning');
@@ -470,6 +516,7 @@ export function PhotoStrip({
         fromTarget: target,
         fromSectionId: inspectionSectionId,
         fromResponseId: responseId,
+        fromFindingId: findingId,
         isDefect: photo.isDefect,
         photoUrl: urls[photo.id],
       },
@@ -478,6 +525,13 @@ export function PhotoStrip({
           const idsToMove = (droppedIds && droppedIds.length > 0) ? droppedIds : [photoId];
           for (const id of idsToMove) {
             await handleAssignToQuestion(id, questionId, targetSecId);
+          }
+          setSelectedPhotoIds(new Set());
+        },
+        onDropToFinding: async (photoId, targetFindingId, targetSecId, droppedIds) => {
+          const idsToMove = (droppedIds && droppedIds.length > 0) ? droppedIds : [photoId];
+          for (const id of idsToMove) {
+            await handleAssignToFinding(id, targetFindingId, targetSecId);
           }
           setSelectedPhotoIds(new Set());
         },
@@ -491,6 +545,9 @@ export function PhotoStrip({
         onSameQuestionAttempt: () => {
           showDragNotification('Photo is already attached to this question', 'warning');
         },
+        onSameFindingAttempt: () => {
+          showDragNotification('Photo is already attached to this observation', 'warning');
+        },
         onSameSectionAttempt: () => {
           showDragNotification('Photo is already in section photos', 'warning');
         },
@@ -501,10 +558,11 @@ export function PhotoStrip({
   // Drag and drop onto the strip directly
   const handleStripDrop = async (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     endPhotoDrag();
     if (locked) return;
 
-    // Check if existing photos were dropped (e.g. from question back to section)
+    // Check if existing photos were dropped (e.g. from question back to section or to observation)
     let photoIds: string[] = [];
     try {
       const json = e.dataTransfer.getData('application/json');
@@ -536,11 +594,17 @@ export function PhotoStrip({
           if (target === 'question' && existingPhoto.target === 'question' && existingPhoto.responseId === responseId) {
             continue;
           }
+          // Prevent drop into same finding
+          if (target === 'finding' && existingPhoto.target === 'finding' && existingPhoto.findingId === findingId) {
+            continue;
+          }
 
           await localWrite('photos', id, {
             ...existingPhoto,
             target,
-            inspectionSectionId: target === 'section' ? inspectionSectionId : null,
+            inspectionSectionId: (target === 'section' || target === 'finding')
+              ? (inspectionSectionId || existingPhoto.inspectionSectionId || null)
+              : null,
             responseId: target === 'question' ? responseId : null,
             findingId: target === 'finding' ? findingId : null,
             position: pos++,
@@ -549,10 +613,18 @@ export function PhotoStrip({
         }
       }
       setSelectedPhotoIds(new Set());
+      const targetLabel = target === 'section' ? 'section photos' : target === 'finding' ? 'observation' : 'question';
       if (movedCount > 0) {
-        showDragNotification(`${movedCount} photo${movedCount > 1 ? 's' : ''} moved to ${target === 'section' ? 'section photos' : 'question'}`, 'success');
+        showDragNotification(`${movedCount} photo${movedCount > 1 ? 's' : ''} moved to ${targetLabel}`, 'success');
       } else {
-        showDragNotification(target === 'section' ? 'Photos are already in section photos' : 'Photos already attached', 'warning');
+        showDragNotification(
+          target === 'section'
+            ? 'Photos are already in section photos'
+            : target === 'finding'
+            ? 'Photos already in this observation'
+            : 'Photos already attached',
+          'warning'
+        );
       }
       return;
     }
@@ -574,7 +646,8 @@ export function PhotoStrip({
             isDefect: false,
           });
         }
-        showDragNotification(`${files.length} photo${files.length > 1 ? 's' : ''} added!`, 'success');
+        const targetLabel = target === 'section' ? 'section photos' : target === 'finding' ? 'observation' : 'question';
+        showDragNotification(`${files.length} photo${files.length > 1 ? 's' : ''} added to ${targetLabel}!`, 'success');
       }
     }
   };
@@ -869,6 +942,7 @@ export function PhotoStrip({
                   fromTarget: target,
                   fromSectionId: inspectionSectionId,
                   fromResponseId: responseId,
+                  fromFindingId: findingId,
                   isDefect: p.isDefect,
                   photoUrl: urls[p.id],
                 });
@@ -883,6 +957,7 @@ export function PhotoStrip({
                     fromTarget: target,
                     fromInspectionSectionId: inspectionSectionId,
                     fromResponseId: responseId,
+                    fromFindingId: findingId,
                   })
                 );
                 e.dataTransfer.effectAllowed = 'copyMove';
@@ -1221,6 +1296,19 @@ export function PhotoStrip({
             }
             for (const photo of moveModalPhotos) {
               await handleAssignToQuestion(photo.id, targetQId, targetSecId, basePos++);
+            }
+            setMoveModalPhotos(null);
+            setSelectedPhotoIds(new Set());
+          }}
+          onMoveToFinding={async (targetFindingId, targetSecId) => {
+            const fPhotos = await db.photos
+              .where('inspectionId')
+              .equals(inspectionId)
+              .filter((p) => p.target === 'finding' && p.findingId === targetFindingId && !p.deletedAt)
+              .toArray();
+            let basePos = fPhotos.length;
+            for (const photo of moveModalPhotos) {
+              await handleAssignToFinding(photo.id, targetFindingId, targetSecId, basePos++);
             }
             setMoveModalPhotos(null);
             setSelectedPhotoIds(new Set());

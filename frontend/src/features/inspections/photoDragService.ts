@@ -16,6 +16,7 @@ export interface DraggedPhotoInfo {
   fromTarget: string;
   fromSectionId?: string;
   fromResponseId?: string;
+  fromFindingId?: string;
   isDefect?: boolean;
 }
 
@@ -189,10 +190,14 @@ export function endPhotoDrag() {
 
   // Clean up all drag highlight classes anywhere in the DOM
   if (typeof document !== 'undefined') {
-    document.querySelectorAll('.drag-over, .drag-same-question, .drag-same-section').forEach((el) => {
-      el.classList.remove('drag-over', 'drag-same-question', 'drag-same-section');
+    document.querySelectorAll('.drag-over, .drag-same-question, .drag-same-section, .drag-same-finding').forEach((el) => {
+      el.classList.remove('drag-over', 'drag-same-question', 'drag-same-section', 'drag-same-finding');
     });
   }
+
+  currentHoveredCard = null;
+  currentHoveredFindingCard = null;
+  currentHoveredSectionCard = null;
 
   for (const cb of dragEndCallbacks) {
     try {
@@ -223,14 +228,17 @@ export function isPhotoFromQuestion(responseId?: string | null): boolean {
 // ── Mobile Touch Drag Support ──
 export interface TouchDragHandlers {
   onDropToQuestion: (photoId: string, questionId: string, sectionId?: string, photoIds?: string[]) => Promise<void> | void;
+  onDropToFinding?: (photoId: string, findingId: string, sectionId?: string, photoIds?: string[]) => Promise<void> | void;
   onDropToSection?: (photoId: string, sectionId: string, photoIds?: string[]) => Promise<void> | void;
   onSameQuestionAttempt?: () => void;
+  onSameFindingAttempt?: () => void;
   onSameSectionAttempt?: () => void;
   onReleaseWithoutDrag?: () => void;
 }
 
 let activeGhostElement: HTMLElement | null = null;
 let currentHoveredCard: HTMLElement | null = null;
+let currentHoveredFindingCard: HTMLElement | null = null;
 let currentHoveredSectionCard: HTMLElement | null = null;
 
 function updateHoveredTargets(clientX: number, clientY: number) {
@@ -242,7 +250,8 @@ function updateHoveredTargets(clientX: number, clientY: number) {
 
   const elUnder = document.elementFromPoint(clientX, clientY);
   const card = elUnder?.closest('[data-question-card-id]') as HTMLElement | null;
-  const sectionCard = !card ? (elUnder?.closest('[data-section-photos-drop]') as HTMLElement | null) : null;
+  const findingCard = !card ? (elUnder?.closest('[data-finding-card-id]') as HTMLElement | null) : null;
+  const sectionCard = (!card && !findingCard) ? (elUnder?.closest('[data-section-photos-drop]') as HTMLElement | null) : null;
 
   // Question card hover
   if (card !== currentHoveredCard) {
@@ -266,6 +275,33 @@ function updateHoveredTargets(clientX: number, clientY: number) {
           activeGhostElement.classList.remove('same-question');
           const b = activeGhostElement.querySelector('.touch-drag-ghost-badge');
           if (b) b.textContent = count > 1 ? `Assign ${count} Photos` : 'Drop here';
+        }
+      }
+    }
+  }
+
+  // Finding / Observation card hover
+  if (findingCard !== currentHoveredFindingCard) {
+    if (currentHoveredFindingCard) {
+      currentHoveredFindingCard.classList.remove('drag-over', 'drag-same-question', 'drag-same-finding');
+    }
+    currentHoveredFindingCard = findingCard;
+    if (currentHoveredFindingCard) {
+      const cardFindingId = currentHoveredFindingCard.getAttribute('data-finding-card-id');
+      const isSame = !!activeDraggedPhoto.fromFindingId && cardFindingId === activeDraggedPhoto.fromFindingId;
+      if (isSame) {
+        currentHoveredFindingCard.classList.add('drag-same-question');
+        if (activeGhostElement) {
+          activeGhostElement.classList.add('same-question');
+          const b = activeGhostElement.querySelector('.touch-drag-ghost-badge');
+          if (b) b.textContent = 'Same Observation';
+        }
+      } else {
+        currentHoveredFindingCard.classList.add('drag-over');
+        if (activeGhostElement) {
+          activeGhostElement.classList.remove('same-question');
+          const b = activeGhostElement.querySelector('.touch-drag-ghost-badge');
+          if (b) b.textContent = count > 1 ? `To Observation (${count})` : 'To Observation';
         }
       }
     }
@@ -299,7 +335,7 @@ function updateHoveredTargets(clientX: number, clientY: number) {
     }
   }
 
-  if (!currentHoveredCard && !currentHoveredSectionCard && activeGhostElement) {
+  if (!currentHoveredCard && !currentHoveredFindingCard && !currentHoveredSectionCard && activeGhostElement) {
     activeGhostElement.classList.remove('same-question');
     const b = activeGhostElement.querySelector('.touch-drag-ghost-badge');
     if (b) {
@@ -412,6 +448,10 @@ export function startTouchPhotoDrag(
         currentHoveredCard.classList.remove('drag-over', 'drag-same-question');
         currentHoveredCard = null;
       }
+      if (currentHoveredFindingCard) {
+        currentHoveredFindingCard.classList.remove('drag-over', 'drag-same-question', 'drag-same-finding');
+        currentHoveredFindingCard = null;
+      }
       if (currentHoveredSectionCard) {
         currentHoveredSectionCard.classList.remove('drag-over', 'drag-same-section');
         currentHoveredSectionCard = null;
@@ -447,6 +487,34 @@ export function startTouchPhotoDrag(
           showDragNotification(c > 1 ? `${c} photos assigned to question` : 'Photo assigned to question', 'success');
         } catch (err) {
           console.error('Failed to drop photo via touch drag', err);
+        }
+      }
+    } else if (currentHoveredFindingCard) {
+      // Drop onto an Observation Finding Card
+      const fId = currentHoveredFindingCard.getAttribute('data-finding-card-id');
+      const isSame = !!info.fromFindingId && fId === info.fromFindingId;
+
+      currentHoveredFindingCard.classList.remove('drag-over', 'drag-same-question', 'drag-same-finding');
+      currentHoveredFindingCard = null;
+
+      if (isSame) {
+        try {
+          if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+        } catch {}
+        showDragNotification('Photo is already attached to this observation', 'warning');
+        if (handlers.onSameFindingAttempt) {
+          handlers.onSameFindingAttempt();
+        }
+      } else if (fId && handlers.onDropToFinding) {
+        try {
+          if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
+        } catch {}
+        try {
+          await handlers.onDropToFinding(info.photoId, fId, info.fromSectionId, info.photoIds);
+          const c = info.photoIds?.length || 1;
+          showDragNotification(c > 1 ? `${c} photos assigned to observation` : 'Photo assigned to observation', 'success');
+        } catch (err) {
+          console.error('Failed to drop photo to observation via touch drag', err);
         }
       }
     } else if (currentHoveredSectionCard) {
