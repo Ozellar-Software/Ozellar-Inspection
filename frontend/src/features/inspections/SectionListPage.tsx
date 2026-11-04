@@ -140,7 +140,6 @@ export function SectionListPage() {
       }
     } catch (err: any) {
       console.error('Failed to sync defect observations', err);
-      alert(`Error creating observations: ${err.message || 'Unknown error'}`);
     } finally {
       setIsSyncingDefects(false);
     }
@@ -224,6 +223,12 @@ export function SectionListPage() {
   const canAddSection = Boolean(me.data && can(me.data, 'inspection.addSection', { inspection: displayInspection }) && isEditable(displayInspection.status));
   const canDelete = Boolean(me.data && can(me.data, 'inspection.delete', { inspection: displayInspection }));
   const sectionsLocked = !isEditable(displayInspection.status);
+
+  // Automatically backfill observations for unlinked defect photos without requiring user UI clicks
+  useEffect(() => {
+    if (sectionsLocked || isSyncingDefects || unlinkedDefectPhotos.length === 0) return;
+    void handleSyncDefectObservations();
+  }, [unlinkedDefectPhotos.length, sectionsLocked, isSyncingDefects]);
 
   async function handleDownloadInspectionPhotos(filter: 'all' | 'defect') {
     try {
@@ -570,30 +575,6 @@ export function SectionListPage() {
               </div>
             </div>
             <div className="ipdb-actions">
-              {unlinkedDefectPhotos.length > 0 && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-sync-defects"
-                  onClick={() => void handleSyncDefectObservations()}
-                  disabled={isSyncingDefects || sectionsLocked}
-                  title="Create observation cards for all defect photos that do not have one yet"
-                  style={{
-                    borderColor: '#ef4444',
-                    color: '#b91c1c',
-                    background: '#fef2f2',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontWeight: 700,
-                    boxShadow: '0 1px 3px rgba(239, 68, 68, 0.2)',
-                  }}
-                >
-                  <WarningIcon style={{ width: 14, height: 14 }} />
-                  <span>
-                    {isSyncingDefects ? 'Creating Observations…' : `Create Observations for Defects (${unlinkedDefectPhotos.length})`}
-                  </span>
-                </button>
-              )}
               <button
                 type="button"
                 className="btn btn-primary btn-sm btn-preview-photos"

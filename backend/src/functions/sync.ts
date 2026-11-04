@@ -5,7 +5,7 @@ import {
 } from '@ozellar/shared';
 import { requireUser } from '../lib/auth.js';
 import { deleteBlob, photoBlobPath } from '../lib/blob.js';
-import { pool, tx, type Tx } from '../lib/db.js';
+import { pool, tx, type Tx, AUTO_BACKFILL_DEFECT_FINDINGS_SQL } from '../lib/db.js';
 import { camel, fail, handler, HttpError, jsonBody, snake } from '../lib/http.js';
 import {
   createNotifications,
@@ -50,6 +50,18 @@ export const syncPullHandler = handler(async (req): Promise<PullResponse> => {
     if (cursor > 100_000_000) cursor = 0;
     const limit = Math.min(Number(req.query.get('limit') ?? 500) || 500, 1000);
     const seesAll = user.role === 'admin' || user.role === 'director';
+
+    // Auto-backfill any unlinked defect photos on the server so findings are created automatically without any UI interaction
+    try {
+      const check = await pool.query(
+        `select 1 from photos where is_defect = true and finding_id is null and inspection_section_id is not null and deleted_at is null limit 1`
+      );
+      if (check.rows.length > 0) {
+        await pool.query(AUTO_BACKFILL_DEFECT_FINDINGS_SQL);
+      }
+    } catch (backfillErr) {
+      console.warn('[Sync] Auto-backfill defect findings notice:', (backfillErr as Error)?.message);
+    }
 
     // 1) One ordered list of (entity, id, row_version) across all tables → a single safe cursor.
     const parts = (Object.entries(ENTITIES) as [SyncEntity, EntityDef][]).map(([name, d]) => {
@@ -365,7 +377,14 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
       const pr = await c.query(`update photos set deleted_at = now() where inspection_section_id = $1 and deleted_at is null returning blob_path`, [m.entityId]);
       for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
     } else if (m.entity === 'findings') {
-      const pr = await c.query(`update photos set deleted_at = now() where finding_id = $1 and deleted_at is null returning blob_path`, [m.entityId]);
+      await c.query(
+        `update photos set finding_id = null, updated_at = now(), row_version = nextval('sync_seq') where finding_id = $1 and inspection_section_id is not null and deleted_at is null`,
+        [m.entityId]
+      );
+      const pr = await c.query(
+        `update photos set deleted_at = now() where finding_id = $1 and inspection_section_id is null and deleted_at is null returning blob_path`,
+        [m.entityId]
+      );
       for (const row of pr.rows) if (row.blob_path) void deleteBlob(row.blob_path as string);
     }
     return Number(r.rows[0].row_version);
@@ -436,6 +455,29 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
       }
     }
 
+    if (m.entity === 'photos') {
+      const pRow = (await c.query(`select id, inspection_id, inspection_section_id, is_defect, finding_id, description, created_by from photos where id = $1`, [m.entityId])).rows[0];
+      if (pRow && pRow.is_defect && !pRow.finding_id && pRow.inspection_section_id) {
+        const fId = crypto.randomUUID();
+        const posRes = await c.query(
+          `select coalesce(max(position), -1) + 1 as next_pos from findings where inspection_section_id = $1 and deleted_at is null`,
+          [pRow.inspection_section_id]
+        );
+        const nextPos = posRes.rows[0]?.next_pos ?? 0;
+        const fText = pRow.description ? String(pRow.description).trim() : 'Defect observation logged from visual evidence';
+        await c.query(
+          `insert into findings (id, inspection_id, inspection_section_id, text, answer, corrective_action, preventive_action, position, updated_by, updated_at, row_version)
+           values ($1, $2, $3, $4, 'no', '', '', $5, $6, now(), nextval('sync_seq'))`,
+          [fId, pRow.inspection_id, pRow.inspection_section_id, fText, nextPos, pRow.created_by || user.id]
+        );
+        const up = await c.query(
+          `update photos set finding_id = $1, updated_at = now(), row_version = nextval('sync_seq') where id = $2 returning row_version`,
+          [fId, m.entityId]
+        );
+        if (up.rows[0]) return Number(up.rows[0].row_version);
+      }
+    }
+
     return Number(r.rows[0].row_version);
   }
 
@@ -486,6 +528,29 @@ async function applyMutation(c: Tx, user: User, m: Mutation): Promise<number> {
       message: `${vesselName}: ${(d.inspectionType as string) || ''} inspection started by ${user.name || user.email}`,
       link: `/inspections/${m.entityId}`,
     });
+  }
+
+  if (m.entity === 'photos') {
+    const pRow = (await c.query(`select id, inspection_id, inspection_section_id, is_defect, finding_id, description, created_by from photos where id = $1`, [m.entityId])).rows[0];
+    if (pRow && pRow.is_defect && !pRow.finding_id && pRow.inspection_section_id) {
+      const fId = crypto.randomUUID();
+      const posRes = await c.query(
+        `select coalesce(max(position), -1) + 1 as next_pos from findings where inspection_section_id = $1 and deleted_at is null`,
+        [pRow.inspection_section_id]
+      );
+      const nextPos = posRes.rows[0]?.next_pos ?? 0;
+      const fText = pRow.description ? String(pRow.description).trim() : 'Defect observation logged from visual evidence';
+      await c.query(
+        `insert into findings (id, inspection_id, inspection_section_id, text, answer, corrective_action, preventive_action, position, updated_by, updated_at, row_version)
+         values ($1, $2, $3, $4, 'no', '', '', $5, $6, now(), nextval('sync_seq'))`,
+        [fId, pRow.inspection_id, pRow.inspection_section_id, fText, nextPos, pRow.created_by || user.id]
+      );
+      const up = await c.query(
+        `update photos set finding_id = $1, updated_at = now(), row_version = nextval('sync_seq') where id = $2 returning row_version`,
+        [fId, m.entityId]
+      );
+      if (up.rows[0]) return Number(up.rows[0].row_version);
+    }
   }
 
   return Number(r.rows[0].row_version);

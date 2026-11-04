@@ -161,11 +161,16 @@ export function SectionDetailPage() {
       }
     } catch (err: any) {
       console.error('Failed to sync section defect observations', err);
-      alert(`Error creating observations: ${err.message || 'Unknown error'}`);
     } finally {
       setIsSyncingDefects(false);
     }
   };
+
+  // Automatically backfill observations for unlinked defect photos without requiring user UI clicks
+  useEffect(() => {
+    if (locked || isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;
+    void handleSyncSectionDefects();
+  }, [unlinkedSectionDefects.length, locked, isSyncingDefects, sectionId]);
 
   function startRename() {
     setRenameValue(dispSection!.name);
@@ -493,48 +498,6 @@ export function SectionDetailPage() {
             ? 'Record any specific observations, deficiencies, or findings for this photo section.'
             : 'Anything not covered by the checklist above — describe it and mark Yes/No.'}
         </p>
-
-        {unlinkedSectionDefects.length > 0 && !locked && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '10px 14px',
-              background: '#fef2f2',
-              border: '1px solid #fecaca',
-              borderRadius: 8,
-              marginBottom: 12,
-              gap: 10,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#991b1b', fontWeight: 600 }}>
-              <WarningIcon style={{ width: 16, height: 16, color: '#dc2626' }} />
-              <span>
-                {unlinkedSectionDefects.length} defect photo{unlinkedSectionDefects.length > 1 ? 's' : ''} in this section {unlinkedSectionDefects.length > 1 ? 'do' : 'does'} not have an observation card yet.
-              </span>
-            </div>
-            <button
-              type="button"
-              className="btn btn-sm"
-              disabled={isSyncingDefects}
-              onClick={() => void handleSyncSectionDefects()}
-              style={{
-                fontSize: 12,
-                padding: '5px 12px',
-                fontWeight: 700,
-                background: '#dc2626',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 6,
-                cursor: 'pointer',
-              }}
-            >
-              {isSyncingDefects ? 'Creating…' : `Create Observation${unlinkedSectionDefects.length > 1 ? 's' : ''}`}
-            </button>
-          </div>
-        )}
 
         {findings.map((f, idx) => (
           <FindingCard
