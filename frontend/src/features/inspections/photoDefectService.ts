@@ -6,7 +6,8 @@ export interface DefectConfirmRequest {
   photo: Photo;
   finding: Finding;
   sectionName?: string;
-  onConfirm: () => Promise<void>;
+  onRemoveObservationAndSetNormal: () => Promise<void>;
+  onKeepObservationAndSetNormal: () => Promise<void>;
   onCancel: () => void;
 }
 
@@ -121,12 +122,13 @@ export async function togglePhotoDefectWithObservation(
             if (sec) secName = sec.name;
           }
 
-          // Request user confirmation popup
+          // Request user confirmation popup: Yes (remove observation) or No (observation will stay)
           options.onConfirmRequired({
             photo: currentPhoto,
             finding,
             sectionName: secName,
-            onConfirm: async () => {
+            // YES: Remove observation & set photo to normal
+            onRemoveObservationAndSetNormal: async () => {
               // Only delete finding if no other photos are attached
               if (otherPhotos.length === 0) {
                 await localDelete('findings', finding.id);
@@ -139,6 +141,17 @@ export async function togglePhotoDefectWithObservation(
               await localWrite('photos', photoId, patch);
               options?.onCompleted?.({ ...currentPhoto, ...patch }, true);
             },
+            // NO: Observation will stay! Only set photo to normal and unlink
+            onKeepObservationAndSetNormal: async () => {
+              const patch: Partial<Photo> = {
+                isDefect: false,
+                findingId: null,
+                target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
+              };
+              await localWrite('photos', photoId, patch);
+              options?.onCompleted?.({ ...currentPhoto, ...patch }, false);
+            },
+            // CANCEL: Keep as defect, do nothing
             onCancel: () => {
               // Cancelled, do nothing
             },
@@ -147,7 +160,7 @@ export async function togglePhotoDefectWithObservation(
           return false;
         }
 
-        // Observation is completely empty and has no other photos -> delete it automatically
+        // Observation is completely empty (no user details entered) and has no other photos -> delete it automatically
         if (otherPhotos.length === 0) {
           await localDelete('findings', finding.id);
         }

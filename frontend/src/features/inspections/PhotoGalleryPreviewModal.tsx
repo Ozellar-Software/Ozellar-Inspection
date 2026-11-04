@@ -722,10 +722,20 @@ export function PhotoGalleryPreviewModal({
           photo={confirmReq.photo}
           finding={confirmReq.finding}
           sectionName={confirmReq.sectionName}
-          onConfirm={async () => {
+          onRemoveObservationAndSetNormal={async () => {
             const req = confirmReq;
             setConfirmReq(null);
-            await req.onConfirm();
+            await req.onRemoveObservationAndSetNormal();
+            setLocalPhotos((prev) =>
+              prev.map((p) =>
+                p.id === req.photo.id ? { ...p, isDefect: false, findingId: null } : p
+              )
+            );
+          }}
+          onKeepObservationAndSetNormal={async () => {
+            const req = confirmReq;
+            setConfirmReq(null);
+            await req.onKeepObservationAndSetNormal();
             setLocalPhotos((prev) =>
               prev.map((p) =>
                 p.id === req.photo.id ? { ...p, isDefect: false, findingId: null } : p

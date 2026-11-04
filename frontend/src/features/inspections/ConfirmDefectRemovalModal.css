@@ -146,6 +146,34 @@
   padding: 14px 20px;
   background: #f8fafc;
   border-top: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+}
+
+.cdrm-cancel-btn {
+  color: #64748b !important;
+  border-color: #cbd5e1 !important;
+}
+
+.cdrm-cancel-btn:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.cdrm-keep-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #1e293b !important;
+  font-weight: 600 !important;
+  transition: all 0.16s ease !important;
+}
+
+.cdrm-keep-btn:hover {
+  background: #e2e8f0 !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
 }
 
 .cdrm-confirm-btn {
@@ -155,6 +183,7 @@
   background: #dc2626 !important;
   border-color: #dc2626 !important;
   color: #ffffff !important;
+  font-weight: 600 !important;
 }
 
 .cdrm-confirm-btn:hover {

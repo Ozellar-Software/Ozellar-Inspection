@@ -1,4 +1,4 @@
-import type { PhotoTarget } from '@ozellar/shared';
+import type { PhotoTarget, Finding } from '@ozellar/shared';
 import { api, BASE } from '../api/client';
 import { getToken } from '../auth/session';
 import { db } from './db';
@@ -96,10 +96,36 @@ export async function addPhoto(input: {
   const objUrl = URL.createObjectURL(blob);
   blobUrlCache.set(photoId, objUrl);
 
+  let findingId = input.findingId ?? null;
+  let target = input.target;
+
+  // When photo is marked as DEFECT and not yet linked to an observation, create an observation in the section!
+  if (input.isDefect && !findingId && input.inspectionSectionId) {
+    const existingFindings = await db.findings
+      .where('inspectionSectionId')
+      .equals(input.inspectionSectionId)
+      .toArray();
+
+    findingId = crypto.randomUUID();
+    const newFinding: Finding = {
+      id: findingId,
+      inspectionId: input.inspectionId || '',
+      inspectionSectionId: input.inspectionSectionId,
+      text: input.description ? String(input.description).trim() : '',
+      answer: 'no', // Observation / Defect
+      correctiveAction: '',
+      preventiveAction: '',
+      position: existingFindings.length,
+    };
+
+    await localWrite('findings', findingId, newFinding as unknown as Record<string, unknown>);
+    target = 'finding';
+  }
+
   await localWrite('photos', photoId, {
-    inspectionId: input.inspectionId ?? null, vesselId: input.vesselId ?? null, target: input.target,
+    inspectionId: input.inspectionId ?? null, vesselId: input.vesselId ?? null, target,
     inspectionSectionId: input.inspectionSectionId ?? null, responseId: input.responseId ?? null,
-    findingId: input.findingId ?? null, isDefect: !!input.isDefect, position: input.position,
+    findingId, isDefect: !!input.isDefect, position: input.position,
     contentType: 'image/jpeg', sizeBytes: blob.size,
     description: input.description ?? '',
   });

@@ -1378,13 +1378,20 @@ export function PhotoStrip({
           photo={confirmReq.photo}
           finding={confirmReq.finding}
           sectionName={confirmReq.sectionName}
-          onConfirm={async () => {
-            await confirmReq.onConfirm();
+          onRemoveObservationAndSetNormal={async () => {
+            const req = confirmReq;
             setConfirmReq(null);
+            await req.onRemoveObservationAndSetNormal();
+          }}
+          onKeepObservationAndSetNormal={async () => {
+            const req = confirmReq;
+            setConfirmReq(null);
+            await req.onKeepObservationAndSetNormal();
           }}
           onCancel={() => {
-            confirmReq.onCancel();
+            const req = confirmReq;
             setConfirmReq(null);
+            req.onCancel();
           }}
         />
       )}

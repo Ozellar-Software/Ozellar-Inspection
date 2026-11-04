@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Finding, Photo } from '@ozellar/shared';
-import { WarningIcon, XIcon, TrashIcon } from '../../icons';
+import { WarningIcon, XIcon, TrashIcon, CheckIcon } from '../../icons';
 import './ConfirmDefectRemovalModal.css';
 
 export interface ConfirmDefectRemovalModalProps {
@@ -8,7 +8,8 @@ export interface ConfirmDefectRemovalModalProps {
   photo?: Photo | null;
   finding?: Finding | null;
   sectionName?: string;
-  onConfirm: () => void;
+  onRemoveObservationAndSetNormal: () => void;
+  onKeepObservationAndSetNormal: () => void;
   onCancel: () => void;
 }
 
@@ -17,7 +18,8 @@ export function ConfirmDefectRemovalModal({
   photo,
   finding,
   sectionName,
-  onConfirm,
+  onRemoveObservationAndSetNormal,
+  onKeepObservationAndSetNormal,
   onCancel,
 }: ConfirmDefectRemovalModalProps) {
   if (!isOpen || !finding) return null;
@@ -30,9 +32,9 @@ export function ConfirmDefectRemovalModal({
             <WarningIcon style={{ width: 22, height: 22 }} />
           </div>
           <div className="cdrm-header-text">
-            <h3 className="cdrm-title">Remove Associated Observation?</h3>
+            <h3 className="cdrm-title">Observation Details Exist</h3>
             <p className="cdrm-subtitle">
-              Changing this photograph from Defect to Normal will affect existing observation data.
+              Do you want to remove the associated observation as well?
             </p>
           </div>
           <button type="button" className="cdrm-close-btn" onClick={onCancel} title="Cancel">
@@ -42,8 +44,8 @@ export function ConfirmDefectRemovalModal({
 
         <div className="cdrm-body">
           <p className="cdrm-warning-text">
-            This photo is linked to an active defect observation in{' '}
-            <strong>{sectionName || 'this section'}</strong>.
+            This photo is linked to an active observation in{' '}
+            <strong>{sectionName || 'this section'}</strong> which has entered details:
           </p>
 
           <div className="cdrm-finding-preview">
@@ -68,22 +70,31 @@ export function ConfirmDefectRemovalModal({
           </div>
 
           <p className="cdrm-note">
-            Proceeding will <strong>delete this observation</strong> and mark the photograph as
-            Satisfactory/Normal.
+            Changing this photo to Normal: choose <strong>Yes</strong> to delete this observation, or <strong>No</strong> to keep the observation in the report without this photo.
           </p>
         </div>
 
         <div className="cdrm-footer">
-          <button type="button" className="btn btn-outline btn-sm" onClick={onCancel}>
-            Keep as Defect (Cancel)
+          <button type="button" className="btn btn-outline btn-sm cdrm-cancel-btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline btn-sm cdrm-keep-btn"
+            onClick={onKeepObservationAndSetNormal}
+            title="Mark photo as Normal and keep this observation in the section"
+          >
+            <CheckIcon style={{ width: 14, height: 14 }} />
+            <span>No, Keep Observation</span>
           </button>
           <button
             type="button"
             className="btn btn-danger btn-sm cdrm-confirm-btn"
-            onClick={onConfirm}
+            onClick={onRemoveObservationAndSetNormal}
+            title="Mark photo as Normal and delete this observation"
           >
             <TrashIcon style={{ width: 14, height: 14 }} />
-            <span>Remove Observation & Set Normal</span>
+            <span>Yes, Remove Observation</span>
           </button>
         </div>
       </div>

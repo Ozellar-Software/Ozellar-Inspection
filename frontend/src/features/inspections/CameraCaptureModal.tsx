@@ -9,6 +9,7 @@ import {
 } from '../../icons';
 import { db } from '../../offline/db';
 import { localWrite, localDelete } from '../../offline/outbox';
+import { togglePhotoDefectWithObservation } from './photoDefectService';
 import './CameraCaptureModal.css';
 
 export interface CapturedPhoto {
@@ -341,7 +342,7 @@ export function CameraCaptureModal({
     }, 350);
   };
 
-  // Toggle defect on captured photo (updates DB directly)
+  // Toggle defect on captured photo (updates DB directly and syncs observation)
   const toggleDefect = async (id: string) => {
     const target = capturedPhotos.find((p) => p.id === id);
     if (!target) return;
@@ -350,7 +351,12 @@ export function CameraCaptureModal({
       prev.map((p) => (p.id === id ? { ...p, isDefect: nextDefect } : p))
     );
     try {
-      await localWrite('photos', id, { isDefect: nextDefect });
+      const existing = await db.photos.get(id);
+      if (existing) {
+        await togglePhotoDefectWithObservation(existing, nextDefect);
+      } else {
+        await localWrite('photos', id, { isDefect: nextDefect });
+      }
     } catch (err) {
       console.error('Failed to update photo defect status:', err);
     }
@@ -368,6 +374,17 @@ export function CameraCaptureModal({
       return remaining;
     });
     try {
+      const pRow = await db.photos.get(id);
+      if (pRow?.findingId) {
+        const others = await db.photos
+          .where('findingId')
+          .equals(pRow.findingId)
+          .filter((p) => p.id !== id && !p.deletedAt)
+          .toArray();
+        if (others.length === 0) {
+          await localDelete('findings', pRow.findingId);
+        }
+      }
       await localDelete('photos', id);
     } catch (err) {
       console.error('Failed to delete photo:', err);
