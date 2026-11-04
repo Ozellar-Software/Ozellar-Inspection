@@ -88,45 +88,82 @@ interface LoadedImage {
   h: number;
 }
 
+export interface PdfProgressEvent {
+  loaded: number;
+  total: number;
+  stage: string;
+  percent: number;
+}
+
+const sessionImageCache = new Map<string, Promise<LoadedImage | null>>();
+
+export function clearPdfImageCache() {
+  sessionImageCache.clear();
+}
+
 async function loadImage(photoId?: string | null): Promise<LoadedImage | null> {
   if (!photoId) return null;
-  try {
-    const src = await photoSrc(photoId);
-    if (!src) return null;
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.crossOrigin = 'anonymous';
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error('image load failed'));
-      el.src = src;
-    });
-
-    if (!img.naturalWidth || !img.naturalHeight) return null;
-
-    // Rescale to maximum 1200px to ensure fast PDF build and crisp 300DPI clarity
-    const MAX_DIM = 1200;
-    let w = img.naturalWidth;
-    let h = img.naturalHeight;
-    if (w > MAX_DIM || h > MAX_DIM) {
-      if (w > h) {
-        h = Math.round((h * MAX_DIM) / w);
-        w = MAX_DIM;
-      } else {
-        w = Math.round((w * MAX_DIM) / h);
-        h = MAX_DIM;
-      }
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.drawImage(img, 0, 0, w, h);
-    return { dataUrl: canvas.toDataURL('image/jpeg', 0.85), w, h };
-  } catch {
-    return null;
+  if (sessionImageCache.has(photoId)) {
+    return sessionImageCache.get(photoId)!;
   }
+
+  const p = (async (): Promise<LoadedImage | null> => {
+    try {
+      const src = await photoSrc(photoId);
+      if (!src) return null;
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = src;
+
+      if (typeof (img as any).decode === 'function') {
+        try {
+          await (img as any).decode();
+        } catch {
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('image decode failed'));
+          });
+        }
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('image load failed'));
+        });
+      }
+
+      const nw = img.naturalWidth || img.width;
+      const nh = img.naturalHeight || img.height;
+      if (!nw || !nh) return null;
+
+      // 640px gives crisp 194 DPI inside an 84mm card (retina sharp, 4x faster canvas encoding & 75% lower RAM)
+      const MAX_DIM = 640;
+      let w = nw;
+      let h = nh;
+      if (w > MAX_DIM || h > MAX_DIM) {
+        if (w > h) {
+          h = Math.round((h * MAX_DIM) / w);
+          w = MAX_DIM;
+        } else {
+          w = Math.round((w * MAX_DIM) / h);
+          h = MAX_DIM;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx) return null;
+      ctx.drawImage(img, 0, 0, w, h);
+      return { dataUrl: canvas.toDataURL('image/jpeg', 0.78), w, h };
+    } catch {
+      return null;
+    }
+  })();
+
+  sessionImageCache.set(photoId, p);
+  return p;
 }
 
 // Precise Image Cropper to guarantee exact aspect ratio without PDF overflow
@@ -302,11 +339,89 @@ class Doc {
 // ---------------------------------------------------------------------------
 // Main PDF Export Function
 // ---------------------------------------------------------------------------
-export async function generateInspectionPdf(data: ReportData & { reportType?: 'full' | 'photo_only' }): Promise<Blob> {
+export async function generateInspectionPdf(data: ReportData & {
+  reportType?: 'full' | 'photo_only';
+  onProgress?: (progress: PdfProgressEvent) => void;
+}): Promise<Blob> {
   const { inspection, vessel, sections = [], observations = [], stats, approvalHistory = [] } = data;
   const isPhotoOnly = data.reportType === 'photo_only';
   const photoSectionsOnly = sections.filter((s) => !!s.section.photoOnly);
+  const neededSections = isPhotoOnly ? photoSectionsOnly : sections;
   const doc = new Doc();
+
+  // 1. Gather all needed photo IDs to prefetch concurrently
+  const allNeededPhotoIds: string[] = [];
+  if (inspection.coverPhotoId) allNeededPhotoIds.push(inspection.coverPhotoId);
+
+  for (const s of neededSections) {
+    if (s.sectionPhotoIds) allNeededPhotoIds.push(...s.sectionPhotoIds);
+    for (const q of s.questions) {
+      if (q.photoIds) allNeededPhotoIds.push(...q.photoIds);
+    }
+    for (const f of s.findings) {
+      if (f.photoIds) allNeededPhotoIds.push(...f.photoIds);
+    }
+  }
+
+  const neededPhotoSecIdSet = new Set(photoSectionsOnly.map((s) => s.section.id));
+  const neededObservations = isPhotoOnly
+    ? observations.filter((obs) => neededPhotoSecIdSet.has(obs.sectionId))
+    : observations;
+
+  if (neededObservations.length > 0) {
+    neededObservations.forEach((obs) => {
+      if (obs.photoIds) allNeededPhotoIds.push(...obs.photoIds);
+    });
+    (data.photos || []).forEach((p) => {
+      if (p.isDefect) allNeededPhotoIds.push(p.id);
+    });
+  }
+
+  const uniquePhotoIds = Array.from(new Set(allNeededPhotoIds.filter(Boolean)));
+  const totalUniquePhotos = uniquePhotoIds.length;
+
+  if (data.onProgress && totalUniquePhotos > 0) {
+    data.onProgress({
+      loaded: 0,
+      total: totalUniquePhotos,
+      stage: 'Preparing photographic evidence...',
+      percent: 5,
+    });
+  }
+
+  // 2. High-speed concurrent pre-warmer (processes 8 images in parallel)
+  if (uniquePhotoIds.length > 0) {
+    let completed = 0;
+    const queue = [...uniquePhotoIds];
+    const CONCURRENCY = 8;
+    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const id = queue.shift();
+        if (!id) break;
+        await loadImage(id);
+        completed++;
+        if (data.onProgress && (completed % 4 === 0 || completed === totalUniquePhotos)) {
+          const percent = 5 + Math.round((completed / totalUniquePhotos) * 85);
+          data.onProgress({
+            loaded: completed,
+            total: totalUniquePhotos,
+            stage: `Processing image ${completed} of ${totalUniquePhotos}...`,
+            percent,
+          });
+        }
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  if (data.onProgress) {
+    data.onProgress({
+      loaded: totalUniquePhotos,
+      total: totalUniquePhotos,
+      stage: 'Rendering report document pages...',
+      percent: 92,
+    });
+  }
 
   const photoMap = new Map((data.photos ?? []).map((p) => [p.id, p]));
   const getPhotoDoc = async (id?: string | null) => {
@@ -1853,6 +1968,15 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
     doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
     doc.setTextColor(NAVY);
     doc.pdf.text(`Page ${pNum} of ${totalPages}`, PAGE_W - MARGIN_RIGHT, footY + 1, { align: 'right' });
+  }
+
+  if (data.onProgress) {
+    data.onProgress({
+      loaded: totalUniquePhotos,
+      total: totalUniquePhotos,
+      stage: 'Finalizing PDF document...',
+      percent: 100,
+    });
   }
 
   return doc.pdf.output('blob');

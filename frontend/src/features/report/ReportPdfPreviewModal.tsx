@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { EyeIcon, XIcon, DownloadIcon, FileIcon } from '../../icons';
 import { loadReportData } from './reportData';
-import { generateInspectionPdf } from './pdf';
+import { generateInspectionPdf, type PdfProgressEvent } from './pdf';
 import './ReportPdfPreviewModal.css';
 
 export interface ReportPdfPreviewModalProps {
@@ -23,6 +23,7 @@ export function ReportPdfPreviewModal({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progressInfo, setProgressInfo] = useState<PdfProgressEvent | null>(null);
 
   // Generate PDF whenever modal opens or report type changes
   useEffect(() => {
@@ -34,6 +35,7 @@ export function ReportPdfPreviewModal({
     async function buildPdf() {
       setIsGenerating(true);
       setError(null);
+      setProgressInfo(null);
       try {
         const rep = await loadReportData(inspectionId);
         if (!rep) {
@@ -43,6 +45,9 @@ export function ReportPdfPreviewModal({
         const blob = await generateInspectionPdf({
           ...rep,
           reportType,
+          onProgress: (p) => {
+            if (!isCancelled) setProgressInfo(p);
+          },
         });
 
         if (!isCancelled) {
@@ -183,10 +188,23 @@ export function ReportPdfPreviewModal({
           {isGenerating ? (
             <div className="rppm-loading">
               <div className="rppm-spinner" />
-              <h4 className="rppm-loading-title">Generating High-Resolution Report PDF…</h4>
+              <h4 className="rppm-loading-title">Generating Report PDF…</h4>
               <p className="rppm-loading-sub">
-                Compiling photographic evidence, surveyor remarks, and statutory particulars.
+                {progressInfo?.stage || 'Compiling photographic evidence, surveyor remarks, and statutory particulars.'}
               </p>
+              {progressInfo && progressInfo.total > 0 && (
+                <div className="rppm-progress-wrapper">
+                  <div className="rppm-progress-bar-container">
+                    <div
+                      className="rppm-progress-bar-fill"
+                      style={{ width: `${progressInfo.percent}%` }}
+                    />
+                  </div>
+                  <span className="rppm-progress-text">
+                    {progressInfo.loaded} of {progressInfo.total} photos processed ({progressInfo.percent}%)
+                  </span>
+                </div>
+              )}
             </div>
           ) : error ? (
             <div className="rppm-error">
