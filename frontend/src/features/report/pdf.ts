@@ -1005,15 +1005,19 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
           const totalTextH = 12 + textH + (caH ? caH + 2 : 0) + (paH ? paH + 2 : 0);
 
           const photoIds = fRow.photoIds || [];
-          const singlePhoto = photoIds.length === 1;
-          const photoRows = Math.ceil(photoIds.length / 2);
+          const firstBatchObsPhotos = photoIds.slice(0, 4);
+          const remainingObsPhotos = photoIds.slice(4);
+
+          const singlePhoto = firstBatchObsPhotos.length === 1;
+          const photoRows = Math.ceil(firstBatchObsPhotos.length / 2);
           const singlePH = 92;
-          const gridPH = 85;
+          const gridPH = 92;
+          const obsGapY = 5;
           let photoBlockH = 0;
           if (singlePhoto) {
             photoBlockH = singlePH + 8;
           } else if (photoRows > 0) {
-            photoBlockH = photoRows * (gridPH + 6) + 4;
+            photoBlockH = photoRows * (gridPH + obsGapY) + 4;
           }
 
           const cardH = totalTextH + photoBlockH + 4;
@@ -1054,45 +1058,97 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
             curY += paH + 2;
           }
 
-          if (photoIds.length > 0) {
+          if (firstBatchObsPhotos.length > 0) {
             curY += 2;
             if (singlePhoto) {
               const pW = 100;
               const pH = singlePH;
               const pX = MARGIN_LEFT + (CONTENT_W - pW) / 2;
-              const id1 = photoIds[0];
+              const id1 = firstBatchObsPhotos[0];
               const [img1, photoDoc1] = await Promise.all([loadImage(id1), getPhotoDoc(id1)]);
-              if (img1) {
+              if (id1) {
                 drawPhotoCard(pX, curY, pW, pH, img1, photoDoc1, `PHOTO #1 • OBS ${fIdx + 1}`);
               }
               curY += pH + 4;
             } else {
               const pW = (CONTENT_W - 22) / 2;
               const pH = gridPH;
-              for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
-                const id1 = photoIds[pIdx];
-                const id2 = photoIds[pIdx + 1];
+              for (let pIdx = 0; pIdx < firstBatchObsPhotos.length; pIdx += 2) {
+                const id1 = firstBatchObsPhotos[pIdx];
+                const id2 = pIdx + 1 < firstBatchObsPhotos.length ? firstBatchObsPhotos[pIdx + 1] : undefined;
 
                 const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
                   loadImage(id1),
                   id2 ? loadImage(id2) : Promise.resolve(null),
                   getPhotoDoc(id1),
-                  getPhotoDoc(id2),
+                  id2 ? getPhotoDoc(id2) : Promise.resolve(null),
                 ]);
 
-                if (img1) {
+                if (id1) {
                   drawPhotoCard(MARGIN_LEFT + 8, curY, pW, pH, img1, photoDoc1, `PHOTO #${pIdx + 1} • OBS ${fIdx + 1}`);
                 }
-                if (img2) {
+                if (id2) {
                   drawPhotoCard(MARGIN_LEFT + 8 + pW + 6, curY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2} • OBS ${fIdx + 1}`);
                 }
 
-                curY += pH + 6;
+                curY += pH + obsGapY;
               }
             }
           }
 
           doc.y += cardH + 4;
+
+          // Continuation for any additional photos beyond 4
+          if (remainingObsPhotos.length > 0) {
+            for (let remIdx = 0; remIdx < remainingObsPhotos.length; remIdx += 4) {
+              const chunk = remainingObsPhotos.slice(remIdx, remIdx + 4);
+              const chunkRows = Math.ceil(chunk.length / 2);
+              const chunkH = 14 + chunkRows * (gridPH + obsGapY) + 4;
+
+              doc.newPage();
+              doc.sectionHeader(
+                `Section ${sIdx + 1}: ${s.section.name}`,
+                s.section.zone || 'General',
+                `OBS ${fIdx + 1} Photographs (Cont.)`
+              );
+
+              const contY = doc.y;
+              doc.roundedBox(MARGIN_LEFT, contY, CONTENT_W, chunkH, WHITE, BORDER, 2);
+              doc.setFill([239, 68, 68]);
+              doc.pdf.rect(MARGIN_LEFT, contY, 2.5, chunkH, 'F');
+
+              doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
+              doc.setTextColor([185, 28, 28]);
+              doc.pdf.text(`OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()} (Photographs Cont.)`, MARGIN_LEFT + 8, contY + 5.5);
+
+              let chunkY = contY + 12;
+              const pW = (CONTENT_W - 22) / 2;
+              for (let cIdx = 0; cIdx < chunk.length; cIdx += 2) {
+                const pNum1 = 4 + remIdx + cIdx + 1;
+                const pNum2 = pNum1 + 1;
+                const cid1 = chunk[cIdx];
+                const cid2 = cIdx + 1 < chunk.length ? chunk[cIdx + 1] : undefined;
+
+                const [cImg1, cImg2, cPhotoDoc1, cPhotoDoc2] = await Promise.all([
+                  loadImage(cid1),
+                  cid2 ? loadImage(cid2) : Promise.resolve(null),
+                  getPhotoDoc(cid1),
+                  cid2 ? getPhotoDoc(cid2) : Promise.resolve(null),
+                ]);
+
+                if (cid1) {
+                  drawPhotoCard(MARGIN_LEFT + 8, chunkY, pW, gridPH, cImg1, cPhotoDoc1, `PHOTO #${pNum1} • OBS ${fIdx + 1}`);
+                }
+                if (cid2) {
+                  drawPhotoCard(MARGIN_LEFT + 8 + pW + 6, chunkY, pW, gridPH, cImg2, cPhotoDoc2, `PHOTO #${pNum2} • OBS ${fIdx + 1}`);
+                }
+
+                chunkY += gridPH + obsGapY;
+              }
+
+              doc.y += chunkH + 4;
+            }
+          }
         }
       }
 
@@ -1130,31 +1186,51 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
       // Ensure the question text never overlaps the tags
       const maxTextW = CONTENT_W - refW - badgeW - 20;
       const qLines = doc.pdf.splitTextToSize(question.text, maxTextW) as string[];
-      let cardH = 12 + qLines.length * 4.2;
+      let headerTextH = 12 + qLines.length * 4.2;
 
       if (response?.remarks?.trim()) {
         const remLines = doc.pdf.splitTextToSize(`Remarks: ${response.remarks}`, CONTENT_W - 16) as string[];
-        cardH += remLines.length * 4 + 6;
+        headerTextH += remLines.length * 4 + 6;
       }
 
+      let defBoxH = 0;
+      let caText = '';
+      let paText = '';
+      let caH = 0;
+      let paH = 0;
       if (state === 'bad') {
-        cardH += 26; // Deficiency callout block
+        caText = response?.correctiveAction ? `**Corrective:** ${response.correctiveAction}` : '**Corrective:** Immediate rectification required';
+        paText = response?.preventiveAction ? `*Preventive:* ${response.preventiveAction}` : '*Preventive:* Review preventive maintenance routine';
+        caH = measureRichText(doc.pdf, caText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
+        paH = measureRichText(doc.pdf, paText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
+        defBoxH = Math.max(caH + paH + 13, 22);
+        headerTextH += defBoxH + 4;
       }
 
-      const photoRows = Math.ceil(photoIds.length / 2);
+      // Maximum 4 photos per page inside question card; remainder paginated onto continuation pages
+      const firstBatchPhotos = photoIds.slice(0, 4);
+      const remainingPhotos = photoIds.slice(4);
+
       const qSinglePH = 92;
-      const qGridPH = 85;
-      if (photoIds.length === 1) {
-        cardH += qSinglePH + 8;
-      } else if (photoRows > 0) {
-        cardH += photoRows * (qGridPH + 6) + 4;
+      const qGridPH = 92;
+      const pW = (CONTENT_W - 18) / 2; // 82 mm
+      const gapY = 5;
+
+      const firstPhotoRows = Math.ceil(firstBatchPhotos.length / 2);
+      let firstPhotoH = 0;
+      if (firstBatchPhotos.length === 1) {
+        firstPhotoH = qSinglePH + 8;
+      } else if (firstPhotoRows > 0) {
+        firstPhotoH = firstPhotoRows * (qGridPH + gapY) + 4;
       }
 
-      // Ensure whole card fits or start fresh page
-      doc.ensure(cardH + 4);
+      const mainCardH = headerTextH + firstPhotoH + 2;
+
+      // Ensure main card fits or start fresh page
+      doc.ensure(mainCardH + 4);
 
       const cardY = doc.y;
-      doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, BORDER, 2.5);
+      doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, mainCardH, WHITE, BORDER, 2.5);
 
       // Top Question Header
       // Ref Pill: e.g. [ HULL-01 ]
@@ -1194,12 +1270,6 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
 
       // Deficiency Callout Box (if bad)
       if (state === 'bad') {
-        const caText = response?.correctiveAction ? `**Corrective:** ${response.correctiveAction}` : '**Corrective:** Immediate rectification required';
-        const paText = response?.preventiveAction ? `*Preventive:* ${response.preventiveAction}` : '*Preventive:* Review preventive maintenance routine';
-        const caH = measureRichText(doc.pdf, caText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
-        const paH = measureRichText(doc.pdf, paText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
-        const defBoxH = Math.max(caH + paH + 13, 22);
-
         doc.roundedBox(MARGIN_LEFT + 6, innerY, CONTENT_W - 12, defBoxH, [254, 242, 242], [254, 202, 202], 2);
         doc.setFill([239, 68, 68]);
         doc.pdf.rect(MARGIN_LEFT + 6, innerY, 2.5, defBoxH, 'F');
@@ -1216,63 +1286,127 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         innerY += defBoxH + 4;
       }
 
-      // Question Photos (High Visibility, Big Scale)
-      if (photoIds.length > 0) {
-        if (photoIds.length === 1) {
-          const pW = 100;
-          const pH = qSinglePH;
-          const pX = MARGIN_LEFT + (CONTENT_W - pW) / 2;
-          const id1 = photoIds[0];
+      // First batch of photos (strictly up to 4 photos on main question card)
+      if (firstBatchPhotos.length > 0) {
+        if (firstBatchPhotos.length === 1) {
+          const sW = 100;
+          const sH = qSinglePH;
+          const sX = MARGIN_LEFT + (CONTENT_W - sW) / 2;
+          const id1 = firstBatchPhotos[0];
           const [img1, qPhotoDoc1] = await Promise.all([
             loadImage(id1),
             getPhotoDoc(id1),
           ]);
-          if (img1) {
-            drawPhotoCard(pX, innerY, pW, pH, img1, qPhotoDoc1, `PHOTO #1 • ${question.ref}`);
+          if (id1) {
+            drawPhotoCard(sX, innerY, sW, sH, img1, qPhotoDoc1, `PHOTO #1 • ${question.ref}`);
           }
-          innerY += pH + 4;
+          innerY += sH + 4;
         } else {
-          const pW = (CONTENT_W - 18) / 2;
-          const pH = qGridPH;
-          for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
-            const id1 = photoIds[pIdx];
-            const id2 = photoIds[pIdx + 1];
+          for (let pIdx = 0; pIdx < firstBatchPhotos.length; pIdx += 2) {
+            const id1 = firstBatchPhotos[pIdx];
+            const id2 = pIdx + 1 < firstBatchPhotos.length ? firstBatchPhotos[pIdx + 1] : undefined;
 
             const [img1, img2, qPhotoDoc1, qPhotoDoc2] = await Promise.all([
               loadImage(id1),
               id2 ? loadImage(id2) : Promise.resolve(null),
               getPhotoDoc(id1),
-              getPhotoDoc(id2),
+              id2 ? getPhotoDoc(id2) : Promise.resolve(null),
             ]);
 
-            if (img1) {
-              drawPhotoCard(MARGIN_LEFT + 6, innerY, pW, pH, img1, qPhotoDoc1, `PHOTO #${pIdx + 1} • ${question.ref}`);
+            if (id1) {
+              drawPhotoCard(MARGIN_LEFT + 6, innerY, pW, qGridPH, img1, qPhotoDoc1, `PHOTO #${pIdx + 1} • ${question.ref}`);
             }
-            if (img2) {
-              drawPhotoCard(MARGIN_LEFT + 6 + pW + 6, innerY, pW, pH, img2, qPhotoDoc2, `PHOTO #${pIdx + 2} • ${question.ref}`);
+            if (id2) {
+              drawPhotoCard(MARGIN_LEFT + 6 + pW + 6, innerY, pW, qGridPH, img2, qPhotoDoc2, `PHOTO #${pIdx + 2} • ${question.ref}`);
             }
 
-            innerY += pH + 6;
+            innerY += qGridPH + gapY;
           }
         }
       }
 
-      doc.y += cardH + 4;
+      doc.y += mainCardH + 4;
+
+      // If question has more than 4 photos, paginate them onto continuation pages (max 4 per page)
+      if (remainingPhotos.length > 0) {
+        for (let remIdx = 0; remIdx < remainingPhotos.length; remIdx += 4) {
+          const chunk = remainingPhotos.slice(remIdx, remIdx + 4);
+          const chunkRows = Math.ceil(chunk.length / 2);
+          const chunkPhotosH = chunkRows * (qGridPH + gapY);
+          const contCardH = 14 + chunkPhotosH + 4;
+
+          doc.newPage();
+          doc.sectionHeader(
+            `Section ${sIdx + 1}: ${s.section.name}`,
+            s.section.zone,
+            `${question.ref} Photographs (Cont.)`
+          );
+
+          const contCardY = doc.y;
+          doc.roundedBox(MARGIN_LEFT, contCardY, CONTENT_W, contCardH, WHITE, BORDER, 2.5);
+
+          // Continuation Header
+          doc.setFill(NAVY);
+          doc.pdf.roundedRect(MARGIN_LEFT + 6, contCardY + 4, refW, 5.5, 1.2, 1.2, 'F');
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+          doc.setTextColor(WHITE);
+          doc.pdf.text(question.ref, MARGIN_LEFT + 10, contCardY + 7.8);
+
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+          doc.setTextColor(TEXT_DARK);
+          const contTitle = `${question.text.slice(0, 60)}... (Photographs Cont.)`;
+          doc.pdf.text(contTitle, MARGIN_LEFT + refW + 10, contCardY + 7.8);
+
+          doc.statusBadge(state, badgeX, contCardY + 4);
+
+          let chunkY = contCardY + 12;
+          for (let cIdx = 0; cIdx < chunk.length; cIdx += 2) {
+            const photoNum1 = 4 + remIdx + cIdx + 1;
+            const photoNum2 = photoNum1 + 1;
+            const cid1 = chunk[cIdx];
+            const cid2 = cIdx + 1 < chunk.length ? chunk[cIdx + 1] : undefined;
+
+            const [cImg1, cImg2, cPhotoDoc1, cPhotoDoc2] = await Promise.all([
+              loadImage(cid1),
+              cid2 ? loadImage(cid2) : Promise.resolve(null),
+              getPhotoDoc(cid1),
+              cid2 ? getPhotoDoc(cid2) : Promise.resolve(null),
+            ]);
+
+            if (cid1) {
+              drawPhotoCard(MARGIN_LEFT + 6, chunkY, pW, qGridPH, cImg1, cPhotoDoc1, `PHOTO #${photoNum1} • ${question.ref}`);
+            }
+            if (cid2) {
+              drawPhotoCard(MARGIN_LEFT + 6 + pW + 6, chunkY, pW, qGridPH, cImg2, cPhotoDoc2, `PHOTO #${photoNum2} • ${question.ref}`);
+            }
+
+            chunkY += qGridPH + gapY;
+          }
+
+          doc.y += contCardH + 4;
+        }
+      }
     }
 
     // Section Observations (if any)
     for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
       const fRow = s.findings[fIdx];
       const photoIds = fRow.photoIds || [];
+      const firstBatchObsPhotos = photoIds.slice(0, 4);
+      const remainingObsPhotos = photoIds.slice(4);
+
       const obsSinglePH = 92;
-      const obsGridPH = 85;
-      const photoRows = Math.ceil(photoIds.length / 2);
+      const obsGridPH = 92;
+      const obsPW = (CONTENT_W - 22) / 2;
+      const obsGapY = 5;
+
+      const firstPhotoRows = Math.ceil(firstBatchObsPhotos.length / 2);
       let cardH = 28;
       if (fRow.finding.correctiveAction) cardH += 6;
-      if (photoIds.length === 1) {
+      if (firstBatchObsPhotos.length === 1) {
         cardH += obsSinglePH + 8;
-      } else if (photoRows > 0) {
-        cardH += photoRows * (obsGridPH + 6) + 4;
+      } else if (firstPhotoRows > 0) {
+        cardH += firstPhotoRows * (obsGridPH + obsGapY) + 4;
       }
 
       doc.ensure(cardH + 4);
@@ -1300,45 +1434,93 @@ export async function generateInspectionPdf(data: ReportData & { reportType?: 'f
         curY += 6;
       }
 
-      if (photoIds.length > 0) {
+      if (firstBatchObsPhotos.length > 0) {
         curY += 2;
-        if (photoIds.length === 1) {
+        if (firstBatchObsPhotos.length === 1) {
           const pW = 100;
           const pH = obsSinglePH;
           const pX = MARGIN_LEFT + (CONTENT_W - pW) / 2;
-          const id1 = photoIds[0];
+          const id1 = firstBatchObsPhotos[0];
           const [img1, photoDoc1] = await Promise.all([loadImage(id1), getPhotoDoc(id1)]);
-          if (img1) {
+          if (id1) {
             drawPhotoCard(pX, curY, pW, pH, img1, photoDoc1, `PHOTO #1 • OBS ${fIdx + 1}`);
           }
           curY += pH + 4;
         } else {
-          const pW = (CONTENT_W - 22) / 2;
-          const pH = obsGridPH;
-          for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
-            const id1 = photoIds[pIdx];
-            const id2 = photoIds[pIdx + 1];
+          for (let pIdx = 0; pIdx < firstBatchObsPhotos.length; pIdx += 2) {
+            const id1 = firstBatchObsPhotos[pIdx];
+            const id2 = pIdx + 1 < firstBatchObsPhotos.length ? firstBatchObsPhotos[pIdx + 1] : undefined;
 
             const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
               loadImage(id1),
               id2 ? loadImage(id2) : Promise.resolve(null),
               getPhotoDoc(id1),
-              getPhotoDoc(id2),
+              id2 ? getPhotoDoc(id2) : Promise.resolve(null),
             ]);
 
-            if (img1) {
-              drawPhotoCard(MARGIN_LEFT + 8, curY, pW, pH, img1, photoDoc1, `PHOTO #${pIdx + 1} • OBS ${fIdx + 1}`);
+            if (id1) {
+              drawPhotoCard(MARGIN_LEFT + 8, curY, obsPW, obsGridPH, img1, photoDoc1, `PHOTO #${pIdx + 1} • OBS ${fIdx + 1}`);
             }
-            if (img2) {
-              drawPhotoCard(MARGIN_LEFT + 8 + pW + 6, curY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2} • OBS ${fIdx + 1}`);
+            if (id2) {
+              drawPhotoCard(MARGIN_LEFT + 8 + obsPW + 6, curY, obsPW, obsGridPH, img2, photoDoc2, `PHOTO #${pIdx + 2} • OBS ${fIdx + 1}`);
             }
 
-            curY += pH + 6;
+            curY += obsGridPH + obsGapY;
           }
         }
       }
 
       doc.y += cardH + 4;
+
+      // Continuation for any additional photos beyond 4
+      if (remainingObsPhotos.length > 0) {
+        for (let remIdx = 0; remIdx < remainingObsPhotos.length; remIdx += 4) {
+          const chunk = remainingObsPhotos.slice(remIdx, remIdx + 4);
+          const chunkRows = Math.ceil(chunk.length / 2);
+          const chunkH = 14 + chunkRows * (obsGridPH + obsGapY) + 4;
+
+          doc.newPage();
+          doc.sectionHeader(
+            `Section ${sIdx + 1}: ${s.section.name}`,
+            s.section.zone,
+            `OBS ${fIdx + 1} Photographs (Cont.)`
+          );
+
+          const contY = doc.y;
+          doc.roundedBox(MARGIN_LEFT, contY, CONTENT_W, chunkH, SLATE_BG, BORDER, 2.5);
+
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
+          doc.setTextColor(NAVY);
+          doc.pdf.text(`OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()} (Photographs Cont.)`, MARGIN_LEFT + 6, contY + 6);
+          doc.statusBadge(fRow.state, fBadgeX, contY + 4);
+
+          let chunkY = contY + 12;
+          for (let cIdx = 0; cIdx < chunk.length; cIdx += 2) {
+            const pNum1 = 4 + remIdx + cIdx + 1;
+            const pNum2 = pNum1 + 1;
+            const cid1 = chunk[cIdx];
+            const cid2 = cIdx + 1 < chunk.length ? chunk[cIdx + 1] : undefined;
+
+            const [cImg1, cImg2, cPhotoDoc1, cPhotoDoc2] = await Promise.all([
+              loadImage(cid1),
+              cid2 ? loadImage(cid2) : Promise.resolve(null),
+              getPhotoDoc(cid1),
+              cid2 ? getPhotoDoc(cid2) : Promise.resolve(null),
+            ]);
+
+            if (cid1) {
+              drawPhotoCard(MARGIN_LEFT + 8, chunkY, obsPW, obsGridPH, cImg1, cPhotoDoc1, `PHOTO #${pNum1} • OBS ${fIdx + 1}`);
+            }
+            if (cid2) {
+              drawPhotoCard(MARGIN_LEFT + 8 + obsPW + 6, chunkY, obsPW, obsGridPH, cImg2, cPhotoDoc2, `PHOTO #${pNum2} • OBS ${fIdx + 1}`);
+            }
+
+            chunkY += obsGridPH + obsGapY;
+          }
+
+          doc.y += chunkH + 4;
+        }
+      }
     }
   }
 
