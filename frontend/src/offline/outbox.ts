@@ -102,10 +102,18 @@ export async function localDelete(entity: SyncEntity, id: string): Promise<void>
   } else if (entity === 'findings') {
     const findingPhotos = await db.photos.where('findingId').equals(id).toArray();
     for (const p of findingPhotos) {
-      if (!p.deletedAt) {
-        await localDelete('photos', p.id);
+      if (p.inspectionSectionId) {
+        // Photo belongs to a section — preserve it in the section, do not delete!
+        await localWrite('photos', p.id, {
+          findingId: null,
+          target: 'section',
+        });
       } else {
-        void evictPhotoCache(p.id);
+        if (!p.deletedAt) {
+          await localDelete('photos', p.id);
+        } else {
+          void evictPhotoCache(p.id);
+        }
       }
     }
   } else if (entity === 'inspectionSections') {

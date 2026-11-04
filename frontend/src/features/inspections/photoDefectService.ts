@@ -129,16 +129,19 @@ export async function togglePhotoDefectWithObservation(
             sectionName: secName,
             // YES: Remove observation & set photo to normal
             onRemoveObservationAndSetNormal: async () => {
-              // Only delete finding if no other photos are attached
-              if (otherPhotos.length === 0) {
-                await localDelete('findings', finding.id);
-              }
               const patch: Partial<Photo> = {
                 isDefect: false,
                 findingId: null,
                 target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
+                inspectionSectionId: sectionId || currentPhoto.inspectionSectionId || null,
               };
+              // Unlink and preserve photo in section FIRST
               await localWrite('photos', photoId, patch);
+
+              // Only delete finding if no other photos are attached
+              if (otherPhotos.length === 0) {
+                await localDelete('findings', finding.id);
+              }
               options?.onCompleted?.({ ...currentPhoto, ...patch }, true);
             },
             // NO: Observation will stay! Only set photo to normal and unlink
@@ -147,6 +150,7 @@ export async function togglePhotoDefectWithObservation(
                 isDefect: false,
                 findingId: null,
                 target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
+                inspectionSectionId: sectionId || currentPhoto.inspectionSectionId || null,
               };
               await localWrite('photos', photoId, patch);
               options?.onCompleted?.({ ...currentPhoto, ...patch }, false);
@@ -160,10 +164,23 @@ export async function togglePhotoDefectWithObservation(
           return false;
         }
 
+        // Unlink photo FIRST so it remains in section evidence
+        const patch: Partial<Photo> = {
+          isDefect: false,
+          findingId: null,
+          target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
+          inspectionSectionId: sectionId || currentPhoto.inspectionSectionId || null,
+        };
+        await localWrite('photos', photoId, patch);
+
         // Observation is completely empty (no user details entered) and has no other photos -> delete it automatically
         if (otherPhotos.length === 0) {
           await localDelete('findings', finding.id);
         }
+
+        const updated = { ...currentPhoto, ...patch };
+        options?.onCompleted?.(updated, true);
+        return true;
       }
     }
 
@@ -171,6 +188,7 @@ export async function togglePhotoDefectWithObservation(
       isDefect: false,
       findingId: null,
       target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
+      inspectionSectionId: sectionId || currentPhoto.inspectionSectionId || null,
     };
 
     await localWrite('photos', photoId, patch);
