@@ -145,6 +145,14 @@ export function SectionListPage() {
     }
   };
 
+  // Automatically backfill observations for unlinked defect photos without requiring user UI clicks
+  useEffect(() => {
+    if (!inspection) return;
+    const isLocked = !isEditable(inspection.status);
+    if (isLocked || isSyncingDefects || unlinkedDefectPhotos.length === 0) return;
+    void handleSyncDefectObservations();
+  }, [unlinkedDefectPhotos.length, inspection?.status, isSyncingDefects]);
+
   const photosBySection = useMemo(() => {
     const map = new Map<string, number>();
     for (const p of photos) {
@@ -223,12 +231,6 @@ export function SectionListPage() {
   const canAddSection = Boolean(me.data && can(me.data, 'inspection.addSection', { inspection: displayInspection }) && isEditable(displayInspection.status));
   const canDelete = Boolean(me.data && can(me.data, 'inspection.delete', { inspection: displayInspection }));
   const sectionsLocked = !isEditable(displayInspection.status);
-
-  // Automatically backfill observations for unlinked defect photos without requiring user UI clicks
-  useEffect(() => {
-    if (sectionsLocked || isSyncingDefects || unlinkedDefectPhotos.length === 0) return;
-    void handleSyncDefectObservations();
-  }, [unlinkedDefectPhotos.length, sectionsLocked, isSyncingDefects]);
 
   async function handleDownloadInspectionPhotos(filter: 'all' | 'defect') {
     try {

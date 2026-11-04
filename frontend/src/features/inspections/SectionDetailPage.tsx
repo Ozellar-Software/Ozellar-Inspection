@@ -27,6 +27,7 @@ export function SectionDetailPage() {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [remarksValue, setRemarksValue] = useState('');
+  const [isSyncingDefects, setIsSyncingDefects] = useState(false);
 
   useEffect(() => {
     if (inspectionId) {
@@ -79,38 +80,6 @@ export function SectionDetailPage() {
     { id: 'q2', text: 'Are safety labels clearly visible?', position: 2, inspectionSectionId: sectionId, qid: 2, ref: 'Q2' },
   ] : questions;
 
-  useEffect(() => {
-    setRemarksValue((dispSection as any)?.remarks ?? '');
-  }, [sectionId, (dispSection as any)?.remarks]);
-
-  if (!dispInspection || !dispSection) return null;
-
-  if ((dispInspection as any).deletedAt) {
-    return (
-      <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
-        <h2 style={{ color: 'var(--bad)', fontSize: 18, marginBottom: 8 }}>Inspection Deleted</h2>
-        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 16 }}>
-          This inspection has been deleted and is no longer available.
-        </p>
-        <button className="btn btn-outline" onClick={() => nav('/')}>Back to Home</button>
-      </div>
-    );
-  }
-
-  if (me.data && inspection && !can(me.data, 'inspection.view', { inspection })) {
-    if (!recheckedAccess) return null;
-    return (
-      <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
-        <h2 style={{ color: 'var(--bad)', fontSize: 18, marginBottom: 8 }}>Access Restricted</h2>
-        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 16 }}>
-          You do not have permission to view inspections for this vessel.
-        </p>
-        <button className="btn btn-outline" onClick={() => nav('/')}>Back to Home</button>
-      </div>
-    );
-  }
-
-  const locked = !isEditable(dispInspection.status as any);
   const byQuestion = new Map(responses.map((r) => [r.inspectionQuestionId, r]));
   const photosByResponse = new Map<string, Photo[]>();
   const photosByFinding = new Map<string, Photo[]>();
@@ -129,7 +98,6 @@ export function SectionDetailPage() {
   }
 
   const unlinkedSectionDefects = sectionPhotos.filter((p) => p.isDefect && !p.findingId);
-  const [isSyncingDefects, setIsSyncingDefects] = useState(false);
 
   const handleSyncSectionDefects = async () => {
     if (isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;
@@ -168,9 +136,44 @@ export function SectionDetailPage() {
 
   // Automatically backfill observations for unlinked defect photos without requiring user UI clicks
   useEffect(() => {
-    if (locked || isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;
+    if (!dispInspection || !dispSection) return;
+    const isLocked = !isEditable(dispInspection.status as any);
+    if (isLocked || isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;
     void handleSyncSectionDefects();
-  }, [unlinkedSectionDefects.length, locked, isSyncingDefects, sectionId]);
+  }, [unlinkedSectionDefects.length, dispInspection?.status, isSyncingDefects, sectionId]);
+
+  useEffect(() => {
+    setRemarksValue((dispSection as any)?.remarks ?? '');
+  }, [sectionId, (dispSection as any)?.remarks]);
+
+  if (!dispInspection || !dispSection) return null;
+
+  if ((dispInspection as any).deletedAt) {
+    return (
+      <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
+        <h2 style={{ color: 'var(--bad)', fontSize: 18, marginBottom: 8 }}>Inspection Deleted</h2>
+        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 16 }}>
+          This inspection has been deleted and is no longer available.
+        </p>
+        <button className="btn btn-outline" onClick={() => nav('/')}>Back to Home</button>
+      </div>
+    );
+  }
+
+  if (me.data && inspection && !can(me.data, 'inspection.view', { inspection })) {
+    if (!recheckedAccess) return null;
+    return (
+      <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
+        <h2 style={{ color: 'var(--bad)', fontSize: 18, marginBottom: 8 }}>Access Restricted</h2>
+        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 16 }}>
+          You do not have permission to view inspections for this vessel.
+        </p>
+        <button className="btn btn-outline" onClick={() => nav('/')}>Back to Home</button>
+      </div>
+    );
+  }
+
+  const locked = !isEditable(dispInspection.status as any);
 
   function startRename() {
     setRenameValue(dispSection!.name);
