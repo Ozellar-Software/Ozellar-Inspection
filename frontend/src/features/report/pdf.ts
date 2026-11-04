@@ -939,9 +939,9 @@ export async function generateInspectionPdf(data: ReportData & {
   const heroCardH = 22;
   doc.roundedBox(MARGIN_LEFT, heroCardY, CONTENT_W, heroCardH, SLATE_BG, BORDER, 2);
 
-  // Left solid accent
+  // Left solid accent (inset pill so it stays neatly inside rounded corners)
   doc.setFill(NAVY);
-  doc.pdf.rect(MARGIN_LEFT, heroCardY, 3, heroCardH, 'F');
+  doc.pdf.roundedRect(MARGIN_LEFT + 1.2, heroCardY + 1.5, 2.5, heroCardH - 3, 1, 1, 'F');
 
   // 4 Columns inside Hero Panel
   const heroCols = [
@@ -1277,89 +1277,105 @@ export async function generateInspectionPdf(data: ReportData & {
 
   // 5. Official Maritime Survey Seal & Statutory Attestation (Full Width Bottom)
   const sealBoxY = doc.y;
-  const sealBoxH = 26;
-  doc.roundedBox(MARGIN_LEFT, sealBoxY, CONTENT_W, sealBoxH, SLATE_BG, BORDER, 2);
+  const sealBoxH = 28;
+  doc.roundedBox(MARGIN_LEFT, sealBoxY, CONTENT_W, sealBoxH, WHITE, BORDER, 2.5);
 
-  // Left solid accent
+  // Left solid accent (inset pill so it stays neatly inside rounded corners)
   doc.setFill(NAVY);
-  doc.pdf.rect(MARGIN_LEFT, sealBoxY, 3, sealBoxH, 'F');
+  doc.pdf.roundedRect(MARGIN_LEFT + 1.5, sealBoxY + 2, 2.5, sealBoxH - 4, 1, 1, 'F');
 
-  // Left side: Attestation statement and 3 verification badges
+  // Vertical hairline divider separating left legal attestation from right seal stamp
+  const dividerX = MARGIN_LEFT + 118;
+  doc.setDraw(BORDER, 0.25);
+  doc.pdf.line(dividerX, sealBoxY + 3, dividerX, sealBoxY + sealBoxH - 3);
+
+  // ── LEFT SIDE: Attestation Statement & Verification Badges ──
   const attLeft = MARGIN_LEFT + 7;
-  const attW = CONTENT_W - 68; // 114 mm for text & badges
+  const attMaxW = dividerX - attLeft - 4; // ~107 mm
 
   // Header
   doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
   doc.setTextColor(NAVY);
-  doc.pdf.text('STATUTORY ATTESTATION & TECHNICAL CERTIFICATION RECORD', attLeft, sealBoxY + 5.2);
+  doc.pdf.text('STATUTORY ATTESTATION & TECHNICAL CERTIFICATION RECORD', attLeft, sealBoxY + 5.5);
 
   // Description
   doc.pdf.setFont('helvetica', 'normal').setFontSize(5.8);
   doc.setTextColor(TEXT_BODY);
-  const attMsg = 'Vessel technical specifications recorded herein have been compiled from official registration certificates, classification society records, builder specification documentation, and attending surveyor on-site audit verification.';
-  const attLines = doc.pdf.splitTextToSize(attMsg, attW) as string[];
-  doc.pdf.text(attLines, attLeft, sealBoxY + 9.5);
+  const attMsg = 'Vessel technical specifications recorded herein are verified against official certificates of registry, classification society records, builder specification documentation, and attending surveyor on-site audit.';
+  const attLines = doc.pdf.splitTextToSize(attMsg, attMaxW) as string[];
+  doc.pdf.text(attLines, attLeft, sealBoxY + 9.8);
 
-  // 3 Checkpoint Badges (Width 36mm each, no text truncation!)
-  const checkY = sealBoxY + 18.0;
+  // 3 Verification Pills (Clean, concise, vector bullet, zero truncation!)
+  const checkY = sealBoxY + 18.2;
   const checkBadges = [
-    '✓ Registry Verified',
-    '✓ Class & Tonnage Confirmed',
-    '✓ On-Site Audit Attested',
+    'Registry Verified',
+    'Class Certified',
+    'On-Site Attested',
   ];
-  const checkW = (attW - 6) / 3; // ~36 mm
+  const badgeGap = 3;
+  const checkW = (attMaxW - 2 * badgeGap) / 3; // ~33.6 mm each
 
   for (let cbi = 0; cbi < checkBadges.length; cbi++) {
-    const cbX = attLeft + cbi * (checkW + 3);
+    const cbX = attLeft + cbi * (checkW + badgeGap);
+
+    // Pill background
     doc.setFill([236, 253, 245]);
     doc.setDraw([167, 243, 208], 0.3);
-    doc.pdf.roundedRect(cbX, checkY, checkW, 5.0, 1.0, 1.0, 'FD');
+    doc.pdf.roundedRect(cbX, checkY, checkW, 5.2, 1.2, 1.2, 'FD');
 
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
+    // Vector emerald check dot (guaranteed crisp, no unicode corruption!)
+    doc.setFill([16, 122, 70]);
+    doc.pdf.circle(cbX + 3.2, checkY + 2.6, 0.9, 'F');
+
+    // Badge label
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
     doc.setTextColor([6, 95, 70]);
-    doc.pdf.text(checkBadges[cbi], cbX + checkW / 2, checkY + 3.4, { align: 'center' });
+    doc.pdf.text(checkBadges[cbi], cbX + 5.6, checkY + 3.7);
   }
 
-  // Right side: Official Survey Seal Stamp Box
-  const stampX = PAGE_W - MARGIN_RIGHT - 56;
-  const stampY = sealBoxY + 2.5;
-  const stampW = 53;
-  const stampH = 21;
+  // ── RIGHT SIDE: Official Survey Seal Stamp ──
+  const sealAreaLeft = dividerX + 3;
+  const sealAreaW = PAGE_W - MARGIN_RIGHT - sealAreaLeft; // ~61 mm
+  const sealCenterX = sealAreaLeft + sealAreaW / 2;
 
-  // Outer Seal Box
-  doc.roundedBox(stampX, stampY, stampW, stampH, WHITE, NAVY, 1.5);
-  // Inner hairline decorative border
+  // Stamp Box Container (Double-bordered maritime seal)
+  const stampBoxW = 56;
+  const stampBoxH = 22;
+  const stampBoxX = sealCenterX - stampBoxW / 2;
+  const stampBoxY = sealBoxY + 3;
+
+  doc.roundedBox(stampBoxX, stampBoxY, stampBoxW, stampBoxH, SLATE_BG, NAVY, 1.5);
   doc.setDraw(BORDER_DARK, 0.2);
-  doc.pdf.roundedRect(stampX + 1, stampY + 1, stampW - 2, stampH - 2, 1, 1, 'S');
+  doc.pdf.roundedRect(stampBoxX + 1, stampBoxY + 1, stampBoxW - 2, stampBoxH - 2, 1, 1, 'S');
 
-  // Seal Header
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.0);
+  // Seal Top Title
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.2);
   doc.setTextColor(NAVY);
-  doc.pdf.text('★  OZELLAR MARINE TECHNICAL AUDIT  ★', stampX + stampW / 2, stampY + 4.2, { align: 'center' });
+  doc.pdf.text('OZELLAR MARINE TECHNICAL AUDIT', sealCenterX, stampBoxY + 4.2, { align: 'center' });
 
   // Seal Status Pill
-  const pillW = 38;
-  const pillH = 4.5;
-  const pillX = stampX + (stampW - pillW) / 2;
-  const pillY = stampY + 6.0;
+  const sPillW = 42;
+  const sPillH = 4.6;
+  const sPillX = sealCenterX - sPillW / 2;
+  const sPillY = stampBoxY + 5.8;
   doc.setFill(NAVY);
-  doc.pdf.roundedRect(pillX, pillY, pillW, pillH, 1, 1, 'F');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
+  doc.pdf.roundedRect(sPillX, sPillY, sPillW, sPillH, 1, 1, 'F');
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
   doc.setTextColor(WHITE);
-  doc.pdf.text('OFFICIAL RECORD • VERIFIED', pillX + pillW / 2, pillY + 3.2, { align: 'center' });
+  doc.pdf.text('OFFICIAL RECORD - VERIFIED', sealCenterX, sPillY + 3.3, { align: 'center' });
 
   // Seal Reference & Date
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
   doc.setTextColor(TEXT_DARK);
-  doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  ${fmtDate(inspection.startDate)}`, stampX + stampW / 2, stampY + 14.5, { align: 'center' });
+  doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  ${fmtDate(inspection.startDate)}`, sealCenterX, stampBoxY + 15.0, { align: 'center' });
 
   // Seal Surveyor Attestation
   doc.pdf.setFont('helvetica', 'italic').setFontSize(4.8);
   doc.setTextColor(TEXT_MUTED);
   doc.pdf.text(
-    inspection.inspector ? `Surveyor: ${inspection.inspector}` : 'Authorized Marine Technical Dossier',
-    stampX + stampW / 2,
-    stampY + 18.2,
+    inspection.inspector ? `Surveyor: ${inspection.inspector}` : 'Authorized Technical Dossier',
+    sealCenterX,
+    stampBoxY + 18.8,
     { align: 'center' }
   );
 
