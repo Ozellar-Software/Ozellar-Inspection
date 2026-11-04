@@ -1181,7 +1181,6 @@ export function PhotoStrip({
           onDownloadZip={(filter) => {
             void handleBatchDownload(filter);
           }}
-          onPhotoToggled={handleToggleDefect}
           onMoveToSection={handleMoveToSection}
           onMoveToQuestion={handleAssignToQuestion}
         />
@@ -1217,7 +1216,6 @@ export function PhotoStrip({
           currentSectionId={inspectionSectionId}
           onMoveToSection={handleMoveToSection}
           onMoveToQuestion={handleAssignToQuestion}
-          onPhotoToggled={handleToggleDefect}
         />
       )}
 

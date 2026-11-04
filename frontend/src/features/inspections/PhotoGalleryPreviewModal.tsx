@@ -254,7 +254,13 @@ export function PhotoGalleryPreviewModal({
   onMoveToSection,
   onMoveToQuestion,
 }: PhotoGalleryPreviewModalProps) {
-  const activePhotos = useMemo(() => photos.filter((p) => !p.deletedAt), [photos]);
+  const [localPhotos, setLocalPhotos] = useState<SyncedPhoto[]>(photos);
+
+  useEffect(() => {
+    setLocalPhotos(photos);
+  }, [photos]);
+
+  const activePhotos = useMemo(() => localPhotos.filter((p) => !p.deletedAt), [localPhotos]);
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'defect' | 'normal'>('all');
   const [selectedSection, setSelectedSection] = useState<string>(currentSectionId || 'all');
@@ -377,13 +383,29 @@ export function PhotoGalleryPreviewModal({
     if (locked) return;
     const newDefect = !photo.isDefect;
 
-    await togglePhotoDefectWithObservation(photo, newDefect, {
-      onConfirmRequired: (req) => setConfirmReq(req),
-      onCompleted: (updatedPhoto) => {
-        onPhotoToggled?.(updatedPhoto.id, updatedPhoto.isDefect);
-        onPhotoUpdated?.(updatedPhoto.id, updatedPhoto);
-      },
-    });
+    // Optimistically update localPhotos immediately
+    setLocalPhotos((prev) =>
+      prev.map((p) => (p.id === photo.id ? { ...p, isDefect: newDefect } : p))
+    );
+
+    try {
+      await togglePhotoDefectWithObservation(photo, newDefect, {
+        onConfirmRequired: (req) => setConfirmReq(req),
+        onCompleted: (updatedPhoto) => {
+          setLocalPhotos((prev) =>
+            prev.map((p) => (p.id === updatedPhoto.id ? { ...p, ...updatedPhoto } : p))
+          );
+          onPhotoToggled?.(updatedPhoto.id, updatedPhoto.isDefect);
+          onPhotoUpdated?.(updatedPhoto.id, updatedPhoto);
+        },
+      });
+    } catch (err) {
+      console.error('Failed to toggle photo defect status', err);
+      // Revert optimistic update on failure
+      setLocalPhotos((prev) =>
+        prev.map((p) => (p.id === photo.id ? { ...p, isDefect: !newDefect } : p))
+      );
+    }
   };
 
   const handleResetFilters = () => {
@@ -606,6 +628,7 @@ export function PhotoGalleryPreviewModal({
                           type="button"
                           className={`pgpm-status-pill-btn ${isDef ? 'defect' : 'normal'}`}
                           onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             void handleToggleDefect(photo);
                           }}
@@ -700,12 +723,23 @@ export function PhotoGalleryPreviewModal({
           finding={confirmReq.finding}
           sectionName={confirmReq.sectionName}
           onConfirm={async () => {
-            await confirmReq.onConfirm();
+            const req = confirmReq;
             setConfirmReq(null);
+            await req.onConfirm();
+            setLocalPhotos((prev) =>
+              prev.map((p) =>
+                p.id === req.photo.id ? { ...p, isDefect: false, findingId: null } : p
+              )
+            );
           }}
           onCancel={() => {
-            confirmReq.onCancel();
+            const req = confirmReq;
             setConfirmReq(null);
+            req.onCancel();
+            // Revert back to defect because user cancelled
+            setLocalPhotos((prev) =>
+              prev.map((p) => (p.id === req.photo.id ? { ...p, isDefect: true } : p))
+            );
           }}
         />
       )}
@@ -720,8 +754,18 @@ export function PhotoGalleryPreviewModal({
           locked={locked}
           title={title}
           initialUrls={urls}
-          onPhotoToggled={onPhotoToggled}
-          onPhotoUpdated={onPhotoUpdated}
+          onPhotoToggled={(photoId, isDefect) => {
+            setLocalPhotos((prev) =>
+              prev.map((p) => (p.id === photoId ? { ...p, isDefect } : p))
+            );
+            onPhotoToggled?.(photoId, isDefect);
+          }}
+          onPhotoUpdated={(photoId, patch) => {
+            setLocalPhotos((prev) =>
+              prev.map((p) => (p.id === photoId ? { ...p, ...patch } : p))
+            );
+            onPhotoUpdated?.(photoId, patch);
+          }}
           allSections={allSections}
           currentSectionId={currentSectionId}
           onMoveToSection={onMoveToSection}

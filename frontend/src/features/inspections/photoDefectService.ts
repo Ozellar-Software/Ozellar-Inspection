@@ -11,13 +11,26 @@ export interface DefectConfirmRequest {
 }
 
 /**
- * Check whether a finding has user-entered content or observations.
+ * Check whether a finding has user-entered content or observations beyond the photo's caption.
  */
-export function hasFindingDetails(finding: Finding): boolean {
-  const hasText = !!finding.text && finding.text.trim().length > 0;
+export function hasFindingDetails(finding: Finding, photo?: Photo): boolean {
+  const findingText = (finding.text || '').trim();
+  const photoText = (photo?.description || '').trim();
+
+  // If corrective action or preventive action was entered, it definitely has details
   const hasCa = !!finding.correctiveAction && finding.correctiveAction.trim().length > 0;
   const hasPa = !!finding.preventiveAction && finding.preventiveAction.trim().length > 0;
-  return hasText || hasCa || hasPa;
+  if (hasCa || hasPa) return true;
+
+  // If finding has text and it is different from the photo's own caption/remark,
+  // the surveyor entered dedicated observation text.
+  if (findingText.length > 0) {
+    if (!photoText || findingText !== photoText) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -28,7 +41,7 @@ export function hasFindingDetails(finding: Finding): boolean {
  *
  * - When marked as NORMAL:
  *   If linked to an observation:
- *   - If the observation has no text/actions and no other photos, automatically removes it.
+ *   - If the observation has no custom text/actions and no other photos, automatically removes it.
  *   - If the observation has user-entered details, requests confirmation via callback.
  */
 export async function togglePhotoDefectWithObservation(
@@ -41,24 +54,30 @@ export async function togglePhotoDefectWithObservation(
 ): Promise<boolean> {
   const photoId = photo.id;
 
+  // Fetch freshest record from Dexie
+  const existing = await db.photos.get(photoId);
+  const currentPhoto: Photo = existing ? { ...existing, ...photo } : photo;
+  const inspectionId = currentPhoto.inspectionId || photo.inspectionId || '';
+  const sectionId = currentPhoto.inspectionSectionId || photo.inspectionSectionId || '';
+
   if (newDefect) {
     // ── Turn into Defect ──
-    let findingId = photo.findingId;
+    let findingId = currentPhoto.findingId;
     let createdFinding = false;
 
-    // If not already attached to a finding, create a new Observation
-    if (!findingId && photo.inspectionSectionId) {
+    // If not already attached to a finding, create a new Observation in the section
+    if (!findingId && sectionId) {
       const existingFindings = await db.findings
         .where('inspectionSectionId')
-        .equals(photo.inspectionSectionId)
+        .equals(sectionId)
         .toArray();
 
       findingId = crypto.randomUUID();
       const newFinding: Finding = {
         id: findingId,
-        inspectionId: photo.inspectionId || '',
-        inspectionSectionId: photo.inspectionSectionId || '',
-        text: photo.description ? String(photo.description).trim() : '',
+        inspectionId,
+        inspectionSectionId: sectionId,
+        text: currentPhoto.description ? String(currentPhoto.description).trim() : '',
         answer: 'no', // Observation / Defect
         correctiveAction: '',
         preventiveAction: '',
@@ -75,12 +94,12 @@ export async function togglePhotoDefectWithObservation(
     };
 
     await localWrite('photos', photoId, patch);
-    const updated = { ...photo, ...patch };
+    const updated = { ...currentPhoto, ...patch };
     options?.onCompleted?.(updated, createdFinding);
     return true;
   } else {
     // ── Turn into Normal ──
-    const findingId = photo.findingId;
+    const findingId = currentPhoto.findingId;
 
     if (findingId) {
       const finding = await db.findings.get(findingId);
@@ -92,7 +111,7 @@ export async function togglePhotoDefectWithObservation(
           .filter((p) => p.id !== photoId && !p.deletedAt)
           .toArray();
 
-        const hasDetails = hasFindingDetails(finding) || otherPhotos.length > 0;
+        const hasDetails = hasFindingDetails(finding, currentPhoto) || otherPhotos.length > 0;
 
         if (hasDetails && options?.onConfirmRequired) {
           // Find section name for context
@@ -104,7 +123,7 @@ export async function togglePhotoDefectWithObservation(
 
           // Request user confirmation popup
           options.onConfirmRequired({
-            photo,
+            photo: currentPhoto,
             finding,
             sectionName: secName,
             onConfirm: async () => {
@@ -115,10 +134,10 @@ export async function togglePhotoDefectWithObservation(
               const patch: Partial<Photo> = {
                 isDefect: false,
                 findingId: null,
-                target: (photo.inspectionSectionId ? 'section' : 'inspection') as any,
+                target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
               };
               await localWrite('photos', photoId, patch);
-              options?.onCompleted?.({ ...photo, ...patch }, true);
+              options?.onCompleted?.({ ...currentPhoto, ...patch }, true);
             },
             onCancel: () => {
               // Cancelled, do nothing
@@ -138,11 +157,11 @@ export async function togglePhotoDefectWithObservation(
     const patch: Partial<Photo> = {
       isDefect: false,
       findingId: null,
-      target: (photo.inspectionSectionId ? 'section' : 'inspection') as any,
+      target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
     };
 
     await localWrite('photos', photoId, patch);
-    const updated = { ...photo, ...patch };
+    const updated = { ...currentPhoto, ...patch };
     options?.onCompleted?.(updated, !!findingId);
     return true;
   }

@@ -55,7 +55,13 @@ export function ImageViewerModal({
   onMoveToSection,
   onMoveToQuestion,
 }: ImageViewerModalProps) {
-  const activePhotos = React.useMemo(() => photos.filter((p) => !p.deletedAt), [photos]);
+  const [localPhotos, setLocalPhotos] = useState<SyncedPhoto[]>(photos);
+
+  useEffect(() => {
+    setLocalPhotos(photos);
+  }, [photos]);
+
+  const activePhotos = React.useMemo(() => localPhotos.filter((p) => !p.deletedAt), [localPhotos]);
   const [index, setIndex] = useState(initialIndex);
   const [urls, setUrls] = useState<Record<string, string>>(initialUrls || {});
   const [loading, setLoading] = useState(false);
@@ -250,16 +256,30 @@ export function ImageViewerModal({
   const handleToggleDefect = async () => {
     if (locked || !currentPhoto) return;
     const newDefect = !currentPhoto.isDefect;
+    const photoId = currentPhoto.id;
+
+    // Optimistically update localPhotos in 0ms
+    setLocalPhotos((prev) =>
+      prev.map((p) => (p.id === photoId ? { ...p, isDefect: newDefect } : p))
+    );
+
     try {
       await togglePhotoDefectWithObservation(currentPhoto, newDefect, {
         onConfirmRequired: (req) => setConfirmReq(req),
         onCompleted: (updatedPhoto) => {
+          setLocalPhotos((prev) =>
+            prev.map((p) => (p.id === updatedPhoto.id ? { ...p, ...updatedPhoto } : p))
+          );
           onPhotoToggled?.(currentPhoto.id, updatedPhoto.isDefect);
           onPhotoUpdated?.(currentPhoto.id, updatedPhoto);
         },
       });
     } catch (err) {
       console.error('Failed to toggle photo defect status', err);
+      // Revert optimistic update on failure
+      setLocalPhotos((prev) =>
+        prev.map((p) => (p.id === photoId ? { ...p, isDefect: !newDefect } : p))
+      );
     }
   };
 
@@ -652,12 +672,22 @@ export function ImageViewerModal({
           finding={confirmReq.finding}
           sectionName={confirmReq.sectionName}
           onConfirm={async () => {
-            await confirmReq.onConfirm();
+            const req = confirmReq;
             setConfirmReq(null);
+            await req.onConfirm();
+            setLocalPhotos((prev) =>
+              prev.map((p) =>
+                p.id === req.photo.id ? { ...p, isDefect: false, findingId: null } : p
+              )
+            );
           }}
           onCancel={() => {
-            confirmReq.onCancel();
+            const req = confirmReq;
             setConfirmReq(null);
+            req.onCancel();
+            setLocalPhotos((prev) =>
+              prev.map((p) => (p.id === req.photo.id ? { ...p, isDefect: true } : p))
+            );
           }}
         />
       )}
