@@ -318,7 +318,7 @@ class Doc {
     this.pdf.roundedRect(x, y, w, h, rx, rx, style);
   }
 
-  sectionHeader(title: string, zone?: string, stat?: string) {
+  sectionHeader(title: string, _zone?: string, _stat?: string) {
     this.ensure(16);
     const h = 12;
     // Dark navy full-width bar with smooth corners
@@ -330,29 +330,7 @@ class Doc {
     this.setTextColor(WHITE);
     this.pdf.text(title.toUpperCase(), MARGIN_LEFT + 6, this.y + 8);
 
-    // Calculate stat width for correct zone spacing
-    let statW = 0;
-    if (stat) {
-      this.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
-      statW = this.pdf.getTextWidth(stat);
-    }
-
-    // Right tags
-    if (zone) {
-      this.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-      const zoneW = this.pdf.getTextWidth(zone.toUpperCase()) + 8;
-      const zoneX = PAGE_W - MARGIN_RIGHT - zoneW - (stat ? statW + 6 : 0);
-      this.setFill(NAVY_LIGHT);
-      this.pdf.roundedRect(zoneX, this.y + 2.5, zoneW, 7, 1.5, 1.5, 'F');
-      this.setTextColor([210, 235, 255]);
-      this.pdf.text(zone.toUpperCase(), zoneX + 4, this.y + 7);
-    }
-
-    if (stat) {
-      this.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
-      this.setTextColor([190, 210, 230]);
-      this.pdf.text(stat, PAGE_W - MARGIN_RIGHT - 2, this.y + 7.5, { align: 'right' });
-    }
+    // (no zone badge or photo-count text on the right: the bar carries the title only)
 
     this.y += h + 4.5;
   }
@@ -1133,9 +1111,6 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.setTextColor(WHITE);
   doc.pdf.text('AUDIT & SURVEY PARTICULARS', MARGIN_LEFT + 6, detailsY + 5.8);
 
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(7);
-  doc.setTextColor([200, 230, 215]);
-  doc.pdf.text('OFFICIAL STATUTORY RECORD', PAGE_W - MARGIN_RIGHT - 6, detailsY + 5.8, { align: 'right' });
 
   // 4 Rows of Data Grid
   const particularsRows = [
