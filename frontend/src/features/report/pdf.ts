@@ -449,8 +449,8 @@ export async function generateInspectionPdf(data: ReportData & {
     doc.pdf.setFont('helvetica', isDef ? 'bold' : 'normal').setFontSize(6.5);
     const descLines = desc ? (doc.pdf.splitTextToSize(desc, maxDescW) as string[]).slice(0, 2) : [];
 
-    // Caption banner height: 9mm (no desc), 13mm (1 line), 16mm (2 lines)
-    const bannerH = descLines.length > 1 ? 16 : descLines.length === 1 ? 13 : 9;
+    // Caption banner height: 8mm (label only), 13mm (1 line), 16mm (2 lines)
+    const bannerH = descLines.length > 1 ? 16 : descLines.length === 1 ? 13 : 8;
 
     // 1. Outer Card Container — Lite red border for defect, standard border for normal
     const cardBorder = isDef ? ([248, 113, 113] as [number, number, number]) : BORDER;
@@ -528,18 +528,13 @@ export async function generateInspectionPdf(data: ReportData & {
         doc.pdf.text(dLine, px + 3.5, descY);
         descY += 3.6;
       }
-    } else {
-      doc.pdf.setFont('helvetica', 'italic').setFontSize(6.0);
-      doc.setTextColor(TEXT_FAINT);
-      doc.pdf.text(
-        isDef ? 'Defect identified during survey inspection' : 'Visual record logged for section survey',
-        px + 3.5,
-        labelY + 3.8
-      );
     }
+    // No remark -> no placeholder line: the caption is just the photo label.
   };
 
-  // ─── 4 Photos Per Page Grid (High-Visibility, Big Scale) ───
+  // ─── Adaptive Photo Grid ───
+  // Two photos per row. Every row is as tall as its tallest photo (capped), so landscape rows stay compact and
+  // portrait rows stay large; rows are packed by real remaining space instead of a fixed 4-per-page.
   const renderPhotoGrid4 = async (
     photoIds: string[],
     sectionName: string,
@@ -551,62 +546,64 @@ export async function generateInspectionPdf(data: ReportData & {
     const gapX = 8;
     const gapY = 6;
     const pW = (CONTENT_W - gapX) / 2; // 87 mm
-    const pH = 104;                     // 104 mm
-    const rowH = pH + gapY;             // 110 mm
-    let photosOnCurrentPage = 0;
+    const PAD = 1.2;
+    const MAX_IMG_H = 98;
+    const MIN_IMG_H = 48;
+    const pageLimit = PAGE_H - BOTTOM_MARGIN;
 
-    // If starting on a page that already has content (like remarks) and cannot fit 2 full rows (4 photos):
-    if (photoIds.length >= 3 && doc.y + (2 * rowH) > PAGE_H - BOTTOM_MARGIN) {
-      doc.newPage();
-      doc.sectionHeader(
-        sectionName,
-        zone || 'Visual Evidence',
-        `${photoIds.length} Photographs`
-      );
-    }
+    const bannerFor = (docPhoto: any): number => {
+      const desc = docPhoto?.description ? String(docPhoto.description).trim() : '';
+      if (!desc) return 8;
+      doc.pdf.setFont('helvetica', docPhoto?.isDefect ? 'bold' : 'normal').setFontSize(6.5);
+      return (doc.pdf.splitTextToSize(desc, pW - 8) as string[]).length > 1 ? 16 : 13;
+    };
 
-    doc.ensure(rowH + 10);
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
-    doc.setTextColor(TEXT_MUTED);
-    doc.pdf.text(gridTitle, MARGIN_LEFT, doc.y + 4);
-    doc.y += 7;
-
-    for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
-      if (photosOnCurrentPage >= 4 || doc.y + pH > PAGE_H - BOTTOM_MARGIN) {
-        doc.newPage();
-        doc.sectionHeader(
-          sectionName,
-          zone || 'Visual Evidence',
-          `Photographs (Cont.)`
-        );
-        doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
-        doc.setTextColor(TEXT_MUTED);
-        doc.pdf.text(gridTitle + ' (CONTINUED)', MARGIN_LEFT, doc.y + 4);
-        doc.y += 7;
-        photosOnCurrentPage = 0;
-      }
-
+    const prepareRow = async (pIdx: number) => {
       const id1 = photoIds[pIdx];
       const id2 = pIdx + 1 < photoIds.length ? photoIds[pIdx + 1] : undefined;
-
       const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
         loadImage(id1),
         id2 ? loadImage(id2) : Promise.resolve(null),
         getPhotoDoc(id1),
         id2 ? getPhotoDoc(id2) : Promise.resolve(null),
       ]);
+      const fitH = (img: LoadedImage | null) => (img ? ((pW - 2 * PAD - 0.8) / img.w) * img.h + 0.8 : MIN_IMG_H);
+      const imgH = Math.min(MAX_IMG_H, Math.max(MIN_IMG_H, fitH(img1), id2 ? fitH(img2) : 0));
+      const banner = Math.max(bannerFor(photoDoc1), id2 ? bannerFor(photoDoc2) : 0);
+      return { id1, id2, img1, img2, photoDoc1, photoDoc2, pH: imgH + banner + PAD };
+    };
+
+    const continuedHeader = () => {
+      doc.newPage();
+      doc.sectionHeader(sectionName, zone || 'Visual Evidence', 'Photographs (Cont.)');
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+      doc.setTextColor(TEXT_MUTED);
+      doc.pdf.text(gridTitle, MARGIN_LEFT, doc.y + 4);
+      doc.y += 7;
+    };
+
+    let row = await prepareRow(0);
+
+    // Grid title travels with the first row: if they don't fit together, both move to the next page.
+    if (doc.y + 7 + row.pH > pageLimit) {
+      doc.newPage();
+      doc.sectionHeader(sectionName, zone || 'Visual Evidence', `${photoIds.length} Photographs`);
+    }
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(gridTitle, MARGIN_LEFT, doc.y + 4);
+    doc.y += 7;
+
+    for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
+      if (pIdx > 0) row = await prepareRow(pIdx);
+      if (doc.y + row.pH > pageLimit) continuedHeader();
 
       const curRowY = doc.y;
-      if (id1) {
-        drawPhotoCard(MARGIN_LEFT, curRowY, pW, pH, img1, photoDoc1, `PHOTO #${pIdx + 1}`);
-        photosOnCurrentPage++;
+      drawPhotoCard(MARGIN_LEFT, curRowY, pW, row.pH, row.img1, row.photoDoc1, `PHOTO #${pIdx + 1}`);
+      if (row.id2) {
+        drawPhotoCard(MARGIN_LEFT + pW + gapX, curRowY, pW, row.pH, row.img2, row.photoDoc2, `PHOTO #${pIdx + 2}`);
       }
-      if (id2) {
-        drawPhotoCard(MARGIN_LEFT + pW + gapX, curRowY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2}`);
-        photosOnCurrentPage++;
-      }
-
-      doc.y += rowH;
+      doc.y += row.pH + gapY;
     }
   };
   const renderPhotoGrid8 = renderPhotoGrid4; // Backwards-compatible alias
@@ -725,7 +722,7 @@ export async function generateInspectionPdf(data: ReportData & {
 
   // ── AUDIT & SURVEY PARTICULARS (Executive Maritime Table) ──────────────────
   const detailsY = heroY + heroH + 6;
-  const detailsH = 66;
+  const detailsH = 52.5;
   doc.roundedBox(MARGIN_LEFT, detailsY, CONTENT_W, detailsH, WHITE, BORDER, 2.5);
 
   // Navy header strip inside card
@@ -744,19 +741,15 @@ export async function generateInspectionPdf(data: ReportData & {
   const particularsRows = [
     {
       col1: { label: 'SURVEY TYPE', val: isPhotoOnly ? 'Photographic Condition Survey' : (INSPECTION_TYPE_LABELS[inspection.inspectionType] || inspection.inspectionType || 'In Port Survey') },
-      col2: { label: 'LEAD SURVEYOR', val: inspection.inspector || '-' },
+      col2: { label: 'AUDITOR', val: inspection.inspector || '-' },
     },
     {
       col1: { label: 'PORT / LOCATION', val: inspection.port || '-' },
-      col2: { label: 'SURVEY AGENCY', val: inspection.company || 'Ozellar Marine Global' },
-    },
-    {
-      col1: { label: 'DATE COMMENCED', val: fmtDate(inspection.startDate) },
       col2: { label: 'REPORT REFERENCE', val: `VIR-${inspection.id.slice(0, 8).toUpperCase()}` },
     },
     {
-      col1: { label: 'DATE COMPLETED', val: fmtDate(inspection.completionDate || inspection.startDate) },
-      col2: { label: 'VESSEL CATEGORY', val: (inspection.vesselType || 'Commercial Vessel').toUpperCase() },
+      col1: { label: 'DATE COMMENCED', val: fmtDate(inspection.startDate) },
+      col2: { label: 'DATE COMPLETED', val: fmtDate(inspection.completionDate || inspection.startDate) },
     },
   ];
 
@@ -1234,12 +1227,11 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.pdf.roundedRect(MARGIN_LEFT, metaY, CONTENT_W, metaH, 1.5, 1.5, 'FD');
 
   const metaCols = [
-    { label: 'LEAD SURVEYOR', val: inspection.inspector || 'Official Marine Surveyor' },
+    { label: 'AUDITOR', val: inspection.inspector || '-' },
     { label: 'SURVEY PORT / LOCATION', val: inspection.port || '-' },
-    { label: 'SURVEY AGENCY', val: inspection.company || 'Ozellar Marine Global' },
     { label: 'INSPECTION DATES', val: `${fmtDate(inspection.startDate)} - ${fmtDate(inspection.completionDate || inspection.startDate)}` },
   ];
-  const mColW = CONTENT_W / 4;
+  const mColW = CONTENT_W / metaCols.length;
 
   for (let mi = 0; mi < metaCols.length; mi++) {
     const mcX = MARGIN_LEFT + mi * mColW;
@@ -1378,12 +1370,6 @@ export async function generateInspectionPdf(data: ReportData & {
 
       // Section Findings if any
       if (s.findings.length > 0) {
-        doc.ensure(24);
-        doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
-        doc.setTextColor(TEXT_MUTED);
-        doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
-        doc.y += 8;
-
         for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
           const fRow = s.findings[fIdx];
           const textContent = fRow.finding.text || 'Observation logged';
@@ -1414,7 +1400,14 @@ export async function generateInspectionPdf(data: ReportData & {
 
           const cardH = totalTextH + photoBlockH + 4;
 
-          doc.ensure(cardH + 4);
+          // The "OBSERVATIONS & FINDINGS" heading travels with the first card, never alone at the bottom of a page.
+          doc.ensure(cardH + 4 + (fIdx === 0 ? 8 : 0));
+          if (fIdx === 0) {
+            doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+            doc.setTextColor(TEXT_MUTED);
+            doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
+            doc.y += 8;
+          }
           const cardY = doc.y;
           doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, [254, 202, 202], 2);
 
@@ -1818,12 +1811,6 @@ export async function generateInspectionPdf(data: ReportData & {
     // 3. SECTION OBSERVATIONS & FINDINGS (with observation images)
     // ═════════════════════════════════════════════════════════════════════════
     if (s.findings.length > 0) {
-      doc.ensure(24);
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
-      doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
-      doc.y += 8;
-
       for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
         const fRow = s.findings[fIdx];
         const textContent = fRow.finding.text || 'Observation logged';
@@ -1857,7 +1844,14 @@ export async function generateInspectionPdf(data: ReportData & {
 
         const cardH = totalTextH + photoBlockH + 4;
 
-        doc.ensure(cardH + 4);
+        // The "OBSERVATIONS & FINDINGS" heading travels with the first card, never alone at the bottom of a page.
+        doc.ensure(cardH + 4 + (fIdx === 0 ? 8 : 0));
+        if (fIdx === 0) {
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+          doc.setTextColor(TEXT_MUTED);
+          doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
+          doc.y += 8;
+        }
         const cardY = doc.y;
         doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, [254, 202, 202], 2.5);
 
@@ -2024,7 +2018,7 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.pdf.setFont('helvetica', 'normal').setFontSize(7);
   doc.setTextColor([180, 220, 200]);
   const surveyDate = `${fmtDate(inspection.startDate)} – ${fmtDate(inspection.completionDate || inspection.startDate)}`;
-  doc.pdf.text(`Survey Period: ${surveyDate}  ·  Lead Surveyor: ${inspection.inspector || '-'}`, MARGIN_LEFT + 6, doc.y + 13.5);
+  doc.pdf.text(`Survey Period: ${surveyDate}  ·  Auditor: ${inspection.inspector || '-'}`, MARGIN_LEFT + 6, doc.y + 13.5);
   doc.y += ctxBoxH + 5;
 
   // Conclusion text box with rich formatting (bullets, bold, headings, font styles)
