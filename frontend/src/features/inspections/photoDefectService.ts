@@ -33,20 +33,40 @@ export function formatObservationText(sectionName?: string, description?: string
 }
 
 /**
+ * Strips HTML tags and decodes common HTML entities to return clean plain text.
+ */
+export function stripHtmlToPlainText(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Check whether a finding has user-entered content or observations beyond the photo's caption/section name.
  */
 export function hasFindingDetails(finding: Finding, photo?: Photo, sectionName?: string): boolean {
   // If corrective action or preventive action was entered, the user definitely entered custom remarks
-  const hasCa = !!finding.correctiveAction && finding.correctiveAction.trim().length > 0;
-  const hasPa = !!finding.preventiveAction && finding.preventiveAction.trim().length > 0;
+  const hasCa = !!finding.correctiveAction && stripHtmlToPlainText(finding.correctiveAction).length > 0;
+  const hasPa = !!finding.preventiveAction && stripHtmlToPlainText(finding.preventiveAction).length > 0;
   if (hasCa || hasPa) return true;
 
-  const findingText = (finding.text || '').trim();
+  const rawFindingText = (finding.text || '').trim();
+  const findingText = stripHtmlToPlainText(rawFindingText);
   if (!findingText) return false;
 
-  const photoText = (photo?.description || '').trim();
-  const cleanSec = (sectionName || '').trim();
-  const defaultFormatted = formatObservationText(cleanSec, photoText).trim();
+  const photoText = stripHtmlToPlainText((photo?.description || '').trim());
+  const cleanSec = stripHtmlToPlainText((sectionName || '').trim());
+  const defaultFormatted = stripHtmlToPlainText(formatObservationText(cleanSec, photoText));
 
   // If the finding text matches any of the default/auto-generated strings, no custom remarks were entered
   if (cleanSec && findingText.toLowerCase() === cleanSec.toLowerCase()) {

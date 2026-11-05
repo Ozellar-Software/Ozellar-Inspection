@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Finding, Photo } from '@ozellar/shared';
 import { WarningIcon, XIcon, TrashIcon, CheckIcon } from '../../icons';
+import { stripHtmlToPlainText } from './photoDefectService';
 import './ConfirmDefectRemovalModal.css';
 
 export interface ConfirmDefectRemovalModalProps {
@@ -23,6 +24,10 @@ export function ConfirmDefectRemovalModal({
   onCancel,
 }: ConfirmDefectRemovalModalProps) {
   if (!isOpen || !finding) return null;
+
+  const findingTextClean = stripHtmlToPlainText(finding.text || '');
+  const caClean = stripHtmlToPlainText(finding.correctiveAction || '');
+  const paClean = stripHtmlToPlainText(finding.preventiveAction || '');
 
   return (
     <div className="cdrm-backdrop" onClick={onCancel}>
@@ -52,19 +57,19 @@ export function ConfirmDefectRemovalModal({
             <div className="cdrm-preview-row">
               <span className="cdrm-preview-label">Observation Details:</span>
               <span className="cdrm-preview-val">
-                {finding.text?.trim() ? finding.text : <em className="faint">(No description entered)</em>}
+                {findingTextClean ? findingTextClean : <em className="faint">(No description entered)</em>}
               </span>
             </div>
-            {finding.correctiveAction?.trim() && (
+            {caClean && (
               <div className="cdrm-preview-row">
                 <span className="cdrm-preview-label">Corrective Action:</span>
-                <span className="cdrm-preview-val">{finding.correctiveAction}</span>
+                <span className="cdrm-preview-val">{caClean}</span>
               </div>
             )}
-            {finding.preventiveAction?.trim() && (
+            {paClean && (
               <div className="cdrm-preview-row">
                 <span className="cdrm-preview-label">Preventive Action:</span>
-                <span className="cdrm-preview-val">{finding.preventiveAction}</span>
+                <span className="cdrm-preview-val">{paClean}</span>
               </div>
             )}
           </div>
