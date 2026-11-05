@@ -34,7 +34,7 @@ export function ConfirmDefectRemovalModal({
           <div className="cdrm-header-text">
             <h3 className="cdrm-title">Observation Details Exist</h3>
             <p className="cdrm-subtitle">
-              Do you want to remove the associated observation as well?
+              Do you want to delete this observation?
             </p>
           </div>
           <button type="button" className="cdrm-close-btn" onClick={onCancel} title="Cancel">
@@ -94,7 +94,7 @@ export function ConfirmDefectRemovalModal({
             title="Mark photo as Normal and delete this observation"
           >
             <TrashIcon style={{ width: 14, height: 14 }} />
-            <span>Yes, Remove Observation</span>
+            <span>Yes, Delete Observation</span>
           </button>
         </div>
       </div>

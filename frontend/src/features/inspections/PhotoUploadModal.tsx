@@ -176,11 +176,11 @@ export function PhotoUploadModal({
 
         await addPhoto({
           file: item.file,
-          target,
+          target: item.isDefect ? 'finding' : target,
           inspectionId,
           inspectionSectionId,
-          responseId,
-          findingId,
+          responseId: item.isDefect ? undefined : responseId,
+          findingId: item.isDefect ? undefined : findingId,
           position: position++,
           isDefect: item.isDefect,
           description: item.description?.trim() || undefined,

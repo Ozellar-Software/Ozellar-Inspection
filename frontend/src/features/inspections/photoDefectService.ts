@@ -33,26 +33,37 @@ export function formatObservationText(sectionName?: string, description?: string
 }
 
 /**
- * Check whether a finding has user-entered content or observations beyond the photo's caption.
+ * Check whether a finding has user-entered content or observations beyond the photo's caption/section name.
  */
-export function hasFindingDetails(finding: Finding, photo?: Photo): boolean {
-  const findingText = (finding.text || '').trim();
-  const photoText = (photo?.description || '').trim();
-
-  // If corrective action or preventive action was entered, it definitely has details
+export function hasFindingDetails(finding: Finding, photo?: Photo, sectionName?: string): boolean {
+  // If corrective action or preventive action was entered, the user definitely entered custom remarks
   const hasCa = !!finding.correctiveAction && finding.correctiveAction.trim().length > 0;
   const hasPa = !!finding.preventiveAction && finding.preventiveAction.trim().length > 0;
   if (hasCa || hasPa) return true;
 
-  // If finding has text and it is different from the photo's own caption/remark,
-  // the surveyor entered dedicated observation text.
-  if (findingText.length > 0) {
-    if (!photoText || findingText !== photoText) {
-      return true;
-    }
+  const findingText = (finding.text || '').trim();
+  if (!findingText) return false;
+
+  const photoText = (photo?.description || '').trim();
+  const cleanSec = (sectionName || '').trim();
+  const defaultFormatted = formatObservationText(cleanSec, photoText).trim();
+
+  // If the finding text matches any of the default/auto-generated strings, no custom remarks were entered
+  if (cleanSec && findingText.toLowerCase() === cleanSec.toLowerCase()) {
+    return false;
+  }
+  if (defaultFormatted && findingText.toLowerCase() === defaultFormatted.toLowerCase()) {
+    return false;
+  }
+  if (photoText && findingText.toLowerCase() === photoText.toLowerCase()) {
+    return false;
+  }
+  if (findingText.toLowerCase() === 'defect observation logged from visual evidence') {
+    return false;
   }
 
-  return false;
+  // The surveyor entered custom observation text / remarks
+  return true;
 }
 
 /**
@@ -163,30 +174,32 @@ export async function togglePhotoDefectWithObservation(
           .filter((p) => p.id !== photoId && !p.deletedAt)
           .toArray();
 
-        const hasDetails = hasFindingDetails(finding, currentPhoto) || otherPhotos.length > 0;
+        // Find section name for context & default comparison
+        let secName = '';
+        const secId = finding.inspectionSectionId || sectionId;
+        if (secId) {
+          const sec = await db.inspectionSections.get(secId);
+          if (sec?.name) secName = sec.name.trim();
+        }
+
+        const hasDetails = hasFindingDetails(finding, currentPhoto, secName) || otherPhotos.length > 0;
+        const targetSectionId = sectionId || currentPhoto.inspectionSectionId || finding.inspectionSectionId || null;
 
         if (hasDetails && options?.onConfirmRequired) {
-          // Find section name for context
-          let secName = '';
-          if (finding.inspectionSectionId) {
-            const sec = await db.inspectionSections.get(finding.inspectionSectionId);
-            if (sec) secName = sec.name;
-          }
-
-          // Request user confirmation popup: Yes (remove observation) or No (observation will stay)
+          // User entered custom remarks or multiple photos exist -> Ask with popup: Yes (delete observation) or No (keep observation)
           options.onConfirmRequired({
             photo: currentPhoto,
             finding,
             sectionName: secName,
-            // YES: Remove observation & set photo to normal
+            // YES: Delete observation & move photo to section
             onRemoveObservationAndSetNormal: async () => {
               const patch: Partial<Photo> = {
                 isDefect: false,
                 findingId: null,
-                target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
-                inspectionSectionId: sectionId || currentPhoto.inspectionSectionId || null,
+                target: 'section',
+                inspectionSectionId: targetSectionId,
+                responseId: null,
               };
-              // Unlink and preserve photo in section FIRST
               await localWrite('photos', photoId, patch);
 
               // Only delete finding if no other photos are attached
@@ -195,13 +208,14 @@ export async function togglePhotoDefectWithObservation(
               }
               options?.onCompleted?.({ ...currentPhoto, ...patch }, true);
             },
-            // NO: Observation will stay! Only set photo to normal and unlink
+            // NO: Keep observation & move photo to section
             onKeepObservationAndSetNormal: async () => {
               const patch: Partial<Photo> = {
                 isDefect: false,
                 findingId: null,
-                target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
-                inspectionSectionId: sectionId || currentPhoto.inspectionSectionId || null,
+                target: 'section',
+                inspectionSectionId: targetSectionId,
+                responseId: null,
               };
               await localWrite('photos', photoId, patch);
               options?.onCompleted?.({ ...currentPhoto, ...patch }, false);
@@ -215,16 +229,16 @@ export async function togglePhotoDefectWithObservation(
           return false;
         }
 
-        // Unlink photo FIRST so it remains in section evidence
+        // User did NOT remark anything: photo directly goes to its section and observation is removed automatically!
         const patch: Partial<Photo> = {
           isDefect: false,
           findingId: null,
-          target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
-          inspectionSectionId: sectionId || currentPhoto.inspectionSectionId || null,
+          target: 'section',
+          inspectionSectionId: targetSectionId,
+          responseId: null,
         };
         await localWrite('photos', photoId, patch);
 
-        // Observation is completely empty (no user details entered) and has no other photos -> delete it automatically
         if (otherPhotos.length === 0) {
           await localDelete('findings', finding.id);
         }
@@ -238,8 +252,9 @@ export async function togglePhotoDefectWithObservation(
     const patch: Partial<Photo> = {
       isDefect: false,
       findingId: null,
-      target: (currentPhoto.responseId ? 'question' : (sectionId ? 'section' : 'inspection')) as any,
+      target: 'section',
       inspectionSectionId: sectionId || currentPhoto.inspectionSectionId || null,
+      responseId: null,
     };
 
     await localWrite('photos', photoId, patch);

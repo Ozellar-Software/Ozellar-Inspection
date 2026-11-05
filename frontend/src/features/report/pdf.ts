@@ -252,18 +252,14 @@ class Doc {
   sectionHeader(title: string, zone?: string, stat?: string) {
     this.ensure(16);
     const h = 12;
-    // Dark navy full-width bar
+    // Dark navy full-width bar with smooth corners
     this.setFill(NAVY);
-    this.pdf.rect(MARGIN_LEFT, this.y, CONTENT_W, h, 'F');
-
-    // Left teal accent strip
-    this.setFill(TEAL);
-    this.pdf.rect(MARGIN_LEFT, this.y, 3.5, h, 'F');
+    this.pdf.roundedRect(MARGIN_LEFT, this.y, CONTENT_W, h, 1.5, 1.5, 'F');
 
     // Section title
     this.pdf.setFont('helvetica', 'bold').setFontSize(10);
     this.setTextColor(WHITE);
-    this.pdf.text(title.toUpperCase(), MARGIN_LEFT + 7, this.y + 8);
+    this.pdf.text(title.toUpperCase(), MARGIN_LEFT + 6, this.y + 8);
 
     // Calculate stat width for correct zone spacing
     let statW = 0;
@@ -435,7 +431,7 @@ export async function generateInspectionPdf(data: ReportData & {
     loadAssetImage(brandLogoSrc)
   ]);
 
-    // ─── Professional High-Visibility Photo Card Renderer ──
+    // ─── Professional Photo Card Renderer ───
   const drawPhotoCard = (
     px: number,
     py: number,
@@ -455,95 +451,89 @@ export async function generateInspectionPdf(data: ReportData & {
 
     // Caption banner height: 9mm (no desc), 13mm (1 line), 16mm (2 lines)
     const bannerH = descLines.length > 1 ? 16 : descLines.length === 1 ? 13 : 9;
-    const imgAreaH = pH - bannerH;
 
-    // 1. Outer Card Container
-    if (isDef) {
-      doc.roundedBox(px, py, pW, pH, [255, 245, 245], [220, 38, 38], 2);
-      doc.setFill([220, 38, 38]);
-      doc.pdf.rect(px, py, 3, pH, 'F');
-    } else {
-      doc.roundedBox(px, py, pW, pH, WHITE, BORDER, 2);
-      doc.setFill(NAVY);
-      doc.pdf.rect(px, py, 2.5, pH, 'F');
-    }
+    // 1. Outer Card Container — Lite red border for defect, standard border for normal
+    const cardBorder = isDef ? ([248, 113, 113] as [number, number, number]) : BORDER;
+    doc.roundedBox(px, py, pW, pH, WHITE, cardBorder, 2);
 
-    // 2. Image Viewport — fills prominent upper area of card with clean neutral framing
-    const imgLeft = px + (isDef ? 3 : 2.5);
-    const imgAreaW = pW - (isDef ? 3 : 2.5);
+    // 2. Image Viewport — Prominently centered, clean neutral framing
+    const pad = 1.2;
+    const imgAreaW = pW - (2 * pad);
+    const imgAreaH = pH - bannerH - pad;
+    const imgLeft = px + pad;
+    const imgTop = py + pad;
 
-    doc.setFill(isDef ? [254, 242, 242] : [248, 250, 252]);
-    doc.pdf.rect(imgLeft, py, imgAreaW, imgAreaH, 'F');
+    doc.setFill([248, 250, 252]);
+    doc.pdf.roundedRect(imgLeft, imgTop, imgAreaW, imgAreaH, 1.2, 1.2, 'F');
 
     if (img) {
-      const scFit = Math.min(imgAreaW / img.w, imgAreaH / img.h);
+      const scFit = Math.min((imgAreaW - 0.8) / img.w, (imgAreaH - 0.8) / img.h);
       const fw = img.w * scFit;
       const fh = img.h * scFit;
       const fx = imgLeft + (imgAreaW - fw) / 2;
-      const fy = py + (imgAreaH - fh) / 2;
+      const fy = imgTop + (imgAreaH - fh) / 2;
       doc.pdf.addImage(img.dataUrl, 'JPEG', fx, fy, fw, fh);
     } else {
       doc.pdf.setFont('helvetica', 'italic').setFontSize(7);
       doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text('Photo unavailable', imgLeft + imgAreaW / 2, py + imgAreaH / 2, { align: 'center' });
+      doc.pdf.text('Photo unavailable', imgLeft + imgAreaW / 2, imgTop + imgAreaH / 2, { align: 'center' });
     }
 
-    // 3. Compact status icon badge (top-right pill)
+    // 3. Status Badge: ONLY one alert symbol in top-right for defect image (no "DEFECT" text)
     if (isDef) {
-      const bW = 18, bH = 5;
-      const bX = px + pW - bW - 2.5;
-      const bY = py + 2.5;
+      const bW = 6.2, bH = 5.2;
+      const bX = imgLeft + imgAreaW - bW - 2;
+      const bY = imgTop + 2;
       doc.setFill([220, 38, 38]);
       doc.pdf.roundedRect(bX, bY, bW, bH, 1.2, 1.2, 'F');
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
-      doc.setTextColor(WHITE);
-      doc.pdf.text('▲ DEFECT', bX + 2, bY + 3.6);
-    } else {
-      const bW = 14, bH = 5;
-      const bX = px + pW - bW - 2.5;
-      const bY = py + 2.5;
-      doc.setFill([6, 95, 70]);
-      doc.pdf.roundedRect(bX, bY, bW, bH, 1.2, 1.2, 'F');
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
-      doc.setTextColor(WHITE);
-      doc.pdf.text('✓ OK', bX + 2.2, bY + 3.6);
+
+      // Vector Alert Triangle inside the badge
+      const triCenterX = bX + bW / 2;
+      const triTopY = bY + 1.1;
+      const triBotY = bY + 4.1;
+      doc.setFill(WHITE);
+      doc.pdf.triangle(triCenterX, triTopY, triCenterX - 1.6, triBotY, triCenterX + 1.6, triBotY, 'F');
+
+      // Exclamation point inside triangle
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(4.0);
+      doc.setTextColor([220, 38, 38]);
+      doc.pdf.text('!', triCenterX, triBotY - 0.4, { align: 'center' });
     }
 
-    // 4. Caption banner at bottom
+    // 4. Caption banner at bottom — Standard clean styling for all images
     const capY = py + pH - bannerH;
-    if (isDef) {
-      doc.setFill([254, 235, 235]);
-      doc.pdf.rect(imgLeft, capY, imgAreaW, bannerH, 'F');
-      doc.setDraw([220, 38, 38], 0.3);
-      doc.pdf.line(imgLeft, capY, px + pW - 0.3, capY);
-    } else {
-      doc.setFill([248, 250, 252]);
-      doc.pdf.rect(imgLeft, capY, imgAreaW, bannerH, 'F');
-      doc.setDraw(BORDER, 0.3);
-      doc.pdf.line(imgLeft, capY, px + pW - 0.3, capY);
-    }
+    doc.setDraw(BORDER, 0.25);
+    doc.pdf.line(px, capY, px + pW, capY);
+
+    // Clean white background fill inside caption
+    doc.setFill(WHITE);
+    doc.pdf.rect(px + 0.5, capY + 0.2, pW - 1, bannerH - 0.6, 'F');
 
     // Line 1: Header Label (e.g. PHOTO #1)
     const labelY = capY + 4;
     doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
-    doc.setTextColor(isDef ? [185, 28, 28] : NAVY);
-    doc.pdf.text(label, imgLeft + 3, labelY);
+    doc.setTextColor(NAVY);
+    let displayLabel = label;
+    while (displayLabel.length > 3 && doc.pdf.getTextWidth(displayLabel) > pW - 8) {
+      displayLabel = displayLabel.slice(0, -1);
+    }
+    doc.pdf.text(displayLabel, px + 3.5, labelY);
 
-    // Line 2: Description Text (bold & highlighted if defect)
+    // Line 2: Description Text
     if (descLines.length > 0) {
-      let descY = labelY + 4;
-      doc.pdf.setFont('helvetica', isDef ? 'bold' : 'normal').setFontSize(6.5);
-      doc.setTextColor(isDef ? [153, 27, 27] : TEXT_BODY);
+      let descY = labelY + 3.8;
+      doc.pdf.setFont('helvetica', 'normal').setFontSize(6.5);
+      doc.setTextColor(TEXT_BODY);
       for (const dLine of descLines) {
-        doc.pdf.text(dLine, imgLeft + 3, descY);
-        descY += 3.8;
+        doc.pdf.text(dLine, px + 3.5, descY);
+        descY += 3.6;
       }
     } else {
       doc.pdf.setFont('helvetica', 'italic').setFontSize(6.0);
       doc.setTextColor(TEXT_FAINT);
       doc.pdf.text(
         isDef ? 'Defect identified during survey inspection' : 'Visual record logged for section survey',
-        imgLeft + 3,
+        px + 3.5,
         labelY + 3.8
       );
     }
@@ -793,15 +783,13 @@ export async function generateInspectionPdf(data: ReportData & {
   const hdrH = 8.5;
   doc.setFill(NAVY);
   doc.pdf.rect(MARGIN_LEFT, detailsY, CONTENT_W, hdrH, 'F');
-  doc.setFill(TEAL);
-  doc.pdf.rect(MARGIN_LEFT, detailsY, 3.5, hdrH, 'F');
   doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
   doc.setTextColor(WHITE);
-  doc.pdf.text('AUDIT & SURVEY PARTICULARS', MARGIN_LEFT + 8, detailsY + 5.8);
+  doc.pdf.text('AUDIT & SURVEY PARTICULARS', MARGIN_LEFT + 6, detailsY + 5.8);
 
   doc.pdf.setFont('helvetica', 'normal').setFontSize(7);
   doc.setTextColor([200, 230, 215]);
-  doc.pdf.text('OFFICIAL STATUTORY RECORD', PAGE_W - MARGIN_RIGHT - 8, detailsY + 5.8, { align: 'right' });
+  doc.pdf.text('OFFICIAL STATUTORY RECORD', PAGE_W - MARGIN_RIGHT - 6, detailsY + 5.8, { align: 'right' });
 
   // 4 Rows of Data Grid
   const particularsRows = [
@@ -859,25 +847,23 @@ export async function generateInspectionPdf(data: ReportData & {
   const certY = detailsY + detailsH + 6;
   const certH = 24;
   doc.roundedBox(MARGIN_LEFT, certY, CONTENT_W, certH, TEAL_TINT, [242, 107, 36] as any, 2);
-  doc.setFill(TEAL);
-  doc.pdf.rect(MARGIN_LEFT, certY, 3.5, certH, 'F');
 
   doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
   doc.setTextColor(TEAL);
-  doc.pdf.text('VERIFICATION STATEMENT & QUALITY CERTIFICATION', MARGIN_LEFT + 8, certY + 6.5);
+  doc.pdf.text('VERIFICATION STATEMENT & QUALITY CERTIFICATION', MARGIN_LEFT + 6, certY + 6.5);
 
   doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
   doc.setTextColor(NAVY);
-  doc.pdf.text('IMO / SOLAS SURVEY STANDARDS', PAGE_W - MARGIN_RIGHT - 8, certY + 6.5, { align: 'right' });
+  doc.pdf.text('IMO / SOLAS SURVEY STANDARDS', PAGE_W - MARGIN_RIGHT - 6, certY + 6.5, { align: 'right' });
 
   doc.setDraw([242, 107, 36], 0.2);
-  doc.pdf.line(MARGIN_LEFT + 8, certY + 9, PAGE_W - MARGIN_RIGHT - 8, certY + 9);
+  doc.pdf.line(MARGIN_LEFT + 6, certY + 9, PAGE_W - MARGIN_RIGHT - 6, certY + 9);
 
   doc.pdf.setFont('helvetica', 'normal').setFontSize(7.2);
   doc.setTextColor(TEXT_BODY);
   const certMsg = 'This inspection was carried out in accordance with international maritime safety regulations, classification society standards, and approved company survey procedures. Findings and condition assessments represent accurate technical status at the time of inspection.';
-  const certLines = doc.pdf.splitTextToSize(certMsg, CONTENT_W - 16) as string[];
-  doc.pdf.text(certLines, MARGIN_LEFT + 8, certY + 14.5);
+  const certLines = doc.pdf.splitTextToSize(certMsg, CONTENT_W - 12) as string[];
+  doc.pdf.text(certLines, MARGIN_LEFT + 6, certY + 14.5);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 2: VESSEL TECHNICAL PARTICULARS (Executive Bespoke Maritime Dossier)
@@ -939,10 +925,6 @@ export async function generateInspectionPdf(data: ReportData & {
   const heroCardH = 22;
   doc.roundedBox(MARGIN_LEFT, heroCardY, CONTENT_W, heroCardH, SLATE_BG, BORDER, 2);
 
-  // Left solid accent (inset pill so it stays neatly inside rounded corners)
-  doc.setFill(NAVY);
-  doc.pdf.roundedRect(MARGIN_LEFT + 1.2, heroCardY + 1.5, 2.5, heroCardH - 3, 1, 1, 'F');
-
   // 4 Columns inside Hero Panel
   const heroCols = [
     {
@@ -968,10 +950,10 @@ export async function generateInspectionPdf(data: ReportData & {
     },
   ];
 
-  const heroColW = (CONTENT_W - 3) / 4;
+  const heroColW = CONTENT_W / 4;
   for (let ci = 0; ci < heroCols.length; ci++) {
     const col = heroCols[ci];
-    const cx = MARGIN_LEFT + 3 + ci * heroColW;
+    const cx = MARGIN_LEFT + ci * heroColW;
 
     // Hairline vertical divider between columns
     if (ci > 0) {
@@ -1280,17 +1262,13 @@ export async function generateInspectionPdf(data: ReportData & {
   const sealBoxH = 28;
   doc.roundedBox(MARGIN_LEFT, sealBoxY, CONTENT_W, sealBoxH, WHITE, BORDER, 2.5);
 
-  // Left solid accent (inset pill so it stays neatly inside rounded corners)
-  doc.setFill(NAVY);
-  doc.pdf.roundedRect(MARGIN_LEFT + 1.5, sealBoxY + 2, 2.5, sealBoxH - 4, 1, 1, 'F');
-
   // Vertical hairline divider separating left legal attestation from right seal stamp
   const dividerX = MARGIN_LEFT + 118;
   doc.setDraw(BORDER, 0.25);
   doc.pdf.line(dividerX, sealBoxY + 3, dividerX, sealBoxY + sealBoxH - 3);
 
   // ── LEFT SIDE: Attestation Statement & Verification Badges ──
-  const attLeft = MARGIN_LEFT + 7;
+  const attLeft = MARGIN_LEFT + 6;
   const attMaxW = dividerX - attLeft - 4; // ~107 mm
 
   // Header
@@ -1541,17 +1519,13 @@ export async function generateInspectionPdf(data: ReportData & {
   const plaqueY = doc.y;
   doc.roundedBox(MARGIN_LEFT, plaqueY, CONTENT_W, signoffBlockH, SLATE_BG, BORDER, 2.0);
 
-  // Left solid accent
-  doc.setFill(NAVY);
-  doc.pdf.roundedRect(MARGIN_LEFT + 1.2, plaqueY + 1.5, 2.5, signoffBlockH - 3, 1, 1, 'F');
-
   // Vertical divider rule
   const divX = MARGIN_LEFT + 118;
   doc.setDraw(BORDER, 0.25);
   doc.pdf.line(divX, plaqueY + 3, divX, plaqueY + signoffBlockH - 3);
 
   // Left Column: Attestation Statement & Signer
-  const pLeft = MARGIN_LEFT + 7;
+  const pLeft = MARGIN_LEFT + 6;
   doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
   doc.setTextColor(NAVY);
   doc.pdf.text('OFFICIAL SURVEYOR ATTESTATION & AUDIT ENDORSEMENT', pLeft, plaqueY + 5.5);
@@ -1639,14 +1613,12 @@ export async function generateInspectionPdf(data: ReportData & {
         doc.ensure(remBoxH + 4);
 
         doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, remBoxH, SLATE_BG, BORDER, 2);
-        doc.setFill(TEAL);
-        doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, remBoxH, 'F');
 
         doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-        doc.setTextColor(TEXT_MUTED);
-        doc.pdf.text('REMARKS', MARGIN_LEFT + 7, doc.y + 6);
+        doc.setTextColor(NAVY);
+        doc.pdf.text('SECTION REMARKS', MARGIN_LEFT + 6, doc.y + 6);
 
-        renderRichText(doc.pdf, remText, MARGIN_LEFT + 7, doc.y + 11.5, CONTENT_W - 16, {
+        renderRichText(doc.pdf, remText, MARGIN_LEFT + 6, doc.y + 11.5, CONTENT_W - 12, {
           size: 8.5,
           lineGap: 4.5,
           color: TEXT_BODY,
@@ -1712,16 +1684,19 @@ export async function generateInspectionPdf(data: ReportData & {
 
           doc.ensure(cardH + 4);
           const cardY = doc.y;
-          doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, BORDER, 2);
-          doc.setFill([239, 68, 68]);
-          doc.pdf.rect(MARGIN_LEFT, cardY, 2.5, cardH, 'F');
+          doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, [254, 202, 202], 2);
 
-          doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
+          const obsBadgeText = `OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()}`;
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+          const obsBadgeW = doc.pdf.getTextWidth(obsBadgeText) + 8;
+          doc.setFill([254, 242, 242]);
+          doc.setDraw([254, 202, 202], 0.3);
+          doc.pdf.roundedRect(MARGIN_LEFT + 6, cardY + 3.8, obsBadgeW, 5.2, 1, 1, 'FD');
           doc.setTextColor([185, 28, 28]);
-          doc.pdf.text(`OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()}`, MARGIN_LEFT + 8, cardY + 5.5);
+          doc.pdf.text(obsBadgeText, MARGIN_LEFT + 10, cardY + 7.5);
 
-          let curY = cardY + 11;
-          renderRichText(doc.pdf, textContent, MARGIN_LEFT + 8, curY, CONTENT_W - 16, {
+          let curY = cardY + 11.5;
+          renderRichText(doc.pdf, textContent, MARGIN_LEFT + 6, curY, CONTENT_W - 12, {
             size: 8,
             lineGap: 4.2,
             color: TEXT_DARK,
@@ -1729,7 +1704,7 @@ export async function generateInspectionPdf(data: ReportData & {
           curY += textH + 2;
 
           if (caContent) {
-            renderRichText(doc.pdf, caContent, MARGIN_LEFT + 8, curY, CONTENT_W - 16, {
+            renderRichText(doc.pdf, caContent, MARGIN_LEFT + 6, curY, CONTENT_W - 12, {
               size: 7.5,
               lineGap: 4.2,
               color: [185, 28, 28],
@@ -1738,7 +1713,7 @@ export async function generateInspectionPdf(data: ReportData & {
           }
 
           if (paContent) {
-            renderRichText(doc.pdf, paContent, MARGIN_LEFT + 8, curY, CONTENT_W - 16, {
+            renderRichText(doc.pdf, paContent, MARGIN_LEFT + 6, curY, CONTENT_W - 12, {
               size: 7.5,
               lineGap: 4.2,
               color: TEXT_MUTED,
@@ -1801,13 +1776,16 @@ export async function generateInspectionPdf(data: ReportData & {
               );
 
               const contY = doc.y;
-              doc.roundedBox(MARGIN_LEFT, contY, CONTENT_W, chunkH, WHITE, BORDER, 2);
-              doc.setFill([239, 68, 68]);
-              doc.pdf.rect(MARGIN_LEFT, contY, 2.5, chunkH, 'F');
+              doc.roundedBox(MARGIN_LEFT, contY, CONTENT_W, chunkH, WHITE, [254, 202, 202], 2);
 
-              doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
+              const contBadgeText = `OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()} (Photographs Cont.)`;
+              doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+              const contBadgeW = doc.pdf.getTextWidth(contBadgeText) + 8;
+              doc.setFill([254, 242, 242]);
+              doc.setDraw([254, 202, 202], 0.3);
+              doc.pdf.roundedRect(MARGIN_LEFT + 6, contY + 3.8, contBadgeW, 5.2, 1, 1, 'FD');
               doc.setTextColor([185, 28, 28]);
-              doc.pdf.text(`OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()} (Photographs Cont.)`, MARGIN_LEFT + 8, contY + 5.5);
+              doc.pdf.text(contBadgeText, MARGIN_LEFT + 10, contY + 7.5);
 
               let chunkY = contY + 12;
               const pW = (CONTENT_W - 22) / 2;
@@ -1959,17 +1937,15 @@ export async function generateInspectionPdf(data: ReportData & {
       // Deficiency Callout Box (if bad)
       if (state === 'bad') {
         doc.roundedBox(MARGIN_LEFT + 6, innerY, CONTENT_W - 12, defBoxH, [254, 242, 242], [254, 202, 202], 2);
-        doc.setFill([239, 68, 68]);
-        doc.pdf.rect(MARGIN_LEFT + 6, innerY, 2.5, defBoxH, 'F');
 
         doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
         doc.setTextColor([185, 28, 28]);
-        doc.pdf.text('!  DEFICIENCY / ACTION REQUIRED', MARGIN_LEFT + 12, innerY + 5);
+        doc.pdf.text('!  DEFICIENCY / ACTION REQUIRED', MARGIN_LEFT + 10, innerY + 5.5);
 
-        let subY = innerY + 10;
-        renderRichText(doc.pdf, caText, MARGIN_LEFT + 12, subY, CONTENT_W - 22, { size: 7.8, lineGap: 4, color: TEXT_DARK });
+        let subY = innerY + 10.5;
+        renderRichText(doc.pdf, caText, MARGIN_LEFT + 10, subY, CONTENT_W - 20, { size: 7.8, lineGap: 4, color: TEXT_DARK });
         subY += caH + 2;
-        renderRichText(doc.pdf, paText, MARGIN_LEFT + 12, subY, CONTENT_W - 22, { size: 7.8, lineGap: 4, color: TEXT_MUTED });
+        renderRichText(doc.pdf, paText, MARGIN_LEFT + 10, subY, CONTENT_W - 20, { size: 7.8, lineGap: 4, color: TEXT_MUTED });
 
         innerY += defBoxH + 4;
       }
@@ -2250,10 +2226,6 @@ export async function generateInspectionPdf(data: ReportData & {
         doc.pdf.rect(MARGIN_LEFT, doc.y, CONTENT_W, rH, 'F');
       }
 
-      // Red left indicator
-      doc.setFill([239, 68, 68]);
-      doc.pdf.rect(MARGIN_LEFT, doc.y, 2.5, rH, 'F');
-
       doc.setDraw(BORDER);
       doc.pdf.line(MARGIN_LEFT, doc.y + rH, PAGE_W - MARGIN_RIGHT, doc.y + rH);
 
@@ -2423,30 +2395,26 @@ export async function generateInspectionPdf(data: ReportData & {
   // Header context box
   const ctxBoxH = 18;
   doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, ctxBoxH, [13, 33, 56], NAVY, 2);
-  doc.setFill(TEAL);
-  doc.pdf.rect(MARGIN_LEFT, doc.y, 3, ctxBoxH, 'F');
   doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
   doc.setTextColor(WHITE);
-  doc.pdf.text('SURVEY CONCLUSION', MARGIN_LEFT + 7, doc.y + 7.5);
+  doc.pdf.text('SURVEY CONCLUSION', MARGIN_LEFT + 6, doc.y + 7.5);
   doc.pdf.setFont('helvetica', 'normal').setFontSize(7);
   doc.setTextColor([180, 220, 200]);
   const surveyDate = `${fmtDate(inspection.startDate)} – ${fmtDate(inspection.completionDate || inspection.startDate)}`;
-  doc.pdf.text(`Survey Period: ${surveyDate}  ·  Lead Surveyor: ${inspection.inspector || '-'}`, MARGIN_LEFT + 7, doc.y + 13.5);
+  doc.pdf.text(`Survey Period: ${surveyDate}  ·  Lead Surveyor: ${inspection.inspector || '-'}`, MARGIN_LEFT + 6, doc.y + 13.5);
   doc.y += ctxBoxH + 5;
 
   // Conclusion text box with rich formatting (bullets, bold, headings, font styles)
-  const conRichH = measureRichText(doc.pdf, conclusionText, CONTENT_W - 20, { size: 8.5, lineGap: 5 });
+  const conRichH = measureRichText(doc.pdf, conclusionText, CONTENT_W - 16, { size: 8.5, lineGap: 5 });
   const conBoxH = Math.max(conRichH + 18, 30);
   doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, conBoxH, SLATE_BG, BORDER, 2);
-  doc.setFill(TEAL);
-  doc.pdf.rect(MARGIN_LEFT, doc.y, 3, conBoxH, 'F');
   doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text('CONCLUDING REMARKS', MARGIN_LEFT + 7, doc.y + 6.5);
+  doc.setTextColor(NAVY);
+  doc.pdf.text('CONCLUDING REMARKS', MARGIN_LEFT + 6, doc.y + 6.5);
   doc.setDraw(BORDER, 0.3);
-  doc.pdf.line(MARGIN_LEFT + 7, doc.y + 8.5, PAGE_W - MARGIN_RIGHT - 7, doc.y + 8.5);
+  doc.pdf.line(MARGIN_LEFT + 6, doc.y + 8.5, PAGE_W - MARGIN_RIGHT - 6, doc.y + 8.5);
 
-  renderRichText(doc.pdf, conclusionText, MARGIN_LEFT + 7, doc.y + 14, CONTENT_W - 20, {
+  renderRichText(doc.pdf, conclusionText, MARGIN_LEFT + 6, doc.y + 14, CONTENT_W - 16, {
     size: 8.5,
     lineGap: 5,
     color: TEXT_BODY,
