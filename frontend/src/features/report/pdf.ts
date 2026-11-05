@@ -1184,108 +1184,6 @@ export async function generateInspectionPdf(data: ReportData & {
 
   doc.y = Math.max(leftY, rightY) + 5;
 
-  // 5. Official Maritime Survey Seal & Statutory Attestation (Full Width Bottom)
-  const sealBoxY = doc.y;
-  const sealBoxH = 28;
-  doc.roundedBox(MARGIN_LEFT, sealBoxY, CONTENT_W, sealBoxH, WHITE, BORDER, 2.5);
-
-  // Vertical hairline divider separating left legal attestation from right seal stamp
-  const dividerX = MARGIN_LEFT + 118;
-  doc.setDraw(BORDER, 0.25);
-  doc.pdf.line(dividerX, sealBoxY + 3, dividerX, sealBoxY + sealBoxH - 3);
-
-  // ── LEFT SIDE: Attestation Statement & Verification Badges ──
-  const attLeft = MARGIN_LEFT + 6;
-  const attMaxW = dividerX - attLeft - 4; // ~107 mm
-
-  // Header
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-  doc.setTextColor(NAVY);
-  doc.pdf.text('STATUTORY ATTESTATION & TECHNICAL CERTIFICATION RECORD', attLeft, sealBoxY + 5.5);
-
-  // Description
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(5.8);
-  doc.setTextColor(TEXT_BODY);
-  const attMsg = 'Vessel technical specifications recorded herein are verified against official certificates of registry, classification society records, builder specification documentation, and attending surveyor on-site audit.';
-  const attLines = doc.pdf.splitTextToSize(attMsg, attMaxW) as string[];
-  doc.pdf.text(attLines, attLeft, sealBoxY + 9.8);
-
-  // 3 Verification Pills (Clean, concise, vector bullet, zero truncation!)
-  const checkY = sealBoxY + 18.2;
-  const checkBadges = [
-    'Registry Verified',
-    'Class Certified',
-    'On-Site Attested',
-  ];
-  const badgeGap = 3;
-  const checkW = (attMaxW - 2 * badgeGap) / 3; // ~33.6 mm each
-
-  for (let cbi = 0; cbi < checkBadges.length; cbi++) {
-    const cbX = attLeft + cbi * (checkW + badgeGap);
-
-    // Pill background
-    doc.setFill([236, 253, 245]);
-    doc.setDraw([167, 243, 208], 0.3);
-    doc.pdf.roundedRect(cbX, checkY, checkW, 5.2, 1.2, 1.2, 'FD');
-
-    // Vector emerald check dot (guaranteed crisp, no unicode corruption!)
-    doc.setFill([16, 122, 70]);
-    doc.pdf.circle(cbX + 3.2, checkY + 2.6, 0.9, 'F');
-
-    // Badge label
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
-    doc.setTextColor([6, 95, 70]);
-    doc.pdf.text(checkBadges[cbi], cbX + 5.6, checkY + 3.7);
-  }
-
-  // ── RIGHT SIDE: Official Survey Seal Stamp ──
-  const sealAreaLeft = dividerX + 3;
-  const sealAreaW = PAGE_W - MARGIN_RIGHT - sealAreaLeft; // ~61 mm
-  const sealCenterX = sealAreaLeft + sealAreaW / 2;
-
-  // Stamp Box Container (Double-bordered maritime seal)
-  const stampBoxW = 56;
-  const stampBoxH = 22;
-  const stampBoxX = sealCenterX - stampBoxW / 2;
-  const stampBoxY = sealBoxY + 3;
-
-  doc.roundedBox(stampBoxX, stampBoxY, stampBoxW, stampBoxH, SLATE_BG, NAVY, 1.5);
-  doc.setDraw(BORDER_DARK, 0.2);
-  doc.pdf.roundedRect(stampBoxX + 1, stampBoxY + 1, stampBoxW - 2, stampBoxH - 2, 1, 1, 'S');
-
-  // Seal Top Title
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.2);
-  doc.setTextColor(NAVY);
-  doc.pdf.text('OZELLAR MARINE TECHNICAL AUDIT', sealCenterX, stampBoxY + 4.2, { align: 'center' });
-
-  // Seal Status Pill
-  const sPillW = 42;
-  const sPillH = 4.6;
-  const sPillX = sealCenterX - sPillW / 2;
-  const sPillY = stampBoxY + 5.8;
-  doc.setFill(NAVY);
-  doc.pdf.roundedRect(sPillX, sPillY, sPillW, sPillH, 1, 1, 'F');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
-  doc.setTextColor(WHITE);
-  doc.pdf.text('OFFICIAL RECORD - VERIFIED', sealCenterX, sPillY + 3.3, { align: 'center' });
-
-  // Seal Reference & Date
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
-  doc.setTextColor(TEXT_DARK);
-  doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  ${fmtDate(inspection.startDate)}`, sealCenterX, stampBoxY + 15.0, { align: 'center' });
-
-  // Seal Surveyor Attestation
-  doc.pdf.setFont('helvetica', 'italic').setFontSize(4.8);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text(
-    inspection.inspector ? `Surveyor: ${inspection.inspector}` : 'Authorized Technical Dossier',
-    sealCenterX,
-    stampBoxY + 18.8,
-    { align: 'center' }
-  );
-
-  doc.y = sealBoxY + sealBoxH + 6;
-
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 3: EXECUTIVE SUMMARY & SURVEY SYNTHESIS (Bespoke Maritime Dashboard)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1309,30 +1207,14 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.setTextColor(TEXT_MUTED);
   doc.pdf.text('Key Condition Findings, Operational Status & Attending Surveyor Appraisal', MARGIN_LEFT, execHdrY + 12.2);
 
-  // Right-hand Badges: Status Pill + Reference
-  const execStatusLabel = (STATUS_LABELS[inspection.status] || inspection.status || 'IN PROGRESS').toUpperCase();
-  const execStColor = inspection.status === 'approved'
-    ? { bg: [16, 122, 70] as [number, number, number], text: WHITE }
-    : inspection.status === 'returned'
-    ? { bg: [185, 28, 28] as [number, number, number], text: WHITE }
-    : { bg: [245, 158, 11] as [number, number, number], text: TEXT_DARK };
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-  const stPillW = doc.pdf.getTextWidth(execStatusLabel) + 12;
-  const stX = PAGE_W - MARGIN_RIGHT - stPillW;
-  doc.setFill(execStColor.bg);
-  doc.pdf.roundedRect(stX, execHdrY + 1.5, stPillW, 6.2, 1.2, 1.2, 'F');
-  doc.setTextColor(execStColor.text);
-  doc.pdf.text(execStatusLabel, stX + stPillW / 2, execHdrY + 5.7, { align: 'center' });
-
   // Audit Reference Pill
   const refStr = `VIR-${inspection.id.slice(0, 8).toUpperCase()}`;
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
   const refPillW = doc.pdf.getTextWidth(refStr) + 10;
-  const refX = stX - refPillW - 3;
+  const refX = PAGE_W - MARGIN_RIGHT - refPillW;
   doc.setFill(SLATE_BG);
   doc.setDraw(BORDER);
   doc.pdf.roundedRect(refX, execHdrY + 1.5, refPillW, 6.2, 1.2, 1.2, 'FD');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
   doc.setTextColor(NAVY);
   doc.pdf.text(refStr, refX + refPillW / 2, execHdrY + 5.7, { align: 'center' });
 
@@ -1425,83 +1307,6 @@ export async function generateInspectionPdf(data: ReportData & {
   });
 
   doc.y = finalY + 8;
-
-  // 5. Executive Surveyor Attestation & Formal Sign-Off Plaque
-  const signoffBlockH = 26;
-  if (doc.y + signoffBlockH > PAGE_H - BOTTOM_MARGIN - 8) {
-    doc.newPage();
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(10.5);
-    doc.setTextColor(NAVY);
-    doc.pdf.text('2. Executive Summary - Formal Sign-off', MARGIN_LEFT, 20);
-
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
-    doc.setTextColor(TEXT_MUTED);
-    doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  SURVEYOR SIGN-OFF`, PAGE_W - MARGIN_RIGHT, 20, { align: 'right' });
-
-    doc.setDraw(BORDER_DARK, 0.25);
-    doc.pdf.line(MARGIN_LEFT, 23, PAGE_W - MARGIN_RIGHT, 23);
-    doc.y = 28;
-  }
-
-  const plaqueY = doc.y;
-  doc.roundedBox(MARGIN_LEFT, plaqueY, CONTENT_W, signoffBlockH, SLATE_BG, BORDER, 2.0);
-
-  // Vertical divider rule
-  const divX = MARGIN_LEFT + 118;
-  doc.setDraw(BORDER, 0.25);
-  doc.pdf.line(divX, plaqueY + 3, divX, plaqueY + signoffBlockH - 3);
-
-  // Left Column: Attestation Statement & Signer
-  const pLeft = MARGIN_LEFT + 6;
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-  doc.setTextColor(NAVY);
-  doc.pdf.text('OFFICIAL SURVEYOR ATTESTATION & AUDIT ENDORSEMENT', pLeft, plaqueY + 5.5);
-
-  doc.pdf.setFont('helvetica', 'italic').setFontSize(5.6);
-  doc.setTextColor(TEXT_MUTED);
-  const attestationLines = doc.pdf.splitTextToSize(
-    'I hereby attest that this executive summary and operational appraisal represents an accurate on-site evaluation of the vessel\'s physical condition, operational status, and statutory compliance at the time of survey.',
-    divX - pLeft - 4
-  ) as string[];
-  doc.pdf.text(attestationLines, pLeft, plaqueY + 10.0);
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
-  doc.setTextColor(TEXT_DARK);
-  doc.pdf.text(`ATTENDING SURVEYOR: ${(inspection.inspector || 'Official Marine Surveyor').toUpperCase()}`, pLeft, plaqueY + 19.5);
-
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(5.5);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text(`Survey Agency: ${inspection.company || 'Ozellar Marine Global'}  |  Date: ${fmtDate(inspection.completionDate || inspection.startDate)}`, pLeft, plaqueY + 23.2);
-
-  // Right Column: Official Seal Stamp Plaque
-  const rWidth = CONTENT_W - (divX - MARGIN_LEFT);
-  const rCenter = divX + rWidth / 2;
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.5);
-  doc.setTextColor(NAVY);
-  doc.pdf.text('OZELLAR MARINE GLOBAL', rCenter, plaqueY + 5.5, { align: 'center' });
-
-  // Status Pill
-  const pPillW = 44;
-  const pPillH = 4.8;
-  const pPillX = rCenter - pPillW / 2;
-  const pPillY = plaqueY + 7.5;
-  doc.setFill(NAVY);
-  doc.pdf.roundedRect(pPillX, pPillY, pPillW, pPillH, 1, 1, 'F');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.6);
-  doc.setTextColor(WHITE);
-  doc.pdf.text('AUDIT RECORD - ATTESTED & FILED', rCenter, pPillY + 3.4, { align: 'center' });
-
-  // Reference & Date
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(5.8);
-  doc.setTextColor(TEXT_DARK);
-  doc.pdf.text(`VIR-${inspection.id.slice(0, 8).toUpperCase()}  |  ${fmtDate(inspection.startDate)}`, rCenter, plaqueY + 17.5, { align: 'center' });
-
-  doc.pdf.setFont('helvetica', 'italic').setFontSize(5.0);
-  doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text('Official Survey Attestation Plaque', rCenter, plaqueY + 21.8, { align: 'center' });
-
-  doc.y = plaqueY + signoffBlockH + 8;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGES 4+: SECTION EVALUATIONS & CHECKLIST DETAILS / PHOTO SECTIONS
@@ -2360,28 +2165,7 @@ export async function generateInspectionPdf(data: ReportData & {
     color: TEXT_BODY,
     bulletColor: NAVY,
   });
-  doc.y += conBoxH + 6;
-
-  // Key recommendation highlight boxes (checklist summary)
-  const recItems = [
-    { icon: '✓', text: 'All sections have been surveyed and documented per maritime inspection protocols.', ok: true },
-    { icon: observations.length > 0 ? '▲' : '✓', text: observations.length > 0 ? `${observations.length} observation(s) require corrective action before next voyage.` : 'No critical observations recorded. Vessel meets inspection requirements.', ok: observations.length === 0 },
-    { icon: '→', text: 'Full photographic evidence is embedded within this report for auditor reference.', ok: true },
-  ];
-  for (const rec of recItems) {
-    doc.ensure(12);
-    const recH = 10;
-    const bgColor = rec.ok ? ([236, 253, 245] as [number, number, number]) : ([254, 242, 242] as [number, number, number]);
-    const bdColor = rec.ok ? ([167, 243, 208] as [number, number, number]) : ([254, 202, 202] as [number, number, number]);
-    const txColor = rec.ok ? ([6, 95, 70] as [number, number, number]) : ([185, 28, 28] as [number, number, number]);
-    doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, recH, bgColor, bdColor, 1.5);
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
-    doc.setTextColor(txColor);
-    doc.pdf.text(`${rec.icon}  ${rec.text}`, MARGIN_LEFT + 5, doc.y + 6.8);
-    doc.y += recH + 2;
-  }
-
-  doc.y += 10;
+  doc.y += conBoxH + 10;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // POST-PASS: DYNAMIC RUNNING HEADERS & FOOTERS (Page X of Y)
