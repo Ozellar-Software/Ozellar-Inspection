@@ -1380,6 +1380,7 @@ export function PhotoStrip({
           photo={confirmReq.photo}
           finding={confirmReq.finding}
           sectionName={confirmReq.sectionName}
+          reportCategory={confirmReq.reportCategory}
           onRemoveObservationAndSetNormal={async () => {
             const req = confirmReq;
             setConfirmReq(null);

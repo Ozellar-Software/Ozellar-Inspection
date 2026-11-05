@@ -1,7 +1,8 @@
 import './QuestionCard.css';
 import { RichTextEditor } from '../../components/RichTextEditor/RichTextEditor';
 import { useState, useRef, useEffect } from 'react';
-import type { InspectionQuestion, InspectionSection, Photo, Response } from '@ozellar/shared';
+import { useLiveQuery } from 'dexie-react-hooks';
+import type { InspectionQuestion, InspectionSection, Photo, ReportCategory, Response } from '@ozellar/shared';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { addPhoto } from '../../offline/photoQueue';
@@ -80,6 +81,7 @@ export function QuestionCard({
   locked,
   allSections,
   availableQuestions,
+  reportCategory,
 }: {
   inspectionId: string;
   question: InspectionQuestion;
@@ -88,7 +90,16 @@ export function QuestionCard({
   locked: boolean;
   allSections?: InspectionSection[];
   availableQuestions?: QuestionSummary[];
+  reportCategory?: ReportCategory;
 }) {
+  const inspection = useLiveQuery(
+    () => (inspectionId ? db.inspections.get(inspectionId) : undefined),
+    [inspectionId]
+  );
+  const effectiveCategory = reportCategory ?? inspection?.reportCategory;
+  const isVesselInspection = !effectiveCategory || effectiveCategory === 'inspection';
+  const showActions = isVesselInspection;
+
   const [remarks, setRemarks] = useState(response?.remarks ?? '');
   const [correctiveAction, setCorrectiveAction] = useState(response?.correctiveAction ?? '');
   const [preventiveAction, setPreventiveAction] = useState(response?.preventiveAction ?? '');
@@ -398,8 +409,8 @@ export function QuestionCard({
         </PillBtn>
       </div>
 
-      {/* ── Corrective / Preventive actions (shown when "no") ── */}
-      {answer === 'no' && (
+      {/* ── Corrective / Preventive actions (shown when "no" and for vessel inspections) ── */}
+      {answer === 'no' && showActions && (
         <div className="corrective-preventive-block">
           <div className="seg-label">Corrective Action</div>
           <RichTextEditor

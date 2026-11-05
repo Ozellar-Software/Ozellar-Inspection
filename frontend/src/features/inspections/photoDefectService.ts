@@ -1,4 +1,4 @@
-import type { Finding, Photo } from '@ozellar/shared';
+import type { Finding, Photo, ReportCategory } from '@ozellar/shared';
 import { db } from '../../offline/db';
 import { localWrite, localDelete } from '../../offline/outbox';
 
@@ -6,6 +6,7 @@ export interface DefectConfirmRequest {
   photo: Photo;
   finding: Finding;
   sectionName?: string;
+  reportCategory?: ReportCategory;
   onRemoveObservationAndSetNormal: () => Promise<void>;
   onKeepObservationAndSetNormal: () => Promise<void>;
   onCancel: () => void;
@@ -54,11 +55,19 @@ export function stripHtmlToPlainText(html: string): string {
 /**
  * Check whether a finding has user-entered content or observations beyond the photo's caption/section name.
  */
-export function hasFindingDetails(finding: Finding, photo?: Photo, sectionName?: string): boolean {
-  // If corrective action or preventive action was entered, the user definitely entered custom remarks
-  const hasCa = !!finding.correctiveAction && stripHtmlToPlainText(finding.correctiveAction).length > 0;
-  const hasPa = !!finding.preventiveAction && stripHtmlToPlainText(finding.preventiveAction).length > 0;
-  if (hasCa || hasPa) return true;
+export function hasFindingDetails(
+  finding: Finding,
+  photo?: Photo,
+  sectionName?: string,
+  reportCategory?: ReportCategory
+): boolean {
+  // If corrective action or preventive action was entered, the user definitely entered custom remarks (for vessel inspection)
+  const isVesselInspection = !reportCategory || reportCategory === 'inspection';
+  if (isVesselInspection) {
+    const hasCa = !!finding.correctiveAction && stripHtmlToPlainText(finding.correctiveAction).length > 0;
+    const hasPa = !!finding.preventiveAction && stripHtmlToPlainText(finding.preventiveAction).length > 0;
+    if (hasCa || hasPa) return true;
+  }
 
   const rawFindingText = (finding.text || '').trim();
   const findingText = stripHtmlToPlainText(rawFindingText);
@@ -202,7 +211,11 @@ export async function togglePhotoDefectWithObservation(
           if (sec?.name) secName = sec.name.trim();
         }
 
-        const hasDetails = hasFindingDetails(finding, currentPhoto, secName) || otherPhotos.length > 0;
+        // Look up inspection to check reportCategory
+        const insp = inspectionId ? await db.inspections.get(inspectionId) : undefined;
+        const reportCategory = insp?.reportCategory;
+
+        const hasDetails = hasFindingDetails(finding, currentPhoto, secName, reportCategory) || otherPhotos.length > 0;
         const targetSectionId = sectionId || currentPhoto.inspectionSectionId || finding.inspectionSectionId || null;
 
         if (hasDetails && options?.onConfirmRequired) {
@@ -211,6 +224,7 @@ export async function togglePhotoDefectWithObservation(
             photo: currentPhoto,
             finding,
             sectionName: secName,
+            reportCategory,
             // YES: Delete observation & move photo to section
             onRemoveObservationAndSetNormal: async () => {
               const patch: Partial<Photo> = {

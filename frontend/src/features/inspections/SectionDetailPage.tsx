@@ -356,6 +356,7 @@ export function SectionDetailPage() {
             locked={locked}
             allSections={dispAllSections}
             availableQuestions={dispQuestions.map((item) => ({ id: item.id, ref: item.ref, text: item.text }))}
+            reportCategory={inspection?.reportCategory}
           />
         ))}
 
@@ -528,6 +529,7 @@ export function SectionDetailPage() {
             photos={photosByFinding.get(f.id) ?? []}
             locked={locked}
             allSections={dispAllSections}
+            reportCategory={inspection?.reportCategory}
           />
         ))}
 

@@ -631,6 +631,7 @@ export async function generateInspectionPdf(data: ReportData & {
 
   const isTakeOver = (inspection as any)?.reportCategory === 'take_over';
   const isPrePurchase = (inspection as any)?.reportCategory === 'pre_purchase';
+  const isOrdinaryInspection = !isTakeOver && !isPrePurchase;
   const mainPdfTitle = isTakeOver
     ? 'VESSEL TAKE OVER REPORT'
     : isPrePurchase
@@ -650,18 +651,6 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.setTextColor(TEXT_MUTED);
   doc.pdf.text(subPdfTitle, titleX, 16);
 
-  // Top Right Audit Grade Pill
-  const auditPillW = 40;
-  doc.setFill(SLATE_BG);
-  doc.setDraw(BORDER);
-  doc.pdf.roundedRect(PAGE_W - MARGIN_RIGHT - auditPillW, 6, auditPillW, 12, 1.5, 1.5, 'FD');
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(7);
-  doc.setTextColor(NAVY);
-  doc.pdf.text('AUDIT CERTIFIED', PAGE_W - MARGIN_RIGHT - auditPillW + 5, 10.5);
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(6.5);
-  doc.setTextColor(TEXT_FAINT);
-  doc.pdf.text(`ISSUED: ${fmtDate(inspection.startDate || new Date().toISOString())}`, PAGE_W - MARGIN_RIGHT - auditPillW + 5, 14.5);
-
   // ── Full-Bleed Hero Cover Image ──────────────────────────────────────────
   // Image spans full page width, with a dark gradient overlay at bottom for text
   const heroY = 25;
@@ -680,14 +669,6 @@ export async function generateInspectionPdf(data: ReportData & {
   ].filter(Boolean);
   const vMetaStr = metaItems.join('   |   ');
 
-  // Status configuration
-  const statusLabel = (STATUS_LABELS[inspection.status] || inspection.status || 'IN PROGRESS').toUpperCase();
-  const stColor = inspection.status === 'approved'
-    ? { bg: [16, 122, 70] as [number, number, number], border: [34, 197, 94] as [number, number, number] }
-    : inspection.status === 'returned'
-    ? { bg: [185, 28, 28] as [number, number, number], border: [239, 68, 68] as [number, number, number] }
-    : { bg: [180, 83, 9] as [number, number, number], border: [245, 158, 11] as [number, number, number] };
-
   if (coverImgLoaded) {
     // Exact crop to cover: fits PAGE_W × heroH with zero overflow
     const croppedDataUrl = await cropToCover(coverImgLoaded, PAGE_W, heroH);
@@ -705,23 +686,6 @@ export async function generateInspectionPdf(data: ReportData & {
       doc.pdf.rect(0, gradTop + (i * gradH) / steps, PAGE_W, gradH / steps + 0.5, 'F');
     }
     doc.pdf.setGState(doc.pdf.GState({ opacity: 1 }));
-
-    // Status Pill (placed at bottom right of image over gradient)
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-    const pillTextW = doc.pdf.getTextWidth(statusLabel);
-    const pillW = pillTextW + 14;
-    const pillH = 7.5;
-    const pillX = PAGE_W - MARGIN_RIGHT - pillW;
-    const pillY = heroY + heroH - 22;
-
-    doc.setFill(stColor.bg);
-    doc.setDraw(stColor.border, 0.4);
-    doc.pdf.roundedRect(pillX, pillY, pillW, pillH, 1.5, 1.5, 'FD');
-    // Inner filled status dot
-    doc.setFill(WHITE);
-    doc.pdf.circle(pillX + 4.5, pillY + pillH / 2, 1.1, 'F');
-    doc.setTextColor(WHITE);
-    doc.pdf.text(statusLabel, pillX + 8, pillY + 5.2);
 
     // Vessel Name Overlay (bottom left)
     const overlayTextY = heroY + heroH - 18;
@@ -746,21 +710,6 @@ export async function generateInspectionPdf(data: ReportData & {
 
     doc.setFill(TEAL);
     doc.pdf.rect(MARGIN_LEFT, heroY + 16, 24, 1.5, 'F');
-
-    // Status Pill
-    doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-    const pillTextW = doc.pdf.getTextWidth(statusLabel);
-    const pillW = pillTextW + 14;
-    const pillH = 7.5;
-    const pillX = PAGE_W - MARGIN_RIGHT - pillW;
-    const pillY = heroY + 16;
-    doc.setFill(stColor.bg);
-    doc.setDraw(stColor.border, 0.4);
-    doc.pdf.roundedRect(pillX, pillY, pillW, pillH, 1.5, 1.5, 'FD');
-    doc.setFill(WHITE);
-    doc.pdf.circle(pillX + 4.5, pillY + pillH / 2, 1.1, 'F');
-    doc.setTextColor(WHITE);
-    doc.pdf.text(statusLabel, pillX + 8, pillY + 5.2);
 
     doc.pdf.setFont('helvetica', 'bold').setFontSize(22);
     doc.setTextColor(WHITE);
@@ -842,28 +791,6 @@ export async function generateInspectionPdf(data: ReportData & {
 
     pRowY += 13.5;
   }
-
-  // ── Cover Footer Certification Box ─────────────────────────────────────────
-  const certY = detailsY + detailsH + 6;
-  const certH = 24;
-  doc.roundedBox(MARGIN_LEFT, certY, CONTENT_W, certH, TEAL_TINT, [242, 107, 36] as any, 2);
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-  doc.setTextColor(TEAL);
-  doc.pdf.text('VERIFICATION STATEMENT & QUALITY CERTIFICATION', MARGIN_LEFT + 6, certY + 6.5);
-
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-  doc.setTextColor(NAVY);
-  doc.pdf.text('IMO / SOLAS SURVEY STANDARDS', PAGE_W - MARGIN_RIGHT - 6, certY + 6.5, { align: 'right' });
-
-  doc.setDraw([242, 107, 36], 0.2);
-  doc.pdf.line(MARGIN_LEFT + 6, certY + 9, PAGE_W - MARGIN_RIGHT - 6, certY + 9);
-
-  doc.pdf.setFont('helvetica', 'normal').setFontSize(7.2);
-  doc.setTextColor(TEXT_BODY);
-  const certMsg = 'This inspection was carried out in accordance with international maritime safety regulations, classification society standards, and approved company survey procedures. Findings and condition assessments represent accurate technical status at the time of inspection.';
-  const certLines = doc.pdf.splitTextToSize(certMsg, CONTENT_W - 12) as string[];
-  doc.pdf.text(certLines, MARGIN_LEFT + 6, certY + 14.5);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 2: VESSEL TECHNICAL PARTICULARS (Executive Bespoke Maritime Dossier)
@@ -1655,8 +1582,8 @@ export async function generateInspectionPdf(data: ReportData & {
         for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
           const fRow = s.findings[fIdx];
           const textContent = fRow.finding.text || 'Observation logged';
-          const caContent = fRow.finding.correctiveAction ? `**Corrective Action:** ${fRow.finding.correctiveAction}` : '';
-          const paContent = fRow.finding.preventiveAction ? `*Preventive Action:* ${fRow.finding.preventiveAction}` : '';
+          const caContent = (isOrdinaryInspection && fRow.finding.correctiveAction) ? `**Corrective Action:** ${fRow.finding.correctiveAction}` : '';
+          const paContent = (isOrdinaryInspection && fRow.finding.preventiveAction) ? `*Preventive Action:* ${fRow.finding.preventiveAction}` : '';
 
           const textH = measureRichText(doc.pdf, textContent, CONTENT_W - 16, { size: 8, lineGap: 4.2 });
           const caH = caContent ? measureRichText(doc.pdf, caContent, CONTENT_W - 16, { size: 7.5, lineGap: 4.2 }) : 0;
@@ -1864,7 +1791,7 @@ export async function generateInspectionPdf(data: ReportData & {
       let paText = '';
       let caH = 0;
       let paH = 0;
-      if (state === 'bad') {
+      if (state === 'bad' && isOrdinaryInspection) {
         caText = response?.correctiveAction ? `**Corrective:** ${response.correctiveAction}` : '**Corrective:** Immediate rectification required';
         paText = response?.preventiveAction ? `*Preventive:* ${response.preventiveAction}` : '*Preventive:* Review preventive maintenance routine';
         caH = measureRichText(doc.pdf, caText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
@@ -1934,8 +1861,8 @@ export async function generateInspectionPdf(data: ReportData & {
         innerY += remH + 3;
       }
 
-      // Deficiency Callout Box (if bad)
-      if (state === 'bad') {
+      // Deficiency Callout Box (if bad and ordinary vessel inspection)
+      if (state === 'bad' && isOrdinaryInspection) {
         doc.roundedBox(MARGIN_LEFT + 6, innerY, CONTENT_W - 12, defBoxH, [254, 242, 242], [254, 202, 202], 2);
 
         doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
@@ -2066,7 +1993,7 @@ export async function generateInspectionPdf(data: ReportData & {
 
       const firstPhotoRows = Math.ceil(firstBatchObsPhotos.length / 2);
       let cardH = 28;
-      if (fRow.finding.correctiveAction) cardH += 6;
+      if (isOrdinaryInspection && fRow.finding.correctiveAction) cardH += 6;
       if (firstBatchObsPhotos.length === 1) {
         cardH += obsSinglePH + 8;
       } else if (firstPhotoRows > 0) {
@@ -2091,7 +2018,7 @@ export async function generateInspectionPdf(data: ReportData & {
       doc.pdf.text(doc.pdf.splitTextToSize(fRow.finding.text || '-', CONTENT_W - 16) as string[], MARGIN_LEFT + 6, doc.y + 13);
 
       let curY = doc.y + 20;
-      if (fRow.finding.correctiveAction) {
+      if (isOrdinaryInspection && fRow.finding.correctiveAction) {
         doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
         doc.setTextColor([185, 28, 28]);
         doc.pdf.text(`Action: ${fRow.finding.correctiveAction}`, MARGIN_LEFT + 6, curY);
@@ -2198,7 +2125,11 @@ export async function generateInspectionPdf(data: ReportData & {
 
   if (displayObservations.length > 0) {
     doc.newPage();
-    doc.sectionHeader('Deficiency Action Log & Remediation Plan', 'Action List', `${displayObservations.length} Observations`);
+    doc.sectionHeader(
+      isOrdinaryInspection ? 'Deficiency Action Log & Remediation Plan' : 'Deficiency & Observation Summary Log',
+      'Action List',
+      `${displayObservations.length} Observations`
+    );
 
     // Table Header
     doc.ensure(12);
@@ -2209,15 +2140,22 @@ export async function generateInspectionPdf(data: ReportData & {
     doc.setTextColor(WHITE);
     doc.pdf.text('#', MARGIN_LEFT + 4, doc.y + 5.2);
     doc.pdf.text('SECTION & REF', MARGIN_LEFT + 12, doc.y + 5.2);
-    doc.pdf.text('DEFICIENCY DESCRIPTION', MARGIN_LEFT + 58, doc.y + 5.2);
-    doc.pdf.text('CORRECTIVE ACTION REQUIRED', MARGIN_LEFT + 114, doc.y + 5.2);
+    if (isOrdinaryInspection) {
+      doc.pdf.text('DEFICIENCY DESCRIPTION', MARGIN_LEFT + 58, doc.y + 5.2);
+      doc.pdf.text('CORRECTIVE ACTION REQUIRED', MARGIN_LEFT + 114, doc.y + 5.2);
+    } else {
+      doc.pdf.text('DEFICIENCY & OBSERVATION DETAILS', MARGIN_LEFT + 58, doc.y + 5.2);
+    }
     doc.pdf.text('EVIDENCE', MARGIN_LEFT + 162, doc.y + 5.2);
     doc.y += thH;
 
     displayObservations.forEach((obs, idx) => {
-      const descLines = doc.pdf.splitTextToSize(obs.text || obs.remarks || '-', 54) as string[];
-      const caLines = doc.pdf.splitTextToSize(obs.correctiveAction || 'Immediate remediation required', 46) as string[];
-      const rH = Math.max(descLines.length, caLines.length) * 4.2 + 6;
+      const descW = isOrdinaryInspection ? 54 : 100;
+      const descLines = doc.pdf.splitTextToSize(obs.text || obs.remarks || '-', descW) as string[];
+      const caLines = isOrdinaryInspection
+        ? (doc.pdf.splitTextToSize(obs.correctiveAction || 'Immediate remediation required', 46) as string[])
+        : [];
+      const rH = Math.max(descLines.length, caLines.length, 1) * 4.2 + 6;
 
       doc.ensure(rH);
       const isAlt = idx % 2 === 1;
@@ -2244,7 +2182,9 @@ export async function generateInspectionPdf(data: ReportData & {
       doc.pdf.setFont('helvetica', 'normal').setFontSize(7.5);
       doc.setTextColor(TEXT_BODY);
       doc.pdf.text(descLines, MARGIN_LEFT + 58, doc.y + 5);
-      doc.pdf.text(caLines, MARGIN_LEFT + 114, doc.y + 5);
+      if (isOrdinaryInspection && caLines.length > 0) {
+        doc.pdf.text(caLines, MARGIN_LEFT + 114, doc.y + 5);
+      }
 
       // Evidence Photo Count Pill Badge
       const pCount = obs.photoIds ? obs.photoIds.length : 0;
@@ -2286,7 +2226,7 @@ export async function generateInspectionPdf(data: ReportData & {
           evidencePhotos.push({
             photoId: pId,
             label: `${obs.ref || `OBSERVATION ${obsIdx + 1}`} • PHOTO #${pIdx + 1}`,
-            desc: obs.text || obs.correctiveAction || 'Deficiency identified during survey inspection',
+            desc: obs.text || (isOrdinaryInspection ? obs.correctiveAction : '') || 'Deficiency identified during survey inspection',
             isDefect: true,
             sectionName: obs.sectionName,
             ref: obs.ref || `OBS ${obsIdx + 1}`,

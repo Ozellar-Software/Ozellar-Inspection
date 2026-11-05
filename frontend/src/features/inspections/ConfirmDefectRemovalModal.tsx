@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Finding, Photo } from '@ozellar/shared';
+import type { Finding, Photo, ReportCategory } from '@ozellar/shared';
 import { WarningIcon, XIcon, TrashIcon, CheckIcon } from '../../icons';
 import { stripHtmlToPlainText } from './photoDefectService';
 import './ConfirmDefectRemovalModal.css';
@@ -9,6 +9,8 @@ export interface ConfirmDefectRemovalModalProps {
   photo?: Photo | null;
   finding?: Finding | null;
   sectionName?: string;
+  reportCategory?: ReportCategory;
+  showActions?: boolean;
   onRemoveObservationAndSetNormal: () => void;
   onKeepObservationAndSetNormal: () => void;
   onCancel: () => void;
@@ -19,12 +21,15 @@ export function ConfirmDefectRemovalModal({
   photo,
   finding,
   sectionName,
+  reportCategory,
+  showActions,
   onRemoveObservationAndSetNormal,
   onKeepObservationAndSetNormal,
   onCancel,
 }: ConfirmDefectRemovalModalProps) {
   if (!isOpen || !finding) return null;
 
+  const isVessel = showActions ?? (!reportCategory || reportCategory === 'inspection');
   const findingTextClean = stripHtmlToPlainText(finding.text || '');
   const caClean = stripHtmlToPlainText(finding.correctiveAction || '');
   const paClean = stripHtmlToPlainText(finding.preventiveAction || '');
@@ -60,13 +65,13 @@ export function ConfirmDefectRemovalModal({
                 {findingTextClean ? findingTextClean : <em className="faint">(No description entered)</em>}
               </span>
             </div>
-            {caClean && (
+            {isVessel && caClean && (
               <div className="cdrm-preview-row">
                 <span className="cdrm-preview-label">Corrective Action:</span>
                 <span className="cdrm-preview-val">{caClean}</span>
               </div>
             )}
-            {paClean && (
+            {isVessel && paClean && (
               <div className="cdrm-preview-row">
                 <span className="cdrm-preview-label">Preventive Action:</span>
                 <span className="cdrm-preview-val">{paClean}</span>

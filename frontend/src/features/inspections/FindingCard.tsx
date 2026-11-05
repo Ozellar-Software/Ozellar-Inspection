@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Finding, InspectionSection, Photo } from '@ozellar/shared';
+import { useLiveQuery } from 'dexie-react-hooks';
+import type { Finding, InspectionSection, Photo, ReportCategory } from '@ozellar/shared';
 import { db } from '../../offline/db';
 import { localWrite, localDelete } from '../../offline/outbox';
 import { addPhoto } from '../../offline/photoQueue';
@@ -52,6 +53,7 @@ export function FindingCard({
   allSections,
   index,
   sectionName,
+  reportCategory,
 }: {
   finding: Finding;
   photos: Photo[];
@@ -59,7 +61,16 @@ export function FindingCard({
   allSections?: InspectionSection[];
   index?: number;
   sectionName?: string;
+  reportCategory?: ReportCategory;
 }) {
+  const inspection = useLiveQuery(
+    () => (finding.inspectionId ? db.inspections.get(finding.inspectionId) : undefined),
+    [finding.inspectionId]
+  );
+  const effectiveCategory = reportCategory ?? inspection?.reportCategory;
+  const isVesselInspection = !effectiveCategory || effectiveCategory === 'inspection';
+  const showActions = isVesselInspection;
+
   const [text, setText] = useState(finding.text);
   const [correctiveAction, setCorrectiveAction] = useState(finding.correctiveAction);
   const [preventiveAction, setPreventiveAction] = useState(finding.preventiveAction);
@@ -339,8 +350,8 @@ export function FindingCard({
         </PillBtn>
       </div>
 
-      {/* ── Corrective & Preventive Actions (Active when Observation / Defect) ── */}
-      {!isSatisfactory && (
+      {/* ── Corrective & Preventive Actions (Active when Observation / Defect for Vessel Inspections) ── */}
+      {!isSatisfactory && showActions && (
         <div className="corrective-preventive-block" style={{ marginTop: 10, paddingBottom: 0 }}>
           <div className="seg-label" style={{ margin: '0 0 6px' }}>Corrective Action</div>
           <RichTextEditor
