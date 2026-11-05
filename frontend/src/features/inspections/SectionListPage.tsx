@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { can, isEditable, STATUS_LABELS, type InspectionStatus, type User, type Finding } from '@ozellar/shared';
+import { can, isEditable, STATUS_LABELS, type InspectionStatus, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
@@ -12,7 +12,6 @@ import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
 import { DeleteInspectionModal } from './DeleteInspectionModal';
 import { PhotoGalleryPreviewModal } from './PhotoGalleryPreviewModal';
-import { formatObservationText } from './photoDefectService';
 import { ReportPdfPreviewModal } from '../report/ReportPdfPreviewModal';
 import { loadReportData } from '../report/reportData';
 import { generateInspectionPdf } from '../report/pdf';
@@ -101,73 +100,8 @@ export function SectionListPage() {
   const photos = useLiveQuery(
     () => (inspectionId ? db.photos.where('inspectionId').equals(inspectionId).toArray() : []), [inspectionId]) ?? [];
 
-  const findings = useLiveQuery(
-    () => (inspectionId ? db.findings.where('inspectionId').equals(inspectionId).toArray() : []),
-    [inspectionId]
-  ) ?? [];
-  const activeFindingIds = useMemo(() => new Set(findings.map((f) => f.id)), [findings]);
-
   const activePhotos = useMemo(() => photos.filter((p) => !p.deletedAt), [photos]);
   const defectPhotos = useMemo(() => activePhotos.filter((p) => !!p.isDefect), [activePhotos]);
-  const unlinkedDefectPhotos = useMemo(
-    () => activePhotos.filter((p) => p.isDefect && (!p.findingId || !activeFindingIds.has(p.findingId)) && p.inspectionSectionId),
-    [activePhotos, activeFindingIds]
-  );
-
-  const [isSyncingDefects, setIsSyncingDefects] = useState(false);
-
-  const handleSyncDefectObservations = async () => {
-    if (isSyncingDefects || unlinkedDefectPhotos.length === 0) return;
-    setIsSyncingDefects(true);
-    try {
-      for (const p of unlinkedDefectPhotos) {
-        if (!p.inspectionSectionId) continue;
-        const existingFindings = await db.findings
-          .where('inspectionSectionId')
-          .equals(p.inspectionSectionId)
-          .toArray();
-
-        let sectionName = '';
-        const sec = await db.inspectionSections.get(p.inspectionSectionId);
-        if (sec?.name?.trim()) {
-          sectionName = sec.name.trim();
-        }
-
-        const findingText = formatObservationText(sectionName, p.description);
-
-        const findingId = crypto.randomUUID();
-        const newFinding: Finding = {
-          id: findingId,
-          inspectionId: inspectionId || '',
-          inspectionSectionId: p.inspectionSectionId,
-          text: findingText,
-          answer: 'no',
-          correctiveAction: '',
-          preventiveAction: '',
-          position: existingFindings.length,
-        };
-
-        await localWrite('findings', findingId, newFinding as unknown as Record<string, unknown>);
-        await localWrite('photos', p.id, {
-          findingId,
-          isDefect: true,
-          target: 'finding',
-        });
-      }
-    } catch (err: any) {
-      console.error('Failed to sync defect observations', err);
-    } finally {
-      setIsSyncingDefects(false);
-    }
-  };
-
-  // Automatically backfill observations for unlinked defect photos without requiring user UI clicks
-  useEffect(() => {
-    if (!inspection) return;
-    const isLocked = !isEditable(inspection.status);
-    if (isLocked || isSyncingDefects || unlinkedDefectPhotos.length === 0) return;
-    void handleSyncDefectObservations();
-  }, [unlinkedDefectPhotos.length, inspection?.status, isSyncingDefects]);
 
   const photosBySection = useMemo(() => {
     const map = new Map<string, number>();

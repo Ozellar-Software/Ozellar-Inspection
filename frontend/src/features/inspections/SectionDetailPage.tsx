@@ -12,7 +12,6 @@ import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
 import { endPhotoDrag, showDragNotification } from './photoDragService';
-import { formatObservationText } from './photoDefectService';
 import { RichTextEditor } from '../../components/RichTextEditor/RichTextEditor';
 import './SectionDetailPage.css';
 
@@ -28,7 +27,6 @@ export function SectionDetailPage() {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [remarksValue, setRemarksValue] = useState('');
-  const [isSyncingDefects, setIsSyncingDefects] = useState(false);
 
   useEffect(() => {
     if (inspectionId) {
@@ -87,78 +85,17 @@ export function SectionDetailPage() {
   const photosByFinding = new Map<string, Photo[]>();
   const sectionPhotos: Photo[] = [];
   for (const p of photos) {
+    if (p.deletedAt) continue;
     const isLinkedFinding = p.findingId && activeFindingIds.has(p.findingId);
-    // Defect / observation photos are shown ONLY in observation cards and strictly excluded from question and section photos
-    if (isLinkedFinding || p.target === 'finding' || p.isDefect) {
-      if (isLinkedFinding && p.findingId) {
-        (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p);
-      }
+    // Defect / observation photos are shown in observation cards if linked to an active finding
+    if (isLinkedFinding && p.findingId) {
+      (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p);
     } else if (p.responseId) {
       (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p);
     } else if (p.inspectionSectionId === sectionId) {
       sectionPhotos.push(p);
     }
   }
-
-  const unlinkedSectionDefects = photos.filter(
-    (p) =>
-      (p.inspectionSectionId === sectionId || !p.inspectionSectionId) &&
-      (p.isDefect || p.target === 'finding') &&
-      (!p.findingId || !activeFindingIds.has(p.findingId)) &&
-      !p.deletedAt
-  );
-
-  const handleSyncSectionDefects = async () => {
-    if (isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;
-    setIsSyncingDefects(true);
-    try {
-      let sectionName = dispSection?.name?.trim() || '';
-      if (!sectionName && sectionId) {
-        const sec = await db.inspectionSections.get(sectionId);
-        sectionName = sec?.name?.trim() || '';
-      }
-
-      for (const p of unlinkedSectionDefects) {
-        const existingFindings = await db.findings
-          .where('inspectionSectionId')
-          .equals(sectionId)
-          .toArray();
-
-        const findingText = formatObservationText(sectionName, p.description);
-
-        const findingId = crypto.randomUUID();
-        const newFinding: Finding = {
-          id: findingId,
-          inspectionId: inspectionId || '',
-          inspectionSectionId: sectionId,
-          text: findingText,
-          answer: 'no',
-          correctiveAction: '',
-          preventiveAction: '',
-          position: existingFindings.length,
-        };
-
-        await localWrite('findings', findingId, newFinding as unknown as Record<string, unknown>);
-        await localWrite('photos', p.id, {
-          findingId,
-          isDefect: true,
-          target: 'finding',
-        });
-      }
-    } catch (err: any) {
-      console.error('Failed to sync section defect observations', err);
-    } finally {
-      setIsSyncingDefects(false);
-    }
-  };
-
-  // Automatically backfill observations for unlinked defect photos without requiring user UI clicks
-  useEffect(() => {
-    if (!dispInspection || !dispSection) return;
-    const isLocked = !isEditable(dispInspection.status as any);
-    if (isLocked || isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;
-    void handleSyncSectionDefects();
-  }, [unlinkedSectionDefects.length, dispInspection?.status, isSyncingDefects, sectionId]);
 
   useEffect(() => {
     setRemarksValue((dispSection as any)?.remarks ?? '');

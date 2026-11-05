@@ -227,6 +227,24 @@ export async function togglePhotoDefectWithObservation(
             reportCategory,
             // YES: Delete observation & move photo to section
             onRemoveObservationAndSetNormal: async () => {
+              // Revert this photo and any other photos linked to this finding to section photos as normal
+              const allLinkedPhotos = await db.photos
+                .where('findingId')
+                .equals(finding.id)
+                .toArray();
+
+              for (const p of allLinkedPhotos) {
+                await localWrite('photos', p.id, {
+                  isDefect: false,
+                  findingId: null,
+                  target: 'section',
+                  inspectionSectionId: p.inspectionSectionId || targetSectionId,
+                  responseId: null,
+                });
+              }
+
+              await localDelete('findings', finding.id);
+
               const patch: Partial<Photo> = {
                 isDefect: false,
                 findingId: null,
@@ -234,12 +252,6 @@ export async function togglePhotoDefectWithObservation(
                 inspectionSectionId: targetSectionId,
                 responseId: null,
               };
-              await localWrite('photos', photoId, patch);
-
-              // Only delete finding if no other photos are attached
-              if (otherPhotos.length === 0) {
-                await localDelete('findings', finding.id);
-              }
               options?.onCompleted?.({ ...currentPhoto, ...patch }, true);
             },
             // NO: Keep observation & move photo to section
@@ -264,6 +276,23 @@ export async function togglePhotoDefectWithObservation(
         }
 
         // User did NOT remark anything: photo directly goes to its section and observation is removed automatically!
+        const allLinkedPhotos = await db.photos
+          .where('findingId')
+          .equals(finding.id)
+          .toArray();
+
+        for (const p of allLinkedPhotos) {
+          await localWrite('photos', p.id, {
+            isDefect: false,
+            findingId: null,
+            target: 'section',
+            inspectionSectionId: p.inspectionSectionId || targetSectionId,
+            responseId: null,
+          });
+        }
+
+        await localDelete('findings', finding.id);
+
         const patch: Partial<Photo> = {
           isDefect: false,
           findingId: null,
@@ -271,12 +300,6 @@ export async function togglePhotoDefectWithObservation(
           inspectionSectionId: targetSectionId,
           responseId: null,
         };
-        await localWrite('photos', photoId, patch);
-
-        if (otherPhotos.length === 0) {
-          await localDelete('findings', finding.id);
-        }
-
         const updated = { ...currentPhoto, ...patch };
         options?.onCompleted?.(updated, true);
         return true;
