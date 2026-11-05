@@ -439,7 +439,8 @@ export async function generateInspectionPdf(data: ReportData & {
     pH: number,
     img: LoadedImage | null,
     docPhoto: any,
-    label: string
+    label: string,
+    neutralBorder = false
   ) => {
     const isDef = !!docPhoto?.isDefect;
     const desc = docPhoto?.description ? String(docPhoto.description).trim() : '';
@@ -453,7 +454,7 @@ export async function generateInspectionPdf(data: ReportData & {
     const bannerH = descLines.length > 1 ? 16 : descLines.length === 1 ? 13 : 8;
 
     // 1. Outer Card Container — Lite red border for defect, standard border for normal
-    const cardBorder = isDef ? ([248, 113, 113] as [number, number, number]) : BORDER;
+    const cardBorder = isDef && !neutralBorder ? ([248, 113, 113] as [number, number, number]) : BORDER;
     doc.roundedBox(px, py, pW, pH, WHITE, cardBorder, 2);
 
     // 2. Image Viewport — Prominently centered, clean neutral framing
@@ -532,9 +533,61 @@ export async function generateInspectionPdf(data: ReportData & {
     // No remark -> no placeholder line: the caption is just the photo label.
   };
 
+  // ─── Justified photo rows (shared by the section photo grid and observation cards) ───
+  // Two photos per row, same height, widths proportional to each photo's shape: a landscape photo gets a wide frame
+  // and a portrait photo a narrow one, so frames hug their photos instead of showing grey bands. Photo order is kept.
+  const ROW_PAD = 1.2;
+  const ROW_FRAME = 2 * ROW_PAD + 0.8;  // card width minus the photo's own width
+  const ROW_MAX_IMG_H = 98;
+  const ROW_MIN_IMG_H = 48;
+
+  const aspectOf = (img: LoadedImage | null) => (img ? Math.min(1.9, Math.max(0.55, img.w / img.h)) : 1);
+
+  const bannerFor = (docPhoto: any, cardW: number): number => {
+    const desc = docPhoto?.description ? String(docPhoto.description).trim() : '';
+    if (!desc) return 8;
+    doc.pdf.setFont('helvetica', docPhoto?.isDefect ? 'bold' : 'normal').setFontSize(6.5);
+    return (doc.pdf.splitTextToSize(desc, cardW - 8) as string[]).length > 1 ? 16 : 13;
+  };
+
+  const buildPhotoRow = async (
+    idA: string,
+    idB: string | undefined,
+    availW: number,
+    x0: number,
+    gapX: number,
+    centerSingle: boolean
+  ) => {
+    const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
+      loadImage(idA),
+      idB ? loadImage(idB) : Promise.resolve(null),
+      getPhotoDoc(idA),
+      idB ? getPhotoDoc(idB) : Promise.resolve(null),
+    ]);
+    const a1 = aspectOf(img1);
+    const a2 = aspectOf(img2);
+
+    let imgH: number;
+    let w1: number;
+    let w2 = 0;
+    let x1 = x0;
+    if (idB) {
+      // Same height for both; widths follow each photo's shape and together fill the row (or are centred if capped).
+      imgH = Math.min(ROW_MAX_IMG_H, (availW - gapX - 2 * ROW_FRAME) / (a1 + a2));
+      w1 = imgH * a1 + ROW_FRAME;
+      w2 = imgH * a2 + ROW_FRAME;
+      x1 = x0 + (availW - (w1 + gapX + w2)) / 2;
+    } else {
+      w1 = (availW - gapX) / 2;
+      imgH = Math.min(ROW_MAX_IMG_H, Math.max(ROW_MIN_IMG_H, (w1 - ROW_FRAME) / a1));
+      if (centerSingle) x1 = x0 + (availW - w1) / 2;
+    }
+    const banner = Math.max(bannerFor(photoDoc1, w1), idB ? bannerFor(photoDoc2, w2) : 0);
+    return { idB, img1, img2, photoDoc1, photoDoc2, w1, w2, x1, gapX, pH: imgH + 0.8 + banner + ROW_PAD };
+  };
+
   // ─── Adaptive Photo Grid ───
-  // Two photos per row. Every row is as tall as its tallest photo (capped), so landscape rows stay compact and
-  // portrait rows stay large; rows are packed by real remaining space instead of a fixed 4-per-page.
+  // Rows are packed by real remaining space instead of a fixed 4-per-page.
   const renderPhotoGrid4 = async (
     photoIds: string[],
     sectionName: string,
@@ -545,33 +598,8 @@ export async function generateInspectionPdf(data: ReportData & {
 
     const gapX = 8;
     const gapY = 6;
-    const pW = (CONTENT_W - gapX) / 2; // 87 mm
-    const PAD = 1.2;
-    const MAX_IMG_H = 98;
-    const MIN_IMG_H = 48;
     const pageLimit = PAGE_H - BOTTOM_MARGIN;
-
-    const bannerFor = (docPhoto: any): number => {
-      const desc = docPhoto?.description ? String(docPhoto.description).trim() : '';
-      if (!desc) return 8;
-      doc.pdf.setFont('helvetica', docPhoto?.isDefect ? 'bold' : 'normal').setFontSize(6.5);
-      return (doc.pdf.splitTextToSize(desc, pW - 8) as string[]).length > 1 ? 16 : 13;
-    };
-
-    const prepareRow = async (pIdx: number) => {
-      const id1 = photoIds[pIdx];
-      const id2 = pIdx + 1 < photoIds.length ? photoIds[pIdx + 1] : undefined;
-      const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
-        loadImage(id1),
-        id2 ? loadImage(id2) : Promise.resolve(null),
-        getPhotoDoc(id1),
-        id2 ? getPhotoDoc(id2) : Promise.resolve(null),
-      ]);
-      const fitH = (img: LoadedImage | null) => (img ? ((pW - 2 * PAD - 0.8) / img.w) * img.h + 0.8 : MIN_IMG_H);
-      const imgH = Math.min(MAX_IMG_H, Math.max(MIN_IMG_H, fitH(img1), id2 ? fitH(img2) : 0));
-      const banner = Math.max(bannerFor(photoDoc1), id2 ? bannerFor(photoDoc2) : 0);
-      return { id1, id2, img1, img2, photoDoc1, photoDoc2, pH: imgH + banner + PAD };
-    };
+    const rowAt = (pIdx: number) => buildPhotoRow(photoIds[pIdx], photoIds[pIdx + 1], CONTENT_W, MARGIN_LEFT, gapX, false);
 
     const continuedHeader = () => {
       doc.newPage();
@@ -582,7 +610,7 @@ export async function generateInspectionPdf(data: ReportData & {
       doc.y += 7;
     };
 
-    let row = await prepareRow(0);
+    let row = await rowAt(0);
 
     // Grid title travels with the first row: if they don't fit together, both move to the next page.
     if (doc.y + 7 + row.pH > pageLimit) {
@@ -595,18 +623,143 @@ export async function generateInspectionPdf(data: ReportData & {
     doc.y += 7;
 
     for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
-      if (pIdx > 0) row = await prepareRow(pIdx);
+      if (pIdx > 0) row = await rowAt(pIdx);
       if (doc.y + row.pH > pageLimit) continuedHeader();
 
       const curRowY = doc.y;
-      drawPhotoCard(MARGIN_LEFT, curRowY, pW, row.pH, row.img1, row.photoDoc1, `PHOTO #${pIdx + 1}`);
-      if (row.id2) {
-        drawPhotoCard(MARGIN_LEFT + pW + gapX, curRowY, pW, row.pH, row.img2, row.photoDoc2, `PHOTO #${pIdx + 2}`);
+      drawPhotoCard(row.x1, curRowY, row.w1, row.pH, row.img1, row.photoDoc1, `PHOTO #${pIdx + 1}`);
+      if (row.idB) {
+        drawPhotoCard(row.x1 + row.w1 + gapX, curRowY, row.w2, row.pH, row.img2, row.photoDoc2, `PHOTO #${pIdx + 2}`);
       }
       doc.y += row.pH + gapY;
     }
   };
   const renderPhotoGrid8 = renderPhotoGrid4; // Backwards-compatible alias
+
+  // ─── Observation card ───
+  // One soft-red card: tag, text, corrective/preventive actions, then the observation's photos in justified rows.
+  // Height is measured from the real content. The card splits across pages only between photo rows, and the
+  // "OBSERVATIONS & FINDINGS" heading always stays with the first card.
+  type SectionRow = (typeof sections)[number];
+  const renderObservationCard = async (
+    fRow: SectionRow['findings'][number],
+    fIdx: number,
+    s: SectionRow,
+    sIdx: number,
+    showStatus: boolean
+  ) => {
+    const ordinary = (inspection as any)?.reportCategory !== 'take_over' && (inspection as any)?.reportCategory !== 'pre_purchase';
+    const RED = [185, 28, 28] as [number, number, number];
+    const RED_BORDER = [254, 202, 202] as [number, number, number];
+    const innerX = MARGIN_LEFT + 6;
+    const innerW = CONTENT_W - 12;
+    const ROW_GAP = 4;
+    const BOTTOM_PAD = 3;
+    const CONT_HEADER_H = 12;
+    const pageLimit = PAGE_H - BOTTOM_MARGIN;
+
+    const textContent = fRow.finding.text || 'Observation logged';
+    const caContent = (ordinary && fRow.finding.correctiveAction) ? `**Corrective Action:** ${fRow.finding.correctiveAction}` : '';
+    const paContent = (ordinary && fRow.finding.preventiveAction) ? `*Preventive Action:* ${fRow.finding.preventiveAction}` : '';
+    const textH = measureRichText(doc.pdf, textContent, innerW, { size: 8.5, lineGap: 4.2 });
+    const caH = caContent ? measureRichText(doc.pdf, caContent, innerW, { size: 7.8, lineGap: 4.0 }) : 0;
+    const paH = paContent ? measureRichText(doc.pdf, paContent, innerW, { size: 7.8, lineGap: 4.0 }) : 0;
+
+    const photoIds = (fRow.photoIds || []).filter(Boolean);
+    const rows: Awaited<ReturnType<typeof buildPhotoRow>>[] = [];
+    for (let i = 0; i < photoIds.length; i += 2) {
+      rows.push(await buildPhotoRow(photoIds[i], photoIds[i + 1], innerW, innerX, 6, true));
+    }
+
+    const textBlockH = 14 + textH + (caH ? caH + 2 : 0) + (paH ? paH + 2 : 0) + (rows.length ? 2 : 0);
+
+    const statusStr = fRow.state === 'ok' ? '[+]  SATISFACTORY' : fRow.state === 'bad' ? '!  OBSERVATION' : fRow.state === 'na' ? '-  N / A' : '[?]  PENDING';
+    const drawTag = (y: number, text: string) => {
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+      const tagW = doc.pdf.getTextWidth(text) + 8;
+      doc.setFill([254, 242, 242]);
+      doc.setDraw(RED_BORDER, 0.3);
+      doc.pdf.roundedRect(innerX, y + 4, tagW, 5.5, 1, 1, 'FD');
+      doc.setTextColor(RED);
+      doc.pdf.text(text, innerX + 4, y + 7.8);
+      if (showStatus) {
+        const badgeW = doc.pdf.getTextWidth(statusStr) + 8;
+        doc.statusBadge(fRow.state, PAGE_W - MARGIN_RIGHT - badgeW - 6, y + 4);
+      }
+    };
+
+    const tag = `OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()}`;
+    let rowIdx = 0;
+    let first = true;
+    do {
+      const headerH = first ? textBlockH : CONT_HEADER_H;
+      const firstRowH = rows[rowIdx] ? rows[rowIdx].pH + ROW_GAP : 0;
+
+      if (first) {
+        doc.ensure(headerH + firstRowH + BOTTOM_PAD + (fIdx === 0 ? 8 : 0));
+        if (fIdx === 0) {
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+          doc.setTextColor(TEXT_MUTED);
+          doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
+          doc.y += 8;
+        }
+      } else {
+        doc.newPage();
+        doc.sectionHeader(`Section ${sIdx + 1}: ${s.section.name}`, s.section.zone || 'General', `OBS ${fIdx + 1} Photographs (Cont.)`);
+      }
+
+      // How many photo rows fit on this page
+      let h = headerH;
+      let count = 0;
+      while (rowIdx + count < rows.length) {
+        const rh = rows[rowIdx + count].pH + ROW_GAP;
+        if (count > 0 && doc.y + h + rh + BOTTOM_PAD > pageLimit) break;
+        h += rh;
+        count++;
+      }
+      const cardH = h + BOTTOM_PAD;
+
+      const cardY = doc.y;
+      doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, RED_BORDER, 2.5);
+
+      let curY: number;
+      if (first) {
+        drawTag(cardY, tag);
+        doc.setDraw(RED_BORDER, 0.25);
+        doc.pdf.line(innerX, cardY + 11.5, PAGE_W - MARGIN_RIGHT - 6, cardY + 11.5);
+
+        curY = cardY + 14;
+        renderRichText(doc.pdf, textContent, innerX, curY, innerW, { size: 8.5, lineGap: 4.2, color: TEXT_DARK });
+        curY += textH + 2;
+        if (caContent) {
+          renderRichText(doc.pdf, caContent, innerX, curY, innerW, { size: 7.8, lineGap: 4.0, color: RED });
+          curY += caH + 2;
+        }
+        if (paContent) {
+          renderRichText(doc.pdf, paContent, innerX, curY, innerW, { size: 7.8, lineGap: 4.0, color: TEXT_MUTED });
+          curY += paH + 2;
+        }
+        if (rows.length) curY += 2;
+      } else {
+        drawTag(cardY, `${tag} (Photographs Cont.)`);
+        curY = cardY + CONT_HEADER_H;
+      }
+
+      for (let r = 0; r < count; r++) {
+        const row = rows[rowIdx + r];
+        const n1 = (rowIdx + r) * 2 + 1;
+        drawPhotoCard(row.x1, curY, row.w1, row.pH, row.img1, row.photoDoc1, `PHOTO #${n1} • OBS ${fIdx + 1}`, true);
+        if (row.idB) {
+          drawPhotoCard(row.x1 + row.w1 + row.gapX, curY, row.w2, row.pH, row.img2, row.photoDoc2, `PHOTO #${n1 + 1} • OBS ${fIdx + 1}`, true);
+        }
+        curY += row.pH + ROW_GAP;
+      }
+
+      doc.y += cardH + 5;
+      rowIdx += count;
+      first = false;
+    } while (rowIdx < rows.length);
+  };
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 1: EXECUTIVE COVER PAGE
@@ -1371,175 +1524,7 @@ export async function generateInspectionPdf(data: ReportData & {
       // Section Findings if any
       if (s.findings.length > 0) {
         for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
-          const fRow = s.findings[fIdx];
-          const textContent = fRow.finding.text || 'Observation logged';
-          const caContent = (isOrdinaryInspection && fRow.finding.correctiveAction) ? `**Corrective Action:** ${fRow.finding.correctiveAction}` : '';
-          const paContent = (isOrdinaryInspection && fRow.finding.preventiveAction) ? `*Preventive Action:* ${fRow.finding.preventiveAction}` : '';
-
-          const textH = measureRichText(doc.pdf, textContent, CONTENT_W - 16, { size: 8, lineGap: 4.2 });
-          const caH = caContent ? measureRichText(doc.pdf, caContent, CONTENT_W - 16, { size: 7.5, lineGap: 4.2 }) : 0;
-          const paH = paContent ? measureRichText(doc.pdf, paContent, CONTENT_W - 16, { size: 7.5, lineGap: 4.2 }) : 0;
-
-          const totalTextH = 12 + textH + (caH ? caH + 2 : 0) + (paH ? paH + 2 : 0);
-
-          const photoIds = fRow.photoIds || [];
-          const firstBatchObsPhotos = photoIds.slice(0, 4);
-          const remainingObsPhotos = photoIds.slice(4);
-
-          const singlePhoto = firstBatchObsPhotos.length === 1;
-          const photoRows = Math.ceil(firstBatchObsPhotos.length / 2);
-          const singlePH = 92;
-          const gridPH = 92;
-          const obsGapY = 5;
-          let photoBlockH = 0;
-          if (singlePhoto) {
-            photoBlockH = singlePH + 8;
-          } else if (photoRows > 0) {
-            photoBlockH = photoRows * (gridPH + obsGapY) + 4;
-          }
-
-          const cardH = totalTextH + photoBlockH + 4;
-
-          // The "OBSERVATIONS & FINDINGS" heading travels with the first card, never alone at the bottom of a page.
-          doc.ensure(cardH + 4 + (fIdx === 0 ? 8 : 0));
-          if (fIdx === 0) {
-            doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
-            doc.setTextColor(TEXT_MUTED);
-            doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
-            doc.y += 8;
-          }
-          const cardY = doc.y;
-          doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, [254, 202, 202], 2);
-
-          const obsBadgeText = `OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()}`;
-          doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-          const obsBadgeW = doc.pdf.getTextWidth(obsBadgeText) + 8;
-          doc.setFill([254, 242, 242]);
-          doc.setDraw([254, 202, 202], 0.3);
-          doc.pdf.roundedRect(MARGIN_LEFT + 6, cardY + 3.8, obsBadgeW, 5.2, 1, 1, 'FD');
-          doc.setTextColor([185, 28, 28]);
-          doc.pdf.text(obsBadgeText, MARGIN_LEFT + 10, cardY + 7.5);
-
-          let curY = cardY + 11.5;
-          renderRichText(doc.pdf, textContent, MARGIN_LEFT + 6, curY, CONTENT_W - 12, {
-            size: 8,
-            lineGap: 4.2,
-            color: TEXT_DARK,
-          });
-          curY += textH + 2;
-
-          if (caContent) {
-            renderRichText(doc.pdf, caContent, MARGIN_LEFT + 6, curY, CONTENT_W - 12, {
-              size: 7.5,
-              lineGap: 4.2,
-              color: [185, 28, 28],
-            });
-            curY += caH + 2;
-          }
-
-          if (paContent) {
-            renderRichText(doc.pdf, paContent, MARGIN_LEFT + 6, curY, CONTENT_W - 12, {
-              size: 7.5,
-              lineGap: 4.2,
-              color: TEXT_MUTED,
-            });
-            curY += paH + 2;
-          }
-
-          if (firstBatchObsPhotos.length > 0) {
-            curY += 2;
-            if (singlePhoto) {
-              const pW = 100;
-              const pH = singlePH;
-              const pX = MARGIN_LEFT + (CONTENT_W - pW) / 2;
-              const id1 = firstBatchObsPhotos[0];
-              const [img1, photoDoc1] = await Promise.all([loadImage(id1), getPhotoDoc(id1)]);
-              if (id1) {
-                drawPhotoCard(pX, curY, pW, pH, img1, photoDoc1, `PHOTO #1 • OBS ${fIdx + 1}`);
-              }
-              curY += pH + 4;
-            } else {
-              const pW = (CONTENT_W - 22) / 2;
-              const pH = gridPH;
-              for (let pIdx = 0; pIdx < firstBatchObsPhotos.length; pIdx += 2) {
-                const id1 = firstBatchObsPhotos[pIdx];
-                const id2 = pIdx + 1 < firstBatchObsPhotos.length ? firstBatchObsPhotos[pIdx + 1] : undefined;
-
-                const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
-                  loadImage(id1),
-                  id2 ? loadImage(id2) : Promise.resolve(null),
-                  getPhotoDoc(id1),
-                  id2 ? getPhotoDoc(id2) : Promise.resolve(null),
-                ]);
-
-                if (id1) {
-                  drawPhotoCard(MARGIN_LEFT + 8, curY, pW, pH, img1, photoDoc1, `PHOTO #${pIdx + 1} • OBS ${fIdx + 1}`);
-                }
-                if (id2) {
-                  drawPhotoCard(MARGIN_LEFT + 8 + pW + 6, curY, pW, pH, img2, photoDoc2, `PHOTO #${pIdx + 2} • OBS ${fIdx + 1}`);
-                }
-
-                curY += pH + obsGapY;
-              }
-            }
-          }
-
-          doc.y += cardH + 4;
-
-          // Continuation for any additional photos beyond 4
-          if (remainingObsPhotos.length > 0) {
-            for (let remIdx = 0; remIdx < remainingObsPhotos.length; remIdx += 4) {
-              const chunk = remainingObsPhotos.slice(remIdx, remIdx + 4);
-              const chunkRows = Math.ceil(chunk.length / 2);
-              const chunkH = 14 + chunkRows * (gridPH + obsGapY) + 4;
-
-              doc.newPage();
-              doc.sectionHeader(
-                `Section ${sIdx + 1}: ${s.section.name}`,
-                s.section.zone || 'General',
-                `OBS ${fIdx + 1} Photographs (Cont.)`
-              );
-
-              const contY = doc.y;
-              doc.roundedBox(MARGIN_LEFT, contY, CONTENT_W, chunkH, WHITE, [254, 202, 202], 2);
-
-              const contBadgeText = `OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()} (Photographs Cont.)`;
-              doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-              const contBadgeW = doc.pdf.getTextWidth(contBadgeText) + 8;
-              doc.setFill([254, 242, 242]);
-              doc.setDraw([254, 202, 202], 0.3);
-              doc.pdf.roundedRect(MARGIN_LEFT + 6, contY + 3.8, contBadgeW, 5.2, 1, 1, 'FD');
-              doc.setTextColor([185, 28, 28]);
-              doc.pdf.text(contBadgeText, MARGIN_LEFT + 10, contY + 7.5);
-
-              let chunkY = contY + 12;
-              const pW = (CONTENT_W - 22) / 2;
-              for (let cIdx = 0; cIdx < chunk.length; cIdx += 2) {
-                const pNum1 = 4 + remIdx + cIdx + 1;
-                const pNum2 = pNum1 + 1;
-                const cid1 = chunk[cIdx];
-                const cid2 = cIdx + 1 < chunk.length ? chunk[cIdx + 1] : undefined;
-
-                const [cImg1, cImg2, cPhotoDoc1, cPhotoDoc2] = await Promise.all([
-                  loadImage(cid1),
-                  cid2 ? loadImage(cid2) : Promise.resolve(null),
-                  getPhotoDoc(cid1),
-                  cid2 ? getPhotoDoc(cid2) : Promise.resolve(null),
-                ]);
-
-                if (cid1) {
-                  drawPhotoCard(MARGIN_LEFT + 8, chunkY, pW, gridPH, cImg1, cPhotoDoc1, `PHOTO #${pNum1} • OBS ${fIdx + 1}`);
-                }
-                if (cid2) {
-                  drawPhotoCard(MARGIN_LEFT + 8 + pW + 6, chunkY, pW, gridPH, cImg2, cPhotoDoc2, `PHOTO #${pNum2} • OBS ${fIdx + 1}`);
-                }
-
-                chunkY += gridPH + obsGapY;
-              }
-
-              doc.y += chunkH + 4;
-            }
-          }
+          await renderObservationCard(s.findings[fIdx], fIdx, s, sIdx, false);
         }
       }
 
@@ -1812,191 +1797,7 @@ export async function generateInspectionPdf(data: ReportData & {
     // ═════════════════════════════════════════════════════════════════════════
     if (s.findings.length > 0) {
       for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
-        const fRow = s.findings[fIdx];
-        const textContent = fRow.finding.text || 'Observation logged';
-        const caContent = (isOrdinaryInspection && fRow.finding.correctiveAction)
-          ? `**Corrective Action:** ${fRow.finding.correctiveAction}`
-          : '';
-        const paContent = (isOrdinaryInspection && fRow.finding.preventiveAction)
-          ? `*Preventive Action:* ${fRow.finding.preventiveAction}`
-          : '';
-
-        const textH = measureRichText(doc.pdf, textContent, CONTENT_W - 16, { size: 8.5, lineGap: 4.2 });
-        const caH = caContent ? measureRichText(doc.pdf, caContent, CONTENT_W - 16, { size: 7.8, lineGap: 4.0 }) : 0;
-        const paH = paContent ? measureRichText(doc.pdf, paContent, CONTENT_W - 16, { size: 7.8, lineGap: 4.0 }) : 0;
-
-        const totalTextH = 14 + textH + (caH ? caH + 3 : 0) + (paH ? paH + 3 : 0);
-
-        const photoIds = fRow.photoIds || [];
-        const firstBatchObsPhotos = photoIds.slice(0, 4);
-        const remainingObsPhotos = photoIds.slice(4);
-
-        const obsSinglePH = 92;
-        const obsGridPH = 92;
-        const obsGapY = 5;
-        const firstPhotoRows = Math.ceil(firstBatchObsPhotos.length / 2);
-        let photoBlockH = 0;
-        if (firstBatchObsPhotos.length === 1) {
-          photoBlockH = obsSinglePH + 8;
-        } else if (firstPhotoRows > 0) {
-          photoBlockH = firstPhotoRows * (obsGridPH + obsGapY) + 4;
-        }
-
-        const cardH = totalTextH + photoBlockH + 4;
-
-        // The "OBSERVATIONS & FINDINGS" heading travels with the first card, never alone at the bottom of a page.
-        doc.ensure(cardH + 4 + (fIdx === 0 ? 8 : 0));
-        if (fIdx === 0) {
-          doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
-          doc.setTextColor(TEXT_MUTED);
-          doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
-          doc.y += 8;
-        }
-        const cardY = doc.y;
-        doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, [254, 202, 202], 2.5);
-
-        // Header: Observation tag on left, Status Badge on right
-        const obsBadgeText = `OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()}`;
-        doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-        const obsBadgeW = doc.pdf.getTextWidth(obsBadgeText) + 8;
-        doc.setFill([254, 242, 242]);
-        doc.setDraw([254, 202, 202], 0.3);
-        doc.pdf.roundedRect(MARGIN_LEFT + 6, cardY + 4, obsBadgeW, 5.5, 1, 1, 'FD');
-        doc.setTextColor([185, 28, 28]);
-        doc.pdf.text(obsBadgeText, MARGIN_LEFT + 10, cardY + 7.8);
-
-        // Status badge on right
-        const fStatusStr = fRow.state === 'ok' ? '[+]  SATISFACTORY' : fRow.state === 'bad' ? '!  OBSERVATION' : fRow.state === 'na' ? '-  N / A' : '[?]  PENDING';
-        const fBadgeW = doc.pdf.getTextWidth(fStatusStr) + 8;
-        const fBadgeX = PAGE_W - MARGIN_RIGHT - fBadgeW - 6;
-        doc.statusBadge(fRow.state, fBadgeX, cardY + 4);
-
-        // Hairline divider
-        doc.setDraw([254, 202, 202], 0.25);
-        doc.pdf.line(MARGIN_LEFT + 6, cardY + 11.5, PAGE_W - MARGIN_RIGHT - 6, cardY + 11.5);
-
-        // Observation details
-        let curY = cardY + 14;
-        renderRichText(doc.pdf, textContent, MARGIN_LEFT + 6, curY, CONTENT_W - 12, {
-          size: 8.5,
-          lineGap: 4.2,
-          color: TEXT_DARK,
-        });
-        curY += textH + 2;
-
-        if (caContent) {
-          renderRichText(doc.pdf, caContent, MARGIN_LEFT + 6, curY, CONTENT_W - 12, {
-            size: 7.8,
-            lineGap: 4.0,
-            color: [185, 28, 28],
-          });
-          curY += caH + 2;
-        }
-
-        if (paContent) {
-          renderRichText(doc.pdf, paContent, MARGIN_LEFT + 6, curY, CONTENT_W - 12, {
-            size: 7.8,
-            lineGap: 4.0,
-            color: TEXT_MUTED,
-          });
-          curY += paH + 2;
-        }
-
-        // Observation images
-        if (firstBatchObsPhotos.length > 0) {
-          curY += 2;
-          if (firstBatchObsPhotos.length === 1) {
-            const pW = 100;
-            const pH = obsSinglePH;
-            const pX = MARGIN_LEFT + (CONTENT_W - pW) / 2;
-            const id1 = firstBatchObsPhotos[0];
-            const [img1, photoDoc1] = await Promise.all([loadImage(id1), getPhotoDoc(id1)]);
-            if (id1) {
-              drawPhotoCard(pX, curY, pW, pH, img1, photoDoc1, `PHOTO #1 • OBS ${fIdx + 1}`);
-            }
-            curY += pH + 4;
-          } else {
-            const obsPW = (CONTENT_W - 18) / 2;
-            for (let pIdx = 0; pIdx < firstBatchObsPhotos.length; pIdx += 2) {
-              const id1 = firstBatchObsPhotos[pIdx];
-              const id2 = pIdx + 1 < firstBatchObsPhotos.length ? firstBatchObsPhotos[pIdx + 1] : undefined;
-
-              const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
-                loadImage(id1),
-                id2 ? loadImage(id2) : Promise.resolve(null),
-                getPhotoDoc(id1),
-                id2 ? getPhotoDoc(id2) : Promise.resolve(null),
-              ]);
-
-              if (id1) {
-                drawPhotoCard(MARGIN_LEFT + 6, curY, obsPW, obsGridPH, img1, photoDoc1, `PHOTO #${pIdx + 1} • OBS ${fIdx + 1}`);
-              }
-              if (id2) {
-                drawPhotoCard(MARGIN_LEFT + 6 + obsPW + 6, curY, obsPW, obsGridPH, img2, photoDoc2, `PHOTO #${pIdx + 2} • OBS ${fIdx + 1}`);
-              }
-
-              curY += obsGridPH + obsGapY;
-            }
-          }
-        }
-
-        doc.y += cardH + 5;
-
-        // Continuation for any additional photos beyond 4
-        if (remainingObsPhotos.length > 0) {
-          for (let remIdx = 0; remIdx < remainingObsPhotos.length; remIdx += 4) {
-            const chunk = remainingObsPhotos.slice(remIdx, remIdx + 4);
-            const chunkRows = Math.ceil(chunk.length / 2);
-            const chunkH = 14 + chunkRows * (obsGridPH + obsGapY) + 4;
-
-            doc.newPage();
-            doc.sectionHeader(
-              `Section ${sIdx + 1}: ${s.section.name}`,
-              s.section.zone,
-              `OBS ${fIdx + 1} Photographs (Cont.)`
-            );
-
-            const contY = doc.y;
-            doc.roundedBox(MARGIN_LEFT, contY, CONTENT_W, chunkH, WHITE, [254, 202, 202], 2.5);
-
-            const contBadgeText = `OBSERVATION ${fIdx + 1} • ${s.section.name.toUpperCase()} (Photographs Cont.)`;
-            doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-            const contBadgeW = doc.pdf.getTextWidth(contBadgeText) + 8;
-            doc.setFill([254, 242, 242]);
-            doc.setDraw([254, 202, 202], 0.3);
-            doc.pdf.roundedRect(MARGIN_LEFT + 6, contY + 4, contBadgeW, 5.5, 1, 1, 'FD');
-            doc.setTextColor([185, 28, 28]);
-            doc.pdf.text(contBadgeText, MARGIN_LEFT + 10, contY + 7.8);
-            doc.statusBadge(fRow.state, fBadgeX, contY + 4);
-
-            let chunkY = contY + 12;
-            const obsPW = (CONTENT_W - 18) / 2;
-            for (let cIdx = 0; cIdx < chunk.length; cIdx += 2) {
-              const pNum1 = 4 + remIdx + cIdx + 1;
-              const pNum2 = pNum1 + 1;
-              const cid1 = chunk[cIdx];
-              const cid2 = cIdx + 1 < chunk.length ? chunk[cIdx + 1] : undefined;
-
-              const [cImg1, cImg2, cPhotoDoc1, cPhotoDoc2] = await Promise.all([
-                loadImage(cid1),
-                cid2 ? loadImage(cid2) : Promise.resolve(null),
-                getPhotoDoc(cid1),
-                cid2 ? getPhotoDoc(cid2) : Promise.resolve(null),
-              ]);
-
-              if (cid1) {
-                drawPhotoCard(MARGIN_LEFT + 6, chunkY, obsPW, obsGridPH, cImg1, cPhotoDoc1, `PHOTO #${pNum1} • OBS ${fIdx + 1}`);
-              }
-              if (cid2) {
-                drawPhotoCard(MARGIN_LEFT + 6 + obsPW + 6, chunkY, obsPW, obsGridPH, cImg2, cPhotoDoc2, `PHOTO #${pNum2} • OBS ${fIdx + 1}`);
-              }
-
-              chunkY += obsGridPH + obsGapY;
-            }
-
-            doc.y += chunkH + 4;
-          }
-        }
+        await renderObservationCard(s.findings[fIdx], fIdx, s, sIdx, true);
       }
     }
   }
