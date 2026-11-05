@@ -54,6 +54,7 @@ export function SectionListPage() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [isReportPreviewModalOpen, setIsReportPreviewModalOpen] = useState(false);
+  const [previewObservationReport, setPreviewObservationReport] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [recheckedAccess, setRecheckedAccess] = useState(false);
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
@@ -655,7 +656,7 @@ export function SectionListPage() {
             );
           }
           return (
-            <div className="section-pad fab-new" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div className="section-pad fab-new" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
               <button
                 className="btn btn-primary btn-block"
                 style={{ borderRadius: 12, minHeight: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
@@ -673,6 +674,14 @@ export function SectionListPage() {
               >
                 <CameraIcon width={16} height={16} />
                 Photo Report
+              </button>
+              <button
+                className="btn btn-outline btn-block"
+                style={{ borderRadius: 12, minHeight: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderColor: '#b45309', color: '#b45309' }}
+                onClick={() => { setPreviewObservationReport(true); setIsReportPreviewModalOpen(true); }}
+              >
+                <WarningIcon width={16} height={16} />
+                Observation Report
               </button>
             </div>
           );
@@ -875,10 +884,10 @@ export function SectionListPage() {
       {isReportPreviewModalOpen && inspectionId && (
         <ReportPdfPreviewModal
           isOpen={isReportPreviewModalOpen}
-          onClose={() => setIsReportPreviewModalOpen(false)}
+          onClose={() => { setIsReportPreviewModalOpen(false); setPreviewObservationReport(false); }}
           inspectionId={inspectionId}
           vesselName={displayInspection?.vesselName}
-          defaultReportType={(displayInspection as any)?.reportMode === 'photo' ? 'photo_only' : 'full'}
+          defaultReportType={previewObservationReport ? 'observation' : (displayInspection as any)?.reportMode === 'photo' ? 'photo_only' : 'full'}
         />
       )}
 

@@ -405,18 +405,19 @@ class Doc {
 // Main PDF Export Function
 // ---------------------------------------------------------------------------
 export async function generateInspectionPdf(data: ReportData & {
-  reportType?: 'full' | 'photo_only';
+  reportType?: 'full' | 'photo_only' | 'observation';
   onProgress?: (progress: PdfProgressEvent) => void;
 }): Promise<Blob> {
   const { inspection, vessel, sections = [], observations = [], stats, approvalHistory = [] } = data;
   const isPhotoOnly = data.reportType === 'photo_only';
+  const isObservationOnly = data.reportType === 'observation';
   const photoSectionsOnly = sections.filter((s) => !!s.section.photoOnly);
-  const neededSections = isPhotoOnly ? photoSectionsOnly : sections;
+  const neededSections = isObservationOnly ? [] : isPhotoOnly ? photoSectionsOnly : sections;
   const doc = new Doc();
 
   // 1. Gather all needed photo IDs to prefetch concurrently
   const allNeededPhotoIds: string[] = [];
-  if (inspection.coverPhotoId) allNeededPhotoIds.push(inspection.coverPhotoId);
+  if (inspection.coverPhotoId && !isObservationOnly) allNeededPhotoIds.push(inspection.coverPhotoId);
 
   for (const s of neededSections) {
     if (s.sectionPhotoIds) allNeededPhotoIds.push(...s.sectionPhotoIds);
@@ -731,7 +732,8 @@ export async function generateInspectionPdf(data: ReportData & {
     fIdx: number,
     s: SectionRow,
     sIdx: number,
-    showStatus: boolean
+    showStatus: boolean,
+    showHeading = true
   ) => {
     const ordinary = (inspection as any)?.reportCategory !== 'take_over' && (inspection as any)?.reportCategory !== 'pre_purchase';
     const RED = [185, 28, 28] as [number, number, number];
@@ -789,8 +791,8 @@ export async function generateInspectionPdf(data: ReportData & {
       const firstRowH = rows[rowIdx] ? rows[rowIdx].pH + ROW_GAP : 0;
 
       if (first) {
-        doc.ensure(headerH + firstRowH + BOTTOM_PAD + (fIdx === 0 ? 8 : 0));
-        if (fIdx === 0) {
+        doc.ensure(headerH + firstRowH + BOTTOM_PAD + (fIdx === 0 && showHeading ? 8 : 0));
+        if (fIdx === 0 && showHeading) {
           doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
           doc.setTextColor(TEXT_MUTED);
           doc.pdf.text('SECTION OBSERVATIONS & FINDINGS', MARGIN_LEFT, doc.y + 4);
@@ -854,6 +856,192 @@ export async function generateInspectionPdf(data: ReportData & {
     } while (rowIdx < rows.length);
   };
 
+  // ─── Report-kind flags and titles (used by the cover, the running header and the observation report) ───
+  const isTakeOver = (inspection as any)?.reportCategory === 'take_over';
+  const isPrePurchase = (inspection as any)?.reportCategory === 'pre_purchase';
+  const isOrdinaryInspection = !isTakeOver && !isPrePurchase;
+  const mainPdfTitle = isObservationOnly
+    ? 'VESSEL OBSERVATION REPORT'
+    : isTakeOver
+    ? 'VESSEL TAKE OVER REPORT'
+    : isPrePurchase
+    ? 'PRE PURCHASE INSPECTION REPORT'
+    : (isPhotoOnly ? 'VESSEL PHOTO INSPECTION REPORT' : 'VESSEL INSPECTION REPORT');
+  const subPdfTitle = isObservationOnly
+    ? 'OBSERVATIONS, REMARKS & PHOTOGRAPHIC EVIDENCE'
+    : isTakeOver
+    ? 'VESSEL TAKE OVER & FLEET ENTRY AUDIT RECORD'
+    : isPrePurchase
+    ? 'PRE PURCHASE PHOTOGRAPHIC CONDITION SURVEY'
+    : (isPhotoOnly ? 'PHOTOGRAPHIC SURVEY & CONDITION AUDIT RECORD' : 'OFFICIAL STATUTORY & TECHNICAL AUDIT RECORD');
+
+  // ─── Observation list table (Appendix of the full report; the opening list of the Observation Report) ───
+  const renderAppendix = (startNewPage: boolean, title: string) => {
+    const plain = (v?: string | null) => stripHtmlToPlainText(v ?? '');
+    const appendixItems = neededObservations.map((o) => {
+      let desc: string;
+      if (o.kind === 'finding') {
+        const descs = (o.photoIds || []).map((pid) => plain(photoMap.get(pid)?.description));
+        desc = isDefaultObservationText(o.text, o.sectionName, descs) ? '' : plain(o.text);
+        if (!desc) desc = descs.find(Boolean) ?? '';
+      } else {
+        const remarks = plain(o.remarks);
+        desc = [plain(o.text), remarks ? `Remarks: ${remarks}` : ''].filter(Boolean).join(' — ');
+      }
+      return { section: o.sectionName, ref: o.ref, desc };
+    });
+
+    if (startNewPage) doc.newPage();
+    doc.sectionHeader(title, 'List of Observations', `${appendixItems.length} Observation${appendixItems.length === 1 ? '' : 's'}`);
+
+    const colNo = 10;
+    const colSection = 48;
+    const colRef = 28;
+    const colDesc = CONTENT_W - colNo - colSection - colRef;
+
+    const drawTableHead = () => {
+      doc.setFill(NAVY);
+      doc.pdf.roundedRect(MARGIN_LEFT, doc.y, CONTENT_W, 8, 1.2, 1.2, 'F');
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+      doc.setTextColor(WHITE);
+      doc.pdf.text('NO.', MARGIN_LEFT + 3, doc.y + 5.3);
+      doc.pdf.text('SECTION', MARGIN_LEFT + colNo + 2, doc.y + 5.3);
+      doc.pdf.text('REFERENCE', MARGIN_LEFT + colNo + colSection + 2, doc.y + 5.3);
+      doc.pdf.text('OBSERVATION / REMARKS', MARGIN_LEFT + colNo + colSection + colRef + 2, doc.y + 5.3);
+      doc.y += 9;
+    };
+
+    if (!appendixItems.length) {
+      doc.pdf.setFont('helvetica', 'italic').setFontSize(8.5);
+      doc.setTextColor(TEXT_MUTED);
+      doc.pdf.text('No observations recorded.', MARGIN_LEFT, doc.y + 5);
+      doc.y += 10;
+      return;
+    }
+
+    drawTableHead();
+    appendixItems.forEach((it, i) => {
+      doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
+      const secLines = doc.pdf.splitTextToSize(it.section || '-', colSection - 4) as string[];
+      const refLines = doc.pdf.splitTextToSize(it.ref || '-', colRef - 4) as string[];
+      const descLines = doc.pdf.splitTextToSize(it.desc || '-', colDesc - 4) as string[];
+      const lineCount = Math.max(secLines.length, refLines.length, descLines.length);
+      const rowH = lineCount * 4 + 4;
+
+      if (doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
+        doc.newPage();
+        drawTableHead();
+      }
+
+      if (i % 2 === 0) {
+        doc.setFill(SLATE_BG);
+        doc.pdf.rect(MARGIN_LEFT, doc.y, CONTENT_W, rowH, 'F');
+      }
+      const ty = doc.y + 5;
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
+      doc.setTextColor(NAVY);
+      doc.pdf.text(String(i + 1), MARGIN_LEFT + 3, ty);
+      doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
+      doc.setTextColor(TEXT_DARK);
+      doc.pdf.text(secLines, MARGIN_LEFT + colNo + 2, ty);
+      doc.setTextColor(TEXT_MUTED);
+      doc.pdf.text(refLines, MARGIN_LEFT + colNo + colSection + 2, ty);
+      doc.setTextColor(it.desc ? TEXT_BODY : TEXT_FAINT);
+      doc.pdf.text(descLines, MARGIN_LEFT + colNo + colSection + colRef + 2, ty);
+
+      doc.setDraw(BORDER, 0.2);
+      doc.pdf.line(MARGIN_LEFT, doc.y + rowH, MARGIN_LEFT + CONTENT_W, doc.y + rowH);
+      doc.y += rowH;
+    });
+  };
+
+  // ─── Observation Report: title block, the observation list, then every observation with its remarks and photos ───
+  const renderObservationOnlyReport = async () => {
+    doc.setFill(WHITE);
+    doc.pdf.rect(0, 0, PAGE_W, 24, 'F');
+    doc.setFill(TEAL);
+    doc.pdf.rect(0, 22, PAGE_W, 2, 'F');
+
+    let titleX = MARGIN_LEFT;
+    if (brandLogo) {
+      const scale = 11 / brandLogo.h;
+      const lw = brandLogo.w * scale;
+      doc.pdf.addImage(brandLogo.dataUrl, 'PNG', MARGIN_LEFT, 6, lw, 11);
+      titleX += lw + 6;
+    }
+    doc.pdf.setFont('helvetica', 'bold').setFontSize(13);
+    doc.setTextColor(NAVY);
+    doc.pdf.text(mainPdfTitle, titleX, 11.5);
+    doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
+    doc.setTextColor(TEXT_MUTED);
+    doc.pdf.text(subPdfTitle, titleX, 16);
+
+    // Vessel / survey strip
+    const stripY = 31;
+    const stripH = 13;
+    doc.setFill(SLATE_BG);
+    doc.setDraw(BORDER_DARK, 0.25);
+    doc.pdf.roundedRect(MARGIN_LEFT, stripY, CONTENT_W, stripH, 1.5, 1.5, 'FD');
+    const stripCols = [
+      { label: 'VESSEL', val: `${inspection.vesselName || '-'}${inspection.imo ? `  (IMO ${inspection.imo})` : ''}`, w: 0.34 },
+      { label: 'SURVEY PORT / LOCATION', val: inspection.port || '-', w: 0.2 },
+      { label: 'AUDITOR / SURVEYOR / SUPERINTENDENT', val: inspection.inspector || '-', w: 0.26 },
+      { label: 'INSPECTION DATES', val: `${fmtDate(inspection.startDate)} - ${fmtDate(inspection.completionDate || inspection.startDate)}`, w: 0.2 },
+    ];
+    let cx = MARGIN_LEFT;
+    stripCols.forEach((c, i) => {
+      const cw = CONTENT_W * c.w;
+      if (i > 0) {
+        doc.setDraw(BORDER, 0.2);
+        doc.pdf.line(cx, stripY + 2, cx, stripY + stripH - 2);
+      }
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(5.2);
+      doc.setTextColor(TEXT_MUTED);
+      doc.pdf.text(c.label, cx + 4, stripY + 4.6);
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+      doc.setTextColor(TEXT_DARK);
+      let v = c.val;
+      while (v.length > 3 && doc.pdf.getTextWidth(v) > cw - 6) v = v.slice(0, -1);
+      doc.pdf.text(v, cx + 4, stripY + 9.4);
+      cx += cw;
+    });
+    doc.y = stripY + stripH + 8;
+
+    renderAppendix(false, 'Observation Summary');
+
+    // Every observation, grouped by section, with its remarks and photos
+    const plain = (v?: string | null) => stripHtmlToPlainText(v ?? '');
+    for (let sIdx = 0; sIdx < sections.length; sIdx++) {
+      const s = sections[sIdx];
+      const obs = neededObservations.filter((o) => o.sectionId === s.section.id);
+      if (!obs.length) continue;
+
+      doc.ensure(75);
+      doc.sectionHeader(`Section ${sIdx + 1}: ${s.section.name}`, s.section.zone || 'General', `${obs.length} Observation${obs.length === 1 ? '' : 's'}`);
+
+      for (let i = 0; i < obs.length; i++) {
+        const o = obs[i];
+        const remarks = plain(o.remarks);
+        const fRow = {
+          finding: {
+            text: o.kind === 'question'
+              ? [`**${o.ref}** ${plain(o.text)}`, remarks ? `Remarks: ${remarks}` : ''].filter(Boolean).join('\n')
+              : o.text,
+            correctiveAction: o.correctiveAction,
+            preventiveAction: o.preventiveAction,
+          },
+          state: 'bad',
+          photoIds: o.photoIds || [],
+        } as any;
+        await renderObservationCard(fRow, i, s, sIdx, false, false);
+      }
+    }
+  };
+
+  if (isObservationOnly) {
+    await renderObservationOnlyReport();
+  } else {
+
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE 1: EXECUTIVE COVER PAGE
   // ═══════════════════════════════════════════════════════════════════════════
@@ -872,19 +1060,6 @@ export async function generateInspectionPdf(data: ReportData & {
     titleX += lw + 6;
   }
 
-  const isTakeOver = (inspection as any)?.reportCategory === 'take_over';
-  const isPrePurchase = (inspection as any)?.reportCategory === 'pre_purchase';
-  const isOrdinaryInspection = !isTakeOver && !isPrePurchase;
-  const mainPdfTitle = isTakeOver
-    ? 'VESSEL TAKE OVER REPORT'
-    : isPrePurchase
-    ? 'PRE PURCHASE INSPECTION REPORT'
-    : (isPhotoOnly ? 'VESSEL PHOTO INSPECTION REPORT' : 'VESSEL INSPECTION REPORT');
-  const subPdfTitle = isTakeOver
-    ? 'VESSEL TAKE OVER & FLEET ENTRY AUDIT RECORD'
-    : isPrePurchase
-    ? 'PRE PURCHASE PHOTOGRAPHIC CONDITION SURVEY'
-    : (isPhotoOnly ? 'PHOTOGRAPHIC SURVEY & CONDITION AUDIT RECORD' : 'OFFICIAL STATUTORY & TECHNICAL AUDIT RECORD');
 
   doc.pdf.setFont('helvetica', 'bold').setFontSize(13);
   doc.setTextColor(NAVY);
@@ -1912,86 +2087,8 @@ export async function generateInspectionPdf(data: ReportData & {
   });
   doc.y += conBoxH + 10;
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // APPENDIX: LIST OF OBSERVATIONS (section, reference and the text/remarks the user entered)
-  // ═══════════════════════════════════════════════════════════════════════════
-  {
-    const plain = (v?: string | null) => stripHtmlToPlainText(v ?? '');
-    const appendixItems = neededObservations.map((o) => {
-      let desc: string;
-      if (o.kind === 'finding') {
-        const descs = (o.photoIds || []).map((pid) => plain(photoMap.get(pid)?.description));
-        desc = isDefaultObservationText(o.text, o.sectionName, descs) ? '' : plain(o.text);
-        if (!desc) desc = descs.find(Boolean) ?? '';
-      } else {
-        const remarks = plain(o.remarks);
-        desc = [plain(o.text), remarks ? `Remarks: ${remarks}` : ''].filter(Boolean).join(' — ');
-      }
-      return { section: o.sectionName, ref: o.ref, desc };
-    });
-
-    doc.newPage();
-    doc.sectionHeader('Appendix', 'List of Observations', `${appendixItems.length} Observation${appendixItems.length === 1 ? '' : 's'}`);
-
-    const colNo = 10;
-    const colSection = 48;
-    const colRef = 28;
-    const colDesc = CONTENT_W - colNo - colSection - colRef;
-
-    const drawTableHead = () => {
-      doc.setFill(NAVY);
-      doc.pdf.roundedRect(MARGIN_LEFT, doc.y, CONTENT_W, 8, 1.2, 1.2, 'F');
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-      doc.setTextColor(WHITE);
-      doc.pdf.text('NO.', MARGIN_LEFT + 3, doc.y + 5.3);
-      doc.pdf.text('SECTION', MARGIN_LEFT + colNo + 2, doc.y + 5.3);
-      doc.pdf.text('REFERENCE', MARGIN_LEFT + colNo + colSection + 2, doc.y + 5.3);
-      doc.pdf.text('OBSERVATION / REMARKS', MARGIN_LEFT + colNo + colSection + colRef + 2, doc.y + 5.3);
-      doc.y += 9;
-    };
-
-    if (!appendixItems.length) {
-      doc.pdf.setFont('helvetica', 'italic').setFontSize(8.5);
-      doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text('No observations recorded.', MARGIN_LEFT, doc.y + 5);
-      doc.y += 10;
-    } else {
-      drawTableHead();
-      appendixItems.forEach((it, i) => {
-        doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
-        const secLines = doc.pdf.splitTextToSize(it.section || '-', colSection - 4) as string[];
-        const refLines = doc.pdf.splitTextToSize(it.ref || '-', colRef - 4) as string[];
-        const descLines = doc.pdf.splitTextToSize(it.desc || '-', colDesc - 4) as string[];
-        const lineCount = Math.max(secLines.length, refLines.length, descLines.length);
-        const rowH = lineCount * 4 + 4;
-
-        if (doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
-          doc.newPage();
-          drawTableHead();
-        }
-
-        if (i % 2 === 0) {
-          doc.setFill(SLATE_BG);
-          doc.pdf.rect(MARGIN_LEFT, doc.y, CONTENT_W, rowH, 'F');
-        }
-        const ty = doc.y + 5;
-        doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
-        doc.setTextColor(NAVY);
-        doc.pdf.text(String(i + 1), MARGIN_LEFT + 3, ty);
-        doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
-        doc.setTextColor(TEXT_DARK);
-        doc.pdf.text(secLines, MARGIN_LEFT + colNo + 2, ty);
-        doc.setTextColor(TEXT_MUTED);
-        doc.pdf.text(refLines, MARGIN_LEFT + colNo + colSection + 2, ty);
-        doc.setTextColor(it.desc ? TEXT_BODY : TEXT_FAINT);
-        doc.pdf.text(descLines, MARGIN_LEFT + colNo + colSection + colRef + 2, ty);
-
-        doc.setDraw(BORDER, 0.2);
-        doc.pdf.line(MARGIN_LEFT, doc.y + rowH, MARGIN_LEFT + CONTENT_W, doc.y + rowH);
-        doc.y += rowH;
-      });
-    }
-  }
+  renderAppendix(true, 'Appendix');
+  } // end of full / photo report
 
   // ═══════════════════════════════════════════════════════════════════════════
   // POST-PASS: DYNAMIC RUNNING HEADERS & FOOTERS (Page X of Y)
@@ -2030,6 +2127,8 @@ export async function generateInspectionPdf(data: ReportData & {
         ? ' |  VESSEL TAKE OVER REPORT'
         : isPrePurchase
         ? ' |  PRE PURCHASE REPORT'
+        : isObservationOnly
+        ? ' |  VESSEL OBSERVATION REPORT'
         : (isPhotoOnly ? ' |  VESSEL PHOTO REPORT' : ' |  VESSEL INSPECTION REPORT');
       doc.pdf.text(rhReportType, rhLogoX + rtitleW, 11.5);
 

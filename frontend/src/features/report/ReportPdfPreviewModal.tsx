@@ -9,7 +9,7 @@ export interface ReportPdfPreviewModalProps {
   onClose: () => void;
   inspectionId: string;
   vesselName?: string;
-  defaultReportType?: 'photo_only' | 'full';
+  defaultReportType?: 'photo_only' | 'full' | 'observation';
 }
 
 export function ReportPdfPreviewModal({
@@ -19,7 +19,7 @@ export function ReportPdfPreviewModal({
   vesselName,
   defaultReportType = 'photo_only',
 }: ReportPdfPreviewModalProps) {
-  const [reportType, setReportType] = useState<'photo_only' | 'full'>(defaultReportType);
+  const [reportType, setReportType] = useState<'photo_only' | 'full' | 'observation'>(defaultReportType);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +95,7 @@ export function ReportPdfPreviewModal({
     const a = document.createElement('a');
     a.href = pdfUrl;
     const slug = (vesselName || 'inspection').replace(/[^a-z0-9]+/gi, '-');
-    a.download = `${slug}-${reportType === 'photo_only' ? 'photo-section-report' : 'full-audit-report'}.pdf`;
+    a.download = `${slug}-${reportType === 'photo_only' ? 'photo-section-report' : reportType === 'observation' ? 'observation-report' : 'full-audit-report'}.pdf`;
     a.click();
   };
 
@@ -117,7 +117,7 @@ export function ReportPdfPreviewModal({
               <div className="rppm-title-row">
                 <h3 className="rppm-title">Official Report Preview</h3>
                 <span className="rppm-type-badge">
-                  {reportType === 'photo_only' ? 'Photo Section Survey' : 'Full Audit Survey'}
+                  {reportType === 'photo_only' ? 'Photo Section Survey' : reportType === 'observation' ? 'Observation Report' : 'Full Audit Survey'}
                 </span>
                 {vesselName && <span className="rppm-vessel-badge">{vesselName}</span>}
               </div>
@@ -145,6 +145,14 @@ export function ReportPdfPreviewModal({
                 disabled={isGenerating}
               >
                 Full Checklist
+              </button>
+              <button
+                type="button"
+                className={`rppm-toggle-btn ${reportType === 'observation' ? 'active' : ''}`}
+                onClick={() => setReportType('observation')}
+                disabled={isGenerating}
+              >
+                Observation Report
               </button>
             </div>
 
