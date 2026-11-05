@@ -539,7 +539,6 @@ export async function generateInspectionPdf(data: ReportData & {
   const ROW_PAD = 1.2;
   const ROW_FRAME = 2 * ROW_PAD + 0.8;  // card width minus the photo's own width
   const ROW_MAX_IMG_H = 98;
-  const ROW_MIN_IMG_H = 48;
 
   const aspectOf = (img: LoadedImage | null) => (img ? Math.min(1.9, Math.max(0.55, img.w / img.h)) : 1);
 
@@ -556,7 +555,8 @@ export async function generateInspectionPdf(data: ReportData & {
     availW: number,
     x0: number,
     gapX: number,
-    centerSingle: boolean
+    centerSingle: boolean,
+    maxImgH = ROW_MAX_IMG_H
   ) => {
     const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
       loadImage(idA),
@@ -573,13 +573,15 @@ export async function generateInspectionPdf(data: ReportData & {
     let x1 = x0;
     if (idB) {
       // Same height for both; widths follow each photo's shape and together fill the row (or are centred if capped).
-      imgH = Math.min(ROW_MAX_IMG_H, (availW - gapX - 2 * ROW_FRAME) / (a1 + a2));
+      imgH = Math.min(maxImgH, (availW - gapX - 2 * ROW_FRAME) / (a1 + a2));
       w1 = imgH * a1 + ROW_FRAME;
       w2 = imgH * a2 + ROW_FRAME;
       x1 = x0 + (availW - (w1 + gapX + w2)) / 2;
     } else {
-      w1 = (availW - gapX) / 2;
-      imgH = Math.min(ROW_MAX_IMG_H, Math.max(ROW_MIN_IMG_H, (w1 - ROW_FRAME) / a1));
+      // A lone photo: frame hugs the photo (at most half the row wide), so there are no grey bands either.
+      const maxW = (availW - gapX) / 2;
+      imgH = Math.min(maxImgH, (maxW - ROW_FRAME) / a1);
+      w1 = imgH * a1 + ROW_FRAME;
       if (centerSingle) x1 = x0 + (availW - w1) / 2;
     }
     const banner = Math.max(bannerFor(photoDoc1, w1), idB ? bannerFor(photoDoc2, w2) : 0);
@@ -656,6 +658,7 @@ export async function generateInspectionPdf(data: ReportData & {
     const ROW_GAP = 4;
     const BOTTOM_PAD = 3;
     const CONT_HEADER_H = 12;
+    const OBS_MAX_IMG_H = 76; // smaller than section photos so two observation cards fit on one page
     const pageLimit = PAGE_H - BOTTOM_MARGIN;
 
     const textContent = fRow.finding.text || 'Observation logged';
@@ -668,10 +671,10 @@ export async function generateInspectionPdf(data: ReportData & {
     const photoIds = (fRow.photoIds || []).filter(Boolean);
     const rows: Awaited<ReturnType<typeof buildPhotoRow>>[] = [];
     for (let i = 0; i < photoIds.length; i += 2) {
-      rows.push(await buildPhotoRow(photoIds[i], photoIds[i + 1], innerW, innerX, 6, true));
+      rows.push(await buildPhotoRow(photoIds[i], photoIds[i + 1], innerW, innerX, 6, true, OBS_MAX_IMG_H));
     }
 
-    const textBlockH = 14 + textH + (caH ? caH + 2 : 0) + (paH ? paH + 2 : 0) + (rows.length ? 2 : 0);
+    const textBlockH = 14 + textH + (caH ? caH + 2 : 0) + (paH ? paH + 2 : 0) + (rows.length ? 1 : 0);
 
     const statusStr = fRow.state === 'ok' ? '[+]  SATISFACTORY' : fRow.state === 'bad' ? '!  OBSERVATION' : fRow.state === 'na' ? '-  N / A' : '[?]  PENDING';
     const drawTag = (y: number, text: string) => {
@@ -730,16 +733,16 @@ export async function generateInspectionPdf(data: ReportData & {
 
         curY = cardY + 14;
         renderRichText(doc.pdf, textContent, innerX, curY, innerW, { size: 8.5, lineGap: 4.2, color: TEXT_DARK });
-        curY += textH + 2;
+        curY += textH;
         if (caContent) {
-          renderRichText(doc.pdf, caContent, innerX, curY, innerW, { size: 7.8, lineGap: 4.0, color: RED });
+          renderRichText(doc.pdf, caContent, innerX, curY + 2, innerW, { size: 7.8, lineGap: 4.0, color: RED });
           curY += caH + 2;
         }
         if (paContent) {
-          renderRichText(doc.pdf, paContent, innerX, curY, innerW, { size: 7.8, lineGap: 4.0, color: TEXT_MUTED });
+          renderRichText(doc.pdf, paContent, innerX, curY + 2, innerW, { size: 7.8, lineGap: 4.0, color: TEXT_MUTED });
           curY += paH + 2;
         }
-        if (rows.length) curY += 2;
+        if (rows.length) curY += 1;
       } else {
         drawTag(cardY, `${tag} (Photographs Cont.)`);
         curY = cardY + CONT_HEADER_H;
