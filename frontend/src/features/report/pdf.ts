@@ -6,6 +6,7 @@ import brandLogoSrc from '../../assets/ozellar-marine-global-logo.gif';
 import { PARTICULAR_LABELS, PARTICULAR_GROUPS } from '../vessels/particulars';
 import type { ReportData, SectionReport, Observation } from './reportData';
 import { renderRichText, measureRichText } from './richTextPdf';
+import { stripHtmlToPlainText, formatObservationText } from '../inspections/photoDefectService';
 
 // ---------------------------------------------------------------------------
 // Design System Constants (Maritime Executive Theme)
@@ -165,6 +166,74 @@ async function loadImage(photoId?: string | null): Promise<LoadedImage | null> {
   sessionImageCache.set(photoId, p);
   return p;
 }
+
+// Cover-crop with rounded corners and a dark gradient at the bottom (for the title), returned as a JPEG.
+// The corners are filled white, which matches the page background.
+async function cropToCoverRounded(loadedImg: LoadedImage, targetW: number, targetH: number, radiusMm: number): Promise<string> {
+  try {
+    const srcW = loadedImg.w;
+    const srcH = loadedImg.h;
+    if (!srcW || !srcH) return loadedImg.dataUrl;
+    const targetAspect = targetW / targetH;
+
+    let cropW = srcW;
+    let cropH = srcH;
+    let cropX = 0;
+    let cropY = 0;
+    if (srcW / srcH > targetAspect) {
+      cropW = Math.round(srcH * targetAspect);
+      cropX = Math.round((srcW - cropW) / 2);
+    } else {
+      cropH = Math.round(srcW / targetAspect);
+      cropY = Math.round((srcH - cropH) / 2);
+    }
+
+    const canvasW = 1400;
+    const canvasH = Math.round(canvasW / targetAspect);
+    const r = radiusMm * (canvasW / targetW);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return loadedImg.dataUrl;
+
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('canvas crop failed'));
+      img.src = loadedImg.dataUrl;
+    });
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvasW, canvasH);
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(canvasW - r, 0);
+    ctx.quadraticCurveTo(canvasW, 0, canvasW, r);
+    ctx.lineTo(canvasW, canvasH - r);
+    ctx.quadraticCurveTo(canvasW, canvasH, canvasW - r, canvasH);
+    ctx.lineTo(r, canvasH);
+    ctx.quadraticCurveTo(0, canvasH, 0, canvasH - r);
+    ctx.lineTo(0, r);
+    ctx.quadraticCurveTo(0, 0, r, 0);
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvasW, canvasH);
+
+    const shadeTop = canvasH * 0.6;
+    const grad = ctx.createLinearGradient(0, shadeTop, 0, canvasH);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.75)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, shadeTop, canvasW, canvasH - shadeTop);
+
+    return canvas.toDataURL('image/jpeg', 0.9);
+  } catch {
+    return loadedImg.dataUrl;
+  }
+}
+
 
 // Precise Image Cropper to guarantee exact aspect ratio without PDF overflow
 async function cropToCover(loadedImg: LoadedImage, targetW: number, targetH: number): Promise<string> {
@@ -642,6 +711,20 @@ export async function generateInspectionPdf(data: ReportData & {
   // One soft-red card: tag, text, corrective/preventive actions, then the observation's photos in justified rows.
   // Height is measured from the real content. The card splits across pages only between photo rows, and the
   // "OBSERVATIONS & FINDINGS" heading always stays with the first card.
+  // An observation's text only counts when the user typed it. Auto-generated text (empty, the section name,
+  // the photo's caption, or the "Defect observation logged…" placeholder) is treated as no text.
+  const isDefaultObservationText = (text: string | undefined | null, sectionName: string, photoDescs: string[]): boolean => {
+    const t = stripHtmlToPlainText(text || '').toLowerCase();
+    if (!t) return true;
+    const sec = stripHtmlToPlainText(sectionName || '');
+    if (sec && t === sec.toLowerCase()) return true;
+    if (t === 'defect observation logged from visual evidence' || t === 'observation logged') return true;
+    return photoDescs.some((d) => {
+      const desc = stripHtmlToPlainText(d || '');
+      return !!desc && (t === desc.toLowerCase() || t === stripHtmlToPlainText(formatObservationText(sec, desc)).toLowerCase());
+    });
+  };
+
   type SectionRow = (typeof sections)[number];
   const renderObservationCard = async (
     fRow: SectionRow['findings'][number],
@@ -652,7 +735,6 @@ export async function generateInspectionPdf(data: ReportData & {
   ) => {
     const ordinary = (inspection as any)?.reportCategory !== 'take_over' && (inspection as any)?.reportCategory !== 'pre_purchase';
     const RED = [185, 28, 28] as [number, number, number];
-    const RED_BORDER = [254, 202, 202] as [number, number, number];
     const innerX = MARGIN_LEFT + 6;
     const innerW = CONTENT_W - 12;
     const ROW_GAP = 4;
@@ -661,29 +743,37 @@ export async function generateInspectionPdf(data: ReportData & {
     const OBS_MAX_IMG_H = 76; // smaller than section photos so two observation cards fit on one page
     const pageLimit = PAGE_H - BOTTOM_MARGIN;
 
-    const textContent = fRow.finding.text || 'Observation logged';
-    const caContent = (ordinary && fRow.finding.correctiveAction) ? `**Corrective Action:** ${fRow.finding.correctiveAction}` : '';
-    const paContent = (ordinary && fRow.finding.preventiveAction) ? `*Preventive Action:* ${fRow.finding.preventiveAction}` : '';
-    const textH = measureRichText(doc.pdf, textContent, innerW, { size: 8.5, lineGap: 4.2 });
-    const caH = caContent ? measureRichText(doc.pdf, caContent, innerW, { size: 7.8, lineGap: 4.0 }) : 0;
-    const paH = paContent ? measureRichText(doc.pdf, paContent, innerW, { size: 7.8, lineGap: 4.0 }) : 0;
-
     const photoIds = (fRow.photoIds || []).filter(Boolean);
     const rows: Awaited<ReturnType<typeof buildPhotoRow>>[] = [];
     for (let i = 0; i < photoIds.length; i += 2) {
       rows.push(await buildPhotoRow(photoIds[i], photoIds[i + 1], innerW, innerX, 6, true, OBS_MAX_IMG_H));
     }
 
-    const textBlockH = 14 + textH + (caH ? caH + 2 : 0) + (paH ? paH + 2 : 0) + (rows.length ? 1 : 0);
+    // Only what the user actually entered is printed: no placeholder text when nothing was typed.
+    const photoDescs = photoIds.map((pid) => String(photoMap.get(pid)?.description ?? ''));
+    const textContent = isDefaultObservationText(fRow.finding.text, s.section.name, photoDescs) ? '' : (fRow.finding.text || '');
+    const caContent = (ordinary && stripHtmlToPlainText(fRow.finding.correctiveAction || '')) ? `**Corrective Action:** ${fRow.finding.correctiveAction}` : '';
+    const paContent = (ordinary && stripHtmlToPlainText(fRow.finding.preventiveAction || '')) ? `*Preventive Action:* ${fRow.finding.preventiveAction}` : '';
+
+    const blocks: { content: string; size: number; lineGap: number; color: [number, number, number]; h: number }[] = [];
+    if (textContent) blocks.push({ content: textContent, size: 8.5, lineGap: 4.2, color: TEXT_DARK, h: measureRichText(doc.pdf, textContent, innerW, { size: 8.5, lineGap: 4.2 }) });
+    if (caContent) blocks.push({ content: caContent, size: 7.8, lineGap: 4.0, color: RED, h: measureRichText(doc.pdf, caContent, innerW, { size: 7.8, lineGap: 4.0 }) });
+    if (paContent) blocks.push({ content: paContent, size: 7.8, lineGap: 4.0, color: TEXT_MUTED, h: measureRichText(doc.pdf, paContent, innerW, { size: 7.8, lineGap: 4.0 }) });
+    const bodyH = blocks.reduce((sum, b, i) => sum + b.h + (i > 0 ? 2 : 0), 0);
+
+    // Tag row; when there is text, a divider and a clear gap below it before the text starts.
+    const BODY_TOP = 17;
+    const textBlockH = blocks.length ? BODY_TOP + bodyH + (rows.length ? 2 : 0) : 12;
 
     const statusStr = fRow.state === 'ok' ? '[+]  SATISFACTORY' : fRow.state === 'bad' ? '!  OBSERVATION' : fRow.state === 'na' ? '-  N / A' : '[?]  PENDING';
     const drawTag = (y: number, text: string) => {
       doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
       const tagW = doc.pdf.getTextWidth(text) + 8;
-      doc.setFill([254, 242, 242]);
-      doc.setDraw(RED_BORDER, 0.3);
+      // Same green theme as the other section headings (not alarm red)
+      doc.setFill(STATUS_OK.bg);
+      doc.setDraw(STATUS_OK.border, 0.3);
       doc.pdf.roundedRect(innerX, y + 4, tagW, 5.5, 1, 1, 'FD');
-      doc.setTextColor(RED);
+      doc.setTextColor(NAVY);
       doc.pdf.text(text, innerX + 4, y + 7.8);
       if (showStatus) {
         const badgeW = doc.pdf.getTextWidth(statusStr) + 8;
@@ -723,26 +813,26 @@ export async function generateInspectionPdf(data: ReportData & {
       const cardH = h + BOTTOM_PAD;
 
       const cardY = doc.y;
-      doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, RED_BORDER, 2.5);
+      doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, cardH, WHITE, BORDER, 2.5);
 
       let curY: number;
       if (first) {
         drawTag(cardY, tag);
-        doc.setDraw(RED_BORDER, 0.25);
-        doc.pdf.line(innerX, cardY + 11.5, PAGE_W - MARGIN_RIGHT - 6, cardY + 11.5);
 
-        curY = cardY + 14;
-        renderRichText(doc.pdf, textContent, innerX, curY, innerW, { size: 8.5, lineGap: 4.2, color: TEXT_DARK });
-        curY += textH;
-        if (caContent) {
-          renderRichText(doc.pdf, caContent, innerX, curY + 2, innerW, { size: 7.8, lineGap: 4.0, color: RED });
-          curY += caH + 2;
+        if (blocks.length) {
+          doc.setDraw(BORDER, 0.25);
+          doc.pdf.line(innerX, cardY + 12, PAGE_W - MARGIN_RIGHT - 6, cardY + 12);
+
+          curY = cardY + BODY_TOP;
+          blocks.forEach((b, i) => {
+            if (i > 0) curY += 2;
+            renderRichText(doc.pdf, b.content, innerX, curY, innerW, { size: b.size, lineGap: b.lineGap, color: b.color });
+            curY += b.h;
+          });
+          if (rows.length) curY += 2;
+        } else {
+          curY = cardY + 12;
         }
-        if (paContent) {
-          renderRichText(doc.pdf, paContent, innerX, curY + 2, innerW, { size: 7.8, lineGap: 4.0, color: TEXT_MUTED });
-          curY += paH + 2;
-        }
-        if (rows.length) curY += 1;
       } else {
         drawTag(cardY, `${tag} (Photographs Cont.)`);
         curY = cardY + CONT_HEADER_H;
@@ -804,10 +894,12 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.setTextColor(TEXT_MUTED);
   doc.pdf.text(subPdfTitle, titleX, 16);
 
-  // ── Full-Bleed Hero Cover Image ──────────────────────────────────────────
-  // Image spans full page width, with a dark gradient overlay at bottom for text
-  const heroY = 25;
-  const heroH = 138;
+  // ── Framed Hero Cover Image (rounded corners, inside the page margins) ─────────
+  const heroX = MARGIN_LEFT;
+  const heroW = CONTENT_W;
+  const heroY = 31;
+  const heroH = 128;
+  const heroRadius = 4;
   let coverImgLoaded: LoadedImage | null = null;
   if (inspection.coverPhotoId) {
     coverImgLoaded = await loadImage(inspection.coverPhotoId);
@@ -823,61 +915,38 @@ export async function generateInspectionPdf(data: ReportData & {
   const vMetaStr = metaItems.join('   |   ');
 
   if (coverImgLoaded) {
-    // Exact crop to cover: fits PAGE_W × heroH with zero overflow
-    const croppedDataUrl = await cropToCover(coverImgLoaded, PAGE_W, heroH);
-    doc.pdf.addImage(croppedDataUrl, 'JPEG', 0, heroY, PAGE_W, heroH);
-
-    // Dark gradient overlay at bottom of image (layered rects)
-    const gradH = 50;
-    const gradTop = heroY + heroH - gradH;
-    const steps = 10;
-    for (let i = 0; i < steps; i++) {
-      const alpha = i / steps;
-      const darkness = Math.round(alpha * 180);
-      doc.setFill([darkness > 130 ? 0 : 10, darkness > 130 ? 0 : 20, darkness > 130 ? 0 : 15] as [number, number, number]);
-      doc.pdf.setGState(doc.pdf.GState({ opacity: alpha * 0.78 }));
-      doc.pdf.rect(0, gradTop + (i * gradH) / steps, PAGE_W, gradH / steps + 0.5, 'F');
-    }
-    doc.pdf.setGState(doc.pdf.GState({ opacity: 1 }));
+    // Cropped to the frame, with rounded corners and the bottom shading for the title baked into the image
+    const heroDataUrl = await cropToCoverRounded(coverImgLoaded, heroW, heroH, heroRadius);
+    doc.pdf.addImage(heroDataUrl, 'JPEG', heroX, heroY, heroW, heroH);
 
     // Vessel Name Overlay (bottom left)
-    const overlayTextY = heroY + heroH - 18;
+    const overlayTextY = heroY + heroH - 16;
     doc.pdf.setFont('helvetica', 'bold').setFontSize(16.5);
     doc.setTextColor(WHITE);
-    doc.pdf.text((inspection.vesselName || 'VESSEL').toUpperCase(), MARGIN_LEFT, overlayTextY);
+    doc.pdf.text((inspection.vesselName || 'VESSEL').toUpperCase(), heroX + 8, overlayTextY);
 
     // Metadata line (IMO, Type, Flag, Port)
     doc.pdf.setFont('helvetica', 'bold').setFontSize(8.0);
     doc.setTextColor([210, 235, 225]);
-    doc.pdf.text(vMetaStr, MARGIN_LEFT, overlayTextY + 7);
-
-    // Orange accent bar at bottom of image
-    doc.setFill(TEAL);
-    doc.pdf.rect(0, heroY + heroH - 2, PAGE_W, 2.5, 'F');
+    doc.pdf.text(vMetaStr, heroX + 8, overlayTextY + 7);
   } else {
     // Executive Maritime fallback banner (when no cover photo available)
-    doc.setFill([13, 33, 56]);
-    doc.pdf.rect(0, heroY, PAGE_W, heroH, 'F');
-    doc.setFill([10, 50, 35]);
-    doc.pdf.rect(0, heroY + heroH - 35, PAGE_W, 35, 'F');
+    doc.roundedBox(heroX, heroY, heroW, heroH, [13, 33, 56], undefined, heroRadius);
 
     doc.setFill(TEAL);
-    doc.pdf.rect(MARGIN_LEFT, heroY + 16, 24, 1.5, 'F');
+    doc.pdf.rect(heroX + 8, heroY + 16, 24, 1.5, 'F');
 
     doc.pdf.setFont('helvetica', 'bold').setFontSize(22);
     doc.setTextColor(WHITE);
-    doc.pdf.text((inspection.vesselName || 'VESSEL INSPECTION').toUpperCase(), MARGIN_LEFT, heroY + 32);
+    doc.pdf.text((inspection.vesselName || 'VESSEL INSPECTION').toUpperCase(), heroX + 8, heroY + 32);
 
     doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
     doc.setTextColor([180, 225, 200]);
-    doc.pdf.text(vMetaStr || `IMO: ${inspection.imo || 'NOT SPECIFIED'}`, MARGIN_LEFT, heroY + 44);
-
-    doc.setFill(TEAL);
-    doc.pdf.rect(0, heroY + heroH - 2, PAGE_W, 2.5, 'F');
+    doc.pdf.text(vMetaStr || `IMO: ${inspection.imo || 'NOT SPECIFIED'}`, heroX + 8, heroY + 44);
   }
 
   // ── AUDIT & SURVEY PARTICULARS (Executive Maritime Table) ──────────────────
-  const detailsY = heroY + heroH + 6;
+  const detailsY = heroY + heroH + 8;
   const detailsH = 52.5;
   doc.roundedBox(MARGIN_LEFT, detailsY, CONTENT_W, detailsH, WHITE, BORDER, 2.5);
 
@@ -897,7 +966,7 @@ export async function generateInspectionPdf(data: ReportData & {
   const particularsRows = [
     {
       col1: { label: 'SURVEY TYPE', val: isPhotoOnly ? 'Photographic Condition Survey' : (INSPECTION_TYPE_LABELS[inspection.inspectionType] || inspection.inspectionType || 'In Port Survey') },
-      col2: { label: 'AUDITOR', val: inspection.inspector || '-' },
+      col2: { label: 'AUDITOR / SURVEYOR / SUPERINTENDENT', val: inspection.inspector || '-' },
     },
     {
       col1: { label: 'PORT / LOCATION', val: inspection.port || '-' },
@@ -1383,7 +1452,7 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.pdf.roundedRect(MARGIN_LEFT, metaY, CONTENT_W, metaH, 1.5, 1.5, 'FD');
 
   const metaCols = [
-    { label: 'AUDITOR', val: inspection.inspector || '-' },
+    { label: 'AUDITOR / SURVEYOR / SUPERINTENDENT', val: inspection.inspector || '-' },
     { label: 'SURVEY PORT / LOCATION', val: inspection.port || '-' },
     { label: 'INSPECTION DATES', val: `${fmtDate(inspection.startDate)} - ${fmtDate(inspection.completionDate || inspection.startDate)}` },
   ];
@@ -1413,7 +1482,7 @@ export async function generateInspectionPdf(data: ReportData & {
   // 3. Section Title Bar: Attending Surveyor Remarks & Appraisal
   doc.pdf.setFont('helvetica', 'bold').setFontSize(8.0);
   doc.setTextColor(NAVY);
-  doc.pdf.text('ATTENDING SURVEYOR APPRAISAL & OPERATIONAL SYNTHESIS', MARGIN_LEFT, doc.y + 3);
+  doc.pdf.text('ATTENDING SUPERINTENDENT APPRAISAL & OPERATIONAL SYNTHESIS', MARGIN_LEFT, doc.y + 3);
 
   doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
   doc.setTextColor(TEXT_MUTED);
@@ -1822,7 +1891,7 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.pdf.setFont('helvetica', 'normal').setFontSize(7);
   doc.setTextColor([180, 220, 200]);
   const surveyDate = `${fmtDate(inspection.startDate)} – ${fmtDate(inspection.completionDate || inspection.startDate)}`;
-  doc.pdf.text(`Survey Period: ${surveyDate}  ·  Auditor: ${inspection.inspector || '-'}`, MARGIN_LEFT + 6, doc.y + 13.5);
+  doc.pdf.text(`Survey Period: ${surveyDate}  ·  Auditor / Surveyor / Superintendent: ${inspection.inspector || '-'}`, MARGIN_LEFT + 6, doc.y + 13.5);
   doc.y += ctxBoxH + 5;
 
   // Conclusion text box with rich formatting (bullets, bold, headings, font styles)
@@ -1842,6 +1911,87 @@ export async function generateInspectionPdf(data: ReportData & {
     bulletColor: NAVY,
   });
   doc.y += conBoxH + 10;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // APPENDIX: LIST OF OBSERVATIONS (section, reference and the text/remarks the user entered)
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    const plain = (v?: string | null) => stripHtmlToPlainText(v ?? '');
+    const appendixItems = neededObservations.map((o) => {
+      let desc: string;
+      if (o.kind === 'finding') {
+        const descs = (o.photoIds || []).map((pid) => plain(photoMap.get(pid)?.description));
+        desc = isDefaultObservationText(o.text, o.sectionName, descs) ? '' : plain(o.text);
+        if (!desc) desc = descs.find(Boolean) ?? '';
+      } else {
+        const remarks = plain(o.remarks);
+        desc = [plain(o.text), remarks ? `Remarks: ${remarks}` : ''].filter(Boolean).join(' — ');
+      }
+      return { section: o.sectionName, ref: o.ref, desc };
+    });
+
+    doc.newPage();
+    doc.sectionHeader('Appendix', 'List of Observations', `${appendixItems.length} Observation${appendixItems.length === 1 ? '' : 's'}`);
+
+    const colNo = 10;
+    const colSection = 48;
+    const colRef = 28;
+    const colDesc = CONTENT_W - colNo - colSection - colRef;
+
+    const drawTableHead = () => {
+      doc.setFill(NAVY);
+      doc.pdf.roundedRect(MARGIN_LEFT, doc.y, CONTENT_W, 8, 1.2, 1.2, 'F');
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+      doc.setTextColor(WHITE);
+      doc.pdf.text('NO.', MARGIN_LEFT + 3, doc.y + 5.3);
+      doc.pdf.text('SECTION', MARGIN_LEFT + colNo + 2, doc.y + 5.3);
+      doc.pdf.text('REFERENCE', MARGIN_LEFT + colNo + colSection + 2, doc.y + 5.3);
+      doc.pdf.text('OBSERVATION / REMARKS', MARGIN_LEFT + colNo + colSection + colRef + 2, doc.y + 5.3);
+      doc.y += 9;
+    };
+
+    if (!appendixItems.length) {
+      doc.pdf.setFont('helvetica', 'italic').setFontSize(8.5);
+      doc.setTextColor(TEXT_MUTED);
+      doc.pdf.text('No observations recorded.', MARGIN_LEFT, doc.y + 5);
+      doc.y += 10;
+    } else {
+      drawTableHead();
+      appendixItems.forEach((it, i) => {
+        doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
+        const secLines = doc.pdf.splitTextToSize(it.section || '-', colSection - 4) as string[];
+        const refLines = doc.pdf.splitTextToSize(it.ref || '-', colRef - 4) as string[];
+        const descLines = doc.pdf.splitTextToSize(it.desc || '-', colDesc - 4) as string[];
+        const lineCount = Math.max(secLines.length, refLines.length, descLines.length);
+        const rowH = lineCount * 4 + 4;
+
+        if (doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
+          doc.newPage();
+          drawTableHead();
+        }
+
+        if (i % 2 === 0) {
+          doc.setFill(SLATE_BG);
+          doc.pdf.rect(MARGIN_LEFT, doc.y, CONTENT_W, rowH, 'F');
+        }
+        const ty = doc.y + 5;
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
+        doc.setTextColor(NAVY);
+        doc.pdf.text(String(i + 1), MARGIN_LEFT + 3, ty);
+        doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
+        doc.setTextColor(TEXT_DARK);
+        doc.pdf.text(secLines, MARGIN_LEFT + colNo + 2, ty);
+        doc.setTextColor(TEXT_MUTED);
+        doc.pdf.text(refLines, MARGIN_LEFT + colNo + colSection + 2, ty);
+        doc.setTextColor(it.desc ? TEXT_BODY : TEXT_FAINT);
+        doc.pdf.text(descLines, MARGIN_LEFT + colNo + colSection + colRef + 2, ty);
+
+        doc.setDraw(BORDER, 0.2);
+        doc.pdf.line(MARGIN_LEFT, doc.y + rowH, MARGIN_LEFT + CONTENT_W, doc.y + rowH);
+        doc.y += rowH;
+      });
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // POST-PASS: DYNAMIC RUNNING HEADERS & FOOTERS (Page X of Y)
