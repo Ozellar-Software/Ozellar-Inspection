@@ -83,8 +83,8 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
     if (p.responseId) {
       (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p.id);
     }
-    // Include in section visual evidence photos as well (both sides: section visual evidence and observation)
-    if (p.inspectionSectionId && !p.responseId) {
+    // Defect / observation photos appear ONLY in observations, removed from section overview photos
+    if (p.inspectionSectionId && !p.responseId && !p.findingId && !p.isDefect) {
       (photosBySection.get(p.inspectionSectionId) ?? photosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
     }
   }

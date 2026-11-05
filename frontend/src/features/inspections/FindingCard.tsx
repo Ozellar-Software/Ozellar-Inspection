@@ -182,6 +182,7 @@ export function FindingCard({
               ...existingPhoto,
               target: 'finding',
               findingId: finding.id,
+              isDefect: true,
               inspectionSectionId: finding.inspectionSectionId || existingPhoto.inspectionSectionId || null,
               responseId: null,
               position: pos++,

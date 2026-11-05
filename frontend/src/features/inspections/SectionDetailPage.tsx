@@ -92,13 +92,13 @@ export function SectionDetailPage() {
     if (p.responseId) {
       (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p);
     }
-    // Show in section photos visual evidence row as well (both sides: section evidence and observation)
-    if (p.inspectionSectionId === sectionId && !p.responseId) {
+    // Defect / observation photos are shown ONLY in observations and removed from section photos
+    if (p.inspectionSectionId === sectionId && !p.responseId && !p.findingId && !p.isDefect) {
       sectionPhotos.push(p);
     }
   }
 
-  const unlinkedSectionDefects = sectionPhotos.filter((p) => p.isDefect && !p.findingId);
+  const unlinkedSectionDefects = photos.filter((p) => p.inspectionSectionId === sectionId && p.isDefect && !p.findingId && !p.deletedAt);
 
   const handleSyncSectionDefects = async () => {
     if (isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;
@@ -224,7 +224,7 @@ export function SectionDetailPage() {
   }).length;
   const isSectionComplete = totalQuestions > 0
     ? (answeredCount === totalQuestions)
-    : (dispSection.photoOnly ? sectionPhotos.length > 0 : false);
+    : (dispSection.photoOnly ? (sectionPhotos.length > 0 || findings.length > 0) : false);
 
   async function notifySectionComplete() {
     if (!inspectionId || !sectionId || !dispSection) return;
@@ -417,6 +417,7 @@ export function SectionDetailPage() {
                     inspectionSectionId: sectionId,
                     responseId: null,
                     findingId: null,
+                    isDefect: false,
                     position: pos++,
                   });
                   movedCount++;

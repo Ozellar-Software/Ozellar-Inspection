@@ -243,6 +243,7 @@ export function PhotoStrip({
         inspectionSectionId: targetSectionId,
         responseId: null,
         findingId: null,
+        isDefect: false,
         position,
       });
     }
@@ -325,6 +326,7 @@ export function PhotoStrip({
           ...targetPhoto,
           target: 'finding',
           findingId: targetFindingId,
+          isDefect: true,
           inspectionSectionId: targetSectionId || inspectionSectionId || targetPhoto.inspectionSectionId || null,
           responseId: null,
           position,

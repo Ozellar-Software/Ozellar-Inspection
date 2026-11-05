@@ -106,6 +106,7 @@ export async function localDelete(entity: SyncEntity, id: string): Promise<void>
         // Photo belongs to a section — preserve it in the section, do not delete!
         await localWrite('photos', p.id, {
           findingId: null,
+          isDefect: false,
           target: 'section',
         });
       } else {
