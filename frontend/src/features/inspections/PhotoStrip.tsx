@@ -613,6 +613,7 @@ export function PhotoStrip({
               : null,
             responseId: target === 'question' ? responseId : null,
             findingId: target === 'finding' ? findingId : null,
+            isDefect: target === 'finding' ? true : (target === 'section' ? false : !!existingPhoto.isDefect),
             position: pos++,
           });
           movedCount++;
@@ -649,7 +650,7 @@ export function PhotoStrip({
             responseId,
             findingId,
             position: pos++,
-            isDefect: false,
+            isDefect: target === 'finding',
           });
         }
         const targetLabel = target === 'section' ? 'section photos' : target === 'finding' ? 'observation' : 'question';
@@ -683,15 +684,16 @@ export function PhotoStrip({
     let position = photos.reduce((max, p) => Math.max(max, (p.position ?? 0) + 1), 0);
     const addedIds: string[] = [];
     for (const item of newPhotos) {
+      const isDef = target === 'finding' ? true : item.isDefect;
       const id = await addPhoto({
         file: item.file,
-        target: item.isDefect ? 'finding' : target,
+        target: isDef ? 'finding' : target,
         inspectionId,
         inspectionSectionId,
-        responseId: item.isDefect ? undefined : responseId,
-        findingId: item.isDefect ? undefined : findingId,
+        responseId: isDef ? undefined : responseId,
+        findingId: findingId || undefined,
         position: position++,
-        isDefect: item.isDefect,
+        isDefect: isDef,
         description: item.description ?? '',
       });
       addedIds.push(id);
@@ -1228,6 +1230,7 @@ export function PhotoStrip({
           onClose={() => setIsCameraModalOpen(false)}
           onSavePhotos={handleSavePhotosFromCamera}
           title={title}
+          defaultDefect={target === 'finding'}
         />
       )}
 

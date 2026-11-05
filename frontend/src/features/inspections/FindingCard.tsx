@@ -95,6 +95,17 @@ export function FindingCard({
   const handleDeleteFinding = async () => {
     setIsDeleting(true);
     try {
+      // Revert attached photos to section photos as normal photos so evidence is not lost
+      const attachedPhotos = await db.photos.where('findingId').equals(finding.id).toArray();
+      for (const p of attachedPhotos) {
+        await localWrite('photos', p.id, {
+          findingId: null,
+          target: 'section',
+          isDefect: false,
+          inspectionSectionId: p.inspectionSectionId || finding.inspectionSectionId || null,
+          responseId: null,
+        });
+      }
       await localDelete('findings', finding.id);
       setShowDeleteConfirm(false);
     } finally {

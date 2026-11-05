@@ -101,11 +101,17 @@ export function SectionListPage() {
   const photos = useLiveQuery(
     () => (inspectionId ? db.photos.where('inspectionId').equals(inspectionId).toArray() : []), [inspectionId]) ?? [];
 
+  const findings = useLiveQuery(
+    () => (inspectionId ? db.findings.where('inspectionId').equals(inspectionId).toArray() : []),
+    [inspectionId]
+  ) ?? [];
+  const activeFindingIds = useMemo(() => new Set(findings.map((f) => f.id)), [findings]);
+
   const activePhotos = useMemo(() => photos.filter((p) => !p.deletedAt), [photos]);
   const defectPhotos = useMemo(() => activePhotos.filter((p) => !!p.isDefect), [activePhotos]);
   const unlinkedDefectPhotos = useMemo(
-    () => activePhotos.filter((p) => p.isDefect && !p.findingId && p.inspectionSectionId),
-    [activePhotos]
+    () => activePhotos.filter((p) => p.isDefect && (!p.findingId || !activeFindingIds.has(p.findingId)) && p.inspectionSectionId),
+    [activePhotos, activeFindingIds]
   );
 
   const [isSyncingDefects, setIsSyncingDefects] = useState(false);

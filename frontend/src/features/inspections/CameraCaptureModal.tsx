@@ -25,6 +25,7 @@ export interface CameraCaptureModalProps {
   onClose: () => void;
   onSavePhotos: (photos: { file: File; isDefect: boolean; description?: string }[]) => Promise<string[] | void>;
   title?: string;
+  defaultDefect?: boolean;
 }
 
 export function CameraCaptureModal({
@@ -32,12 +33,13 @@ export function CameraCaptureModal({
   onClose,
   onSavePhotos,
   title,
+  defaultDefect = false,
 }: CameraCaptureModalProps) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [capturedPhotos, setCapturedPhotos] = useState<CapturedPhoto[]>([]);
-  const [captureMode, setCaptureMode] = useState<'normal' | 'defect'>('normal');
+  const [captureMode, setCaptureMode] = useState<'normal' | 'defect'>(defaultDefect ? 'defect' : 'normal');
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [isSaving, setIsSaving] = useState(false);
   const [shutterFlash, setShutterFlash] = useState(false);
@@ -200,6 +202,7 @@ export function CameraCaptureModal({
     isMountedRef.current = true;
 
     if (isOpen) {
+      setCaptureMode(defaultDefect ? 'defect' : 'normal');
       startCamera(facingMode);
     } else {
       stopStream();

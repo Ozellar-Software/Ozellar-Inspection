@@ -81,14 +81,16 @@ export function SectionDetailPage() {
     { id: 'q2', text: 'Are safety labels clearly visible?', position: 2, inspectionSectionId: sectionId, qid: 2, ref: 'Q2' },
   ] : questions;
 
+  const activeFindingIds = new Set(findings.map((f) => f.id));
   const byQuestion = new Map(responses.map((r) => [r.inspectionQuestionId, r]));
   const photosByResponse = new Map<string, Photo[]>();
   const photosByFinding = new Map<string, Photo[]>();
   const sectionPhotos: Photo[] = [];
   for (const p of photos) {
+    const isLinkedFinding = p.findingId && activeFindingIds.has(p.findingId);
     // Defect / observation photos are shown ONLY in observation cards and strictly excluded from question and section photos
-    if (p.findingId || p.target === 'finding' || p.isDefect) {
-      if (p.findingId) {
+    if (isLinkedFinding || p.target === 'finding' || p.isDefect) {
+      if (isLinkedFinding && p.findingId) {
         (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p);
       }
     } else if (p.responseId) {
@@ -98,7 +100,13 @@ export function SectionDetailPage() {
     }
   }
 
-  const unlinkedSectionDefects = photos.filter((p) => (p.inspectionSectionId === sectionId || !p.inspectionSectionId) && (p.isDefect || p.target === 'finding') && !p.findingId && !p.deletedAt);
+  const unlinkedSectionDefects = photos.filter(
+    (p) =>
+      (p.inspectionSectionId === sectionId || !p.inspectionSectionId) &&
+      (p.isDefect || p.target === 'finding') &&
+      (!p.findingId || !activeFindingIds.has(p.findingId)) &&
+      !p.deletedAt
+  );
 
   const handleSyncSectionDefects = async () => {
     if (isSyncingDefects || unlinkedSectionDefects.length === 0 || !sectionId) return;

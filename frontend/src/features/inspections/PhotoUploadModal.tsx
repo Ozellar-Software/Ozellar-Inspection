@@ -64,13 +64,14 @@ export function PhotoUploadModal({
   // Initialize with initialFiles when modal opens
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
+      const isDefDefault = target === 'finding';
       const newItems: PendingPhotoItem[] = initialFiles
         .filter((f) => f.type.startsWith('image/'))
         .map((file) => ({
           id: crypto.randomUUID(),
           file,
           previewUrl: URL.createObjectURL(file),
-          isDefect: false,
+          isDefect: isDefDefault,
           name: file.name,
           sizeFormatted: formatBytes(file.size),
           description: '',
@@ -79,7 +80,7 @@ export function PhotoUploadModal({
     } else {
       setItems([]);
     }
-  }, [initialFiles, isOpen]);
+  }, [initialFiles, isOpen, target]);
 
   // Clean up object URLs when modal unmounts or items change
   useEffect(() => {
@@ -94,11 +95,12 @@ export function PhotoUploadModal({
     const list = Array.from(files).filter((f) => f.type.startsWith('image/'));
     if (!list.length) return;
 
+    const isDefDefault = target === 'finding';
     const newItems: PendingPhotoItem[] = list.map((file) => ({
       id: crypto.randomUUID(),
       file,
       previewUrl: URL.createObjectURL(file),
-      isDefect: false,
+      isDefect: isDefDefault,
       name: file.name,
       sizeFormatted: formatBytes(file.size),
       description: '',
@@ -174,15 +176,16 @@ export function PhotoUploadModal({
         const item = items[i];
         setUploadProgress({ current: i + 1, total: items.length });
 
+        const isDef = target === 'finding' ? true : item.isDefect;
         await addPhoto({
           file: item.file,
-          target: item.isDefect ? 'finding' : target,
+          target: isDef ? 'finding' : target,
           inspectionId,
           inspectionSectionId,
-          responseId: item.isDefect ? undefined : responseId,
-          findingId: item.isDefect ? undefined : findingId,
+          responseId: isDef ? undefined : responseId,
+          findingId: findingId || undefined,
           position: position++,
-          isDefect: item.isDefect,
+          isDefect: isDef,
           description: item.description?.trim() || undefined,
         });
       }
