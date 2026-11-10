@@ -153,12 +153,12 @@ export function SectionListPage() {
   }, [inspection, me.data, recheckedAccess, me]);
   const rawSections = useLiveQuery(
     () => (inspectionId ? db.inspectionSections.where('inspectionId').equals(inspectionId).sortBy('position') : []), [inspectionId]) ?? [];
-  // Filter out soft-deleted sections and always group normal checklist sections before photo sections
+  // Filter out soft-deleted sections and group photo sections at the top by default
   const sections = useMemo(
     () =>
       rawSections
         .filter((s) => !(s as any).deletedAt)
-        .sort((a, b) => Number(Boolean(a.photoOnly)) - Number(Boolean(b.photoOnly)) || a.position - b.position),
+        .sort((a, b) => Number(Boolean(b.photoOnly)) - Number(Boolean(a.photoOnly)) || a.position - b.position),
     [rawSections]
   );
 
@@ -1045,39 +1045,7 @@ export function SectionListPage() {
             </div>
         )}
 
-        {/* ── Section header with label and add button ── */}
-        {(!hasActiveFilters || totalFilteredSections > 0) && (
-          <div className="section-list-header">
-            <div className="section-list-header-title" style={{ color: light ? '#0d9488' : '#94a3b8' }}>
-              {light && <CameraIcon width={14} height={14} />}
-              <span>
-                {light
-                  ? (hasActiveFilters
-                      ? `Photo Sections (${filteredPhotoSections.length} of ${photoDisplaySections.length})`
-                      : `Photo Sections (${photoDisplaySections.length})`)
-                  : normalDisplaySections.length > 0
-                  ? (hasActiveFilters
-                      ? `Inspection Sections (${filteredNormalSections.length} of ${normalDisplaySections.length})`
-                      : `Inspection Sections (${normalDisplaySections.length})`)
-                  : (hasActiveFilters
-                      ? `Photo Sections (${filteredPhotoSections.length} of ${photoDisplaySections.length})`
-                      : `Photo Sections (${photoDisplaySections.length})`)}
-              </span>
-            </div>
-
-            {canAddSection && (
-              <button
-                type="button"
-                className="section-list-add-btn"
-                onClick={() => setShowAddSection(true)}
-              >
-                <PlusIcon width={14} height={14} /> <span>Add Photo Section</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* ── Section cards or Empty State (Grouped: Normal Checklist Sections first, then Photo Sections) ── */}
+        {/* ── Section cards or Empty State ── */}
         {displaySections.length === 0 ? (
           <div className="empty-photo-sections-card">
             <div className="epsc-icon">
@@ -1134,22 +1102,61 @@ export function SectionListPage() {
           </div>
         ) : (
           <>
-            {!light && filteredNormalSections.map((s) => renderSectionCard(s, s.badgeNumber))}
+            {/* ── Photo Sections Group (Rendered at TOP by default) ── */}
+            {filteredPhotoSections.length > 0 && (
+              <>
+                <div className="section-list-header">
+                  <div className="section-list-header-title" style={{ color: '#0d9488' }}>
+                    <CameraIcon width={14} height={14} />
+                    <span>
+                      {hasActiveFilters
+                        ? `Photo Sections (${filteredPhotoSections.length} of ${photoDisplaySections.length})`
+                        : `Photo Sections (${photoDisplaySections.length})`}
+                    </span>
+                  </div>
 
-            {!light && normalDisplaySections.length > 0 && filteredPhotoSections.length > 0 && (
-              <div className="section-list-header" style={{ marginTop: 18 }}>
-                <div className="section-list-header-title" style={{ color: '#0d9488' }}>
-                  <CameraIcon width={14} height={14} />
-                  <span>
-                    {hasActiveFilters
-                      ? `Photo Sections (${filteredPhotoSections.length} of ${photoDisplaySections.length})`
-                      : `Photo Sections (${photoDisplaySections.length})`}
-                  </span>
+                  {canAddSection && (
+                    <button
+                      type="button"
+                      className="section-list-add-btn"
+                      onClick={() => setShowAddSection(true)}
+                    >
+                      <PlusIcon width={14} height={14} /> <span>Add Photo Section</span>
+                    </button>
+                  )}
                 </div>
-              </div>
+
+                {filteredPhotoSections.map((s) => renderSectionCard(s, s.badgeNumber))}
+              </>
             )}
 
-            {filteredPhotoSections.map((s) => renderSectionCard(s, s.badgeNumber))}
+            {/* ── Normal Inspection Checklist Sections Group (Rendered below photo sections) ── */}
+            {!light && filteredNormalSections.length > 0 && (
+              <>
+                <div className="section-list-header" style={{ marginTop: filteredPhotoSections.length > 0 ? 22 : 8 }}>
+                  <div className="section-list-header-title" style={{ color: '#64748b' }}>
+                    <span>
+                      {hasActiveFilters
+                        ? `Inspection Sections (${filteredNormalSections.length} of ${normalDisplaySections.length})`
+                        : `Inspection Sections (${normalDisplaySections.length})`}
+                    </span>
+                  </div>
+
+                  {/* If no photo sections are visible at top, show Add Photo Section button on this header */}
+                  {canAddSection && filteredPhotoSections.length === 0 && (
+                    <button
+                      type="button"
+                      className="section-list-add-btn"
+                      onClick={() => setShowAddSection(true)}
+                    >
+                      <PlusIcon width={14} height={14} /> <span>Add Photo Section</span>
+                    </button>
+                  )}
+                </div>
+
+                {filteredNormalSections.map((s) => renderSectionCard(s, s.badgeNumber))}
+              </>
+            )}
           </>
         )}
 
