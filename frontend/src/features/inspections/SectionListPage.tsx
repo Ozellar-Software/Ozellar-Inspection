@@ -15,6 +15,7 @@ import { PhotoGalleryPreviewModal } from './PhotoGalleryPreviewModal';
 import { ReportPdfPreviewModal } from '../report/ReportPdfPreviewModal';
 import { loadReportData } from '../report/reportData';
 import { generateInspectionPdf } from '../report/pdf';
+import { filterAndSortSectionsByName } from './sectionSearch';
 import './SectionListPage.css';
 
 // ─── Zone colour pills ────────────────────────────────────────────────────
@@ -200,20 +201,6 @@ export function SectionListPage() {
     return map;
   }, [questions, responses]);
 
-  // Questions grouped by section for fast search lookup
-  const questionsBySectionId = useMemo(() => {
-    const map = new Map<string, typeof questions>();
-    for (const q of questions) {
-      const arr = map.get(q.inspectionSectionId);
-      if (!arr) {
-        map.set(q.inspectionSectionId, [q]);
-      } else {
-        arr.push(q);
-      }
-    }
-    return map;
-  }, [questions]);
-
   const availableZones = useMemo(() => {
     const map = new Map<string, string>(); // lowerKey -> canonical display name
     for (const s of sections) {
@@ -283,39 +270,26 @@ export function SectionListPage() {
     closeAllDropdowns();
   }
 
-  const searchWords = searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
-
-  const filteredNormalSections = normalDisplaySections.filter((s) => {
+  // 1. Filter by dropdown criteria (Type, Zone, Status)
+  const zoneAndStatusNormalSections = normalDisplaySections.filter((s) => {
     if (typeFilter === 'photo') return false;
     if (zoneFilter !== 'all' && normalizeZone(s.zone) !== normalizeZone(zoneFilter)) return false;
     if (statusFilter === 'incomplete' && s.total > 0 && s.done >= s.total) return false;
     if (statusFilter === 'completed' && (s.total === 0 || s.done < s.total)) return false;
-    if (searchWords.length > 0) {
-      const secText = `${s.name} ${s.zone || ''}`.toLowerCase();
-      if (!searchWords.every((w) => secText.includes(w))) {
-        const secQs = questionsBySectionId.get(s.id);
-        if (!secQs || !secQs.some((q) => {
-          const qText = `${q.ref || ''} ${q.text || ''}`.toLowerCase();
-          return searchWords.every((w) => qText.includes(w));
-        })) {
-          return false;
-        }
-      }
-    }
     return true;
   });
 
-  const filteredPhotoSections = photoDisplaySections.filter((s) => {
+  const zoneAndStatusPhotoSections = photoDisplaySections.filter((s) => {
     if (typeFilter === 'normal') return false;
     if (zoneFilter !== 'all' && normalizeZone(s.zone) !== normalizeZone(zoneFilter)) return false;
     if (statusFilter === 'incomplete' && s.photoCount > 0) return false;
     if (statusFilter === 'completed' && s.photoCount === 0) return false;
-    if (searchWords.length > 0) {
-      const secText = `${s.name} ${s.zone || ''}`.toLowerCase();
-      if (!searchWords.every((w) => secText.includes(w))) return false;
-    }
     return true;
   });
+
+  // 2. Search ONLY by Section Name using professional search & ranking logic
+  const filteredNormalSections = filterAndSortSectionsByName(zoneAndStatusNormalSections, searchQuery);
+  const filteredPhotoSections = filterAndSortSectionsByName(zoneAndStatusPhotoSections, searchQuery);
 
   const totalFilteredSections = filteredNormalSections.length + filteredPhotoSections.length;
 
@@ -426,15 +400,6 @@ export function SectionListPage() {
       : progressColor(pct);
     const zone = zoneColor(s.zone);
 
-    const targetText = `${s.name} ${s.zone || ''}`.toLowerCase();
-    const matchesDirectly = searchWords.length === 0 || searchWords.every((w) => targetText.includes(w));
-    const matchedQuestionsCount = (!matchesDirectly && !isPhoto && searchWords.length > 0)
-      ? (questionsBySectionId.get(s.id) ?? []).filter((q) => {
-          const qTarget = `${q.ref || ''} ${q.text || ''}`.toLowerCase();
-          return searchWords.every((w) => qTarget.includes(w));
-        }).length
-      : 0;
-
     return (
       <div
         key={s.id}
@@ -496,11 +461,6 @@ export function SectionListPage() {
             {s.zone && (
               <span className="sec-card-zone" style={{ background: zone.bg, color: zone.text }}>
                 {canonicalZone(s.zone)}
-              </span>
-            )}
-            {matchedQuestionsCount > 0 && (
-              <span className="sec-card-match-hint" title={`${matchedQuestionsCount} question(s) match "${searchQuery.trim()}"`}>
-                Matches {matchedQuestionsCount} Q
               </span>
             )}
             {isPhoto && (
@@ -860,12 +820,12 @@ export function SectionListPage() {
                   type="text"
                   placeholder={
                     (displayInspection as any).reportCategory === 'take_over'
-                      ? 'Search take over sections by name or zone…'
+                      ? 'Search take over sections by name…'
                       : (displayInspection as any).reportCategory === 'pre_purchase'
-                      ? 'Search pre purchase sections by name or zone…'
+                      ? 'Search pre purchase sections by name…'
                       : light
-                      ? 'Search photo sections by name or zone…'
-                      : 'Search sections by name, zone, or question…'
+                      ? 'Search photo sections by name…'
+                      : 'Search sections by name…'
                   }
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
