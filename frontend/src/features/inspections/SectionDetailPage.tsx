@@ -13,6 +13,7 @@ import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
 import { endPhotoDrag, showDragNotification } from './photoDragService';
 import { RichTextEditor } from '../../components/RichTextEditor/RichTextEditor';
+import { canonicalZone } from './SectionListPage';
 import './SectionDetailPage.css';
 
 import { useCurrentUser } from '../../auth/useCurrentUser';
@@ -255,7 +256,7 @@ export function SectionDetailPage() {
               )}
             </h1>
           )}
-          <div className="sub">{dispSection.zone}</div>
+          <div className="sub">{canonicalZone(dispSection.zone)}</div>
         </div>
       </div>
 

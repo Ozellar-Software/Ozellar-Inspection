@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -7,7 +7,7 @@ import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite } from '../../offline/outbox';
 import { prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, CameraIcon, PlusIcon, XIcon, EyeIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon, FileIcon } from '../../icons';
+import { BackIcon, CameraIcon, PlusIcon, XIcon, EyeIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon, FileIcon, SearchIcon } from '../../icons';
 import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
 import { DeleteInspectionModal } from './DeleteInspectionModal';
@@ -19,15 +19,41 @@ import './SectionListPage.css';
 
 // ─── Zone colour pills ────────────────────────────────────────────────────
 const ZONE_COLORS: Record<string, { bg: string; text: string }> = {
-  'Exterior':  { bg: '#E4F1F1', text: '#0A5F67' },
-  'Machinery': { bg: '#FBF1DE', text: '#C98A1A' },
-  'Bridge':    { bg: '#E6F0FA', text: '#1F5C99' },
-  'Cargo':     { bg: '#F1EBF9', text: '#7C3EC6' },
-  'Safety':    { bg: '#E7F5EC', text: '#1F8A57' },
-  'Living':    { bg: '#FBEAE6', text: '#C1432A' },
+  'Exterior':      { bg: '#E4F1F1', text: '#0A5F67' },
+  'Outside':       { bg: '#E4F1F1', text: '#0A5F67' },
+  'Machinery':     { bg: '#FBF1DE', text: '#C98A1A' },
+  'Bridge':        { bg: '#E6F0FA', text: '#1F5C99' },
+  'Cargo':         { bg: '#F1EBF9', text: '#7C3EC6' },
+  'Safety':        { bg: '#E7F5EC', text: '#1F8A57' },
+  'Living':        { bg: '#FBEAE6', text: '#C1432A' },
+  'Accommodation': { bg: '#FBEAE6', text: '#C1432A' },
+  'Deck':          { bg: '#E4F1F1', text: '#0A5F67' },
+  'Structure':     { bg: '#EBF4F5', text: '#276269' },
+  'General':       { bg: '#EEF1F2', text: '#5B6B76' },
 };
-function zoneColor(zone: string) {
-  return ZONE_COLORS[zone] ?? { bg: '#EEF1F2', text: '#5B6B76' };
+
+export function normalizeZone(zone?: string | null): string {
+  return (zone || '').trim().toLowerCase();
+}
+
+export function canonicalZone(zone?: string | null): string {
+  if (!zone) return '';
+  const trimmed = zone.trim();
+  const lower = trimmed.toLowerCase();
+  const known = Object.keys(ZONE_COLORS).find((k) => k.toLowerCase() === lower);
+  if (known) return known;
+  if (/^[A-Z0-9]{2,4}$/.test(trimmed)) return trimmed;
+  return trimmed
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function zoneColor(zone?: string | null) {
+  if (!zone) return { bg: '#EEF1F2', text: '#5B6B76' };
+  const lower = zone.trim().toLowerCase();
+  const entry = Object.entries(ZONE_COLORS).find(([k]) => k.toLowerCase() === lower);
+  return entry ? entry[1] : { bg: '#EEF1F2', text: '#5B6B76' };
 }
 
 // ─── Progress fill colour based on completion ─────────────────────────────
@@ -59,6 +85,53 @@ export function SectionListPage() {
   const [recheckedAccess, setRecheckedAccess] = useState(false);
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [zoneFilter, setZoneFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'incomplete' | 'completed'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'normal' | 'photo'>('all');
+  const [zoneDropdownOpen, setZoneDropdownOpen] = useState(false);
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+
+  function closeAllDropdowns() {
+    setZoneDropdownOpen(false);
+    setStatusDropdownOpen(false);
+    setTypeDropdownOpen(false);
+  }
+
+  function adjustMenuPosition(el: HTMLDivElement | null) {
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pad = 12;
+    if (rect.right > window.innerWidth - pad) {
+      el.style.left = 'auto';
+      el.style.right = '0';
+    }
+    if (rect.left < pad) {
+      el.style.left = '0';
+      el.style.right = 'auto';
+    }
+  }
+
+  const controlsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent | TouchEvent) {
+      if (controlsRef.current && !controlsRef.current.contains(e.target as Node)) {
+        setZoneDropdownOpen(false);
+        setStatusDropdownOpen(false);
+        setTypeDropdownOpen(false);
+      }
+    }
+    if (zoneDropdownOpen || statusDropdownOpen || typeDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('touchstart', handleClickOutside);
+      };
+    }
+  }, [zoneDropdownOpen, statusDropdownOpen, typeDropdownOpen]);
 
   useEffect(() => {
     if (inspectionId) {
@@ -127,6 +200,33 @@ export function SectionListPage() {
     return map;
   }, [questions, responses]);
 
+  // Questions grouped by section for fast search lookup
+  const questionsBySectionId = useMemo(() => {
+    const map = new Map<string, typeof questions>();
+    for (const q of questions) {
+      const arr = map.get(q.inspectionSectionId);
+      if (!arr) {
+        map.set(q.inspectionSectionId, [q]);
+      } else {
+        arr.push(q);
+      }
+    }
+    return map;
+  }, [questions]);
+
+  const availableZones = useMemo(() => {
+    const map = new Map<string, string>(); // lowerKey -> canonical display name
+    for (const s of sections) {
+      if (s.zone && s.zone.trim()) {
+        const lower = normalizeZone(s.zone);
+        if (!map.has(lower)) {
+          map.set(lower, canonicalZone(s.zone));
+        }
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [sections]);
+
   const displayInspection = inspection;
   if (!displayInspection) return null;
 
@@ -158,17 +258,66 @@ export function SectionListPage() {
   // Filter sections: In Light mode, show ONLY photo-only sections
   const activeSections = light ? sections.filter((s) => s.photoOnly) : sections;
 
+  let normalBadgeIdx = 0;
   const displaySections = activeSections.map((s) => {
     const p = progressBySection.get(s.id) ?? { done: 0, total: 0 };
     const pCount = photosBySection.get(s.id) ?? 0;
+    const badgeNumber = s.photoOnly ? 0 : ++normalBadgeIdx;
     return {
       id: s.id, name: s.name, zone: s.zone, inspectionId: s.inspectionId,
       position: s.position, done: p.done, total: p.total, photoOnly: s.photoOnly, photoCount: pCount,
+      badgeNumber,
     };
   });
 
   const normalDisplaySections = displaySections.filter((s) => !s.photoOnly);
   const photoDisplaySections = displaySections.filter((s) => s.photoOnly);
+
+  const hasActiveFilters = searchQuery.trim() !== '' || zoneFilter !== 'all' || statusFilter !== 'all' || typeFilter !== 'all';
+
+  function resetAllFilters() {
+    setSearchQuery('');
+    setZoneFilter('all');
+    setStatusFilter('all');
+    setTypeFilter('all');
+    closeAllDropdowns();
+  }
+
+  const searchWords = searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+  const filteredNormalSections = normalDisplaySections.filter((s) => {
+    if (typeFilter === 'photo') return false;
+    if (zoneFilter !== 'all' && normalizeZone(s.zone) !== normalizeZone(zoneFilter)) return false;
+    if (statusFilter === 'incomplete' && s.total > 0 && s.done >= s.total) return false;
+    if (statusFilter === 'completed' && (s.total === 0 || s.done < s.total)) return false;
+    if (searchWords.length > 0) {
+      const secText = `${s.name} ${s.zone || ''}`.toLowerCase();
+      if (!searchWords.every((w) => secText.includes(w))) {
+        const secQs = questionsBySectionId.get(s.id);
+        if (!secQs || !secQs.some((q) => {
+          const qText = `${q.ref || ''} ${q.text || ''}`.toLowerCase();
+          return searchWords.every((w) => qText.includes(w));
+        })) {
+          return false;
+        }
+      }
+    }
+    return true;
+  });
+
+  const filteredPhotoSections = photoDisplaySections.filter((s) => {
+    if (typeFilter === 'normal') return false;
+    if (zoneFilter !== 'all' && normalizeZone(s.zone) !== normalizeZone(zoneFilter)) return false;
+    if (statusFilter === 'incomplete' && s.photoCount > 0) return false;
+    if (statusFilter === 'completed' && s.photoCount === 0) return false;
+    if (searchWords.length > 0) {
+      const secText = `${s.name} ${s.zone || ''}`.toLowerCase();
+      if (!searchWords.every((w) => secText.includes(w))) return false;
+    }
+    return true;
+  });
+
+  const totalFilteredSections = filteredNormalSections.length + filteredPhotoSections.length;
 
   // Overall progress (checklist questions)
   const totalDone  = displaySections.reduce((a, s) => a + s.done, 0);
@@ -237,7 +386,7 @@ export function SectionListPage() {
       await localWrite('inspectionSections', sectionId, {
         inspectionId,
         templateSr: null,
-        zone: addZone.trim() || 'General',
+        zone: canonicalZone(addZone.trim() || 'General'),
         name: addName.trim(),
         position: sections.length,
         photoOnly: true,
@@ -276,6 +425,15 @@ export function SectionListPage() {
       ? (hasPhotos ? '#10b981' : '#f59e0b')
       : progressColor(pct);
     const zone = zoneColor(s.zone);
+
+    const targetText = `${s.name} ${s.zone || ''}`.toLowerCase();
+    const matchesDirectly = searchWords.length === 0 || searchWords.every((w) => targetText.includes(w));
+    const matchedQuestionsCount = (!matchesDirectly && !isPhoto && searchWords.length > 0)
+      ? (questionsBySectionId.get(s.id) ?? []).filter((q) => {
+          const qTarget = `${q.ref || ''} ${q.text || ''}`.toLowerCase();
+          return searchWords.every((w) => qTarget.includes(w));
+        }).length
+      : 0;
 
     return (
       <div
@@ -337,7 +495,12 @@ export function SectionListPage() {
             )}
             {s.zone && (
               <span className="sec-card-zone" style={{ background: zone.bg, color: zone.text }}>
-                {s.zone}
+                {canonicalZone(s.zone)}
+              </span>
+            )}
+            {matchedQuestionsCount > 0 && (
+              <span className="sec-card-match-hint" title={`${matchedQuestionsCount} question(s) match "${searchQuery.trim()}"`}>
+                Matches {matchedQuestionsCount} Q
               </span>
             )}
             {isPhoto && (
@@ -687,29 +850,272 @@ export function SectionListPage() {
           );
         })()}
 
-        {/* ── Section header with label and add button ── */}
-        <div className="section-list-header">
-          <div className="section-list-header-title" style={{ color: light ? '#0d9488' : '#94a3b8' }}>
-            {light && <CameraIcon width={14} height={14} />}
-            <span>
-              {light
-                ? `Photo Sections (${photoDisplaySections.length})`
-                : normalDisplaySections.length > 0
-                ? `Inspection Sections (${normalDisplaySections.length})`
-                : `Photo Sections (${photoDisplaySections.length})`}
-            </span>
-          </div>
+        {/* ── Search & Filter Controls Bar ── */}
+        {displaySections.length > 0 && (
+          <div ref={controlsRef} className="sec-controls-bar">
+              {/* Search input */}
+              <div className="sec-search-wrap">
+                <span className="sec-search-icon"><SearchIcon width={16} height={16} /></span>
+                <input
+                  type="text"
+                  placeholder={
+                    (displayInspection as any).reportCategory === 'take_over'
+                      ? 'Search take over sections by name or zone…'
+                      : (displayInspection as any).reportCategory === 'pre_purchase'
+                      ? 'Search pre purchase sections by name or zone…'
+                      : light
+                      ? 'Search photo sections by name or zone…'
+                      : 'Search sections by name, zone, or question…'
+                  }
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setSearchQuery('');
+                  }}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    className="sec-search-clear"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="Clear search"
+                    title="Clear search"
+                  >
+                    <XIcon width={14} height={14} />
+                  </button>
+                )}
+              </div>
 
-          {canAddSection && (
-            <button
-              type="button"
-              className="section-list-add-btn"
-              onClick={() => setShowAddSection(true)}
-            >
-              <PlusIcon width={14} height={14} /> <span>Add Photo Section</span>
-            </button>
-          )}
-        </div>
+              <div className="sec-ctrl-divider" />
+
+              {/* Filters Row */}
+              <div className="sec-filters-row">
+                {/* Zone Filter Dropdown */}
+                {availableZones.length > 1 && (
+                  <div className={`sec-premium-filter-wrap ${zoneDropdownOpen ? 'open' : ''}`}>
+                    <button
+                      type="button"
+                      className={`sec-premium-dropdown-trigger ${zoneDropdownOpen ? 'open' : ''} ${zoneFilter !== 'all' ? 'active' : ''}`}
+                      onClick={() => {
+                        setZoneDropdownOpen(!zoneDropdownOpen);
+                        setStatusDropdownOpen(false);
+                        setTypeDropdownOpen(false);
+                      }}
+                    >
+                      <span className="sec-dropdown-label">Zone:</span>
+                      <span className="sec-dropdown-val">
+                        {zoneFilter === 'all' ? 'All' : canonicalZone(zoneFilter)}
+                      </span>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="sec-dropdown-chevron">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                    {zoneDropdownOpen && (
+                      <div ref={adjustMenuPosition} className="sec-premium-dropdown-menu">
+                        <button
+                          type="button"
+                          className={`sec-dropdown-item ${zoneFilter === 'all' ? 'active' : ''}`}
+                          onClick={() => {
+                            setZoneFilter('all');
+                            setZoneDropdownOpen(false);
+                          }}
+                        >
+                          <span>All Zones</span>
+                          <span className="sec-item-count">{activeSections.length}</span>
+                        </button>
+                        {availableZones.map((z) => {
+                          const count = activeSections.filter((s) => normalizeZone(s.zone) === normalizeZone(z)).length;
+                          const isActive = normalizeZone(zoneFilter) === normalizeZone(z);
+                          return (
+                            <button
+                              key={z}
+                              type="button"
+                              className={`sec-dropdown-item ${isActive ? 'active' : ''}`}
+                              onClick={() => {
+                                setZoneFilter(z);
+                                setZoneDropdownOpen(false);
+                              }}
+                            >
+                              <span>{z}</span>
+                              <span className="sec-item-count">{count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Status Filter Dropdown */}
+                <div className={`sec-premium-filter-wrap ${statusDropdownOpen ? 'open' : ''}`}>
+                  <button
+                    type="button"
+                    className={`sec-premium-dropdown-trigger ${statusDropdownOpen ? 'open' : ''} ${statusFilter !== 'all' ? 'active' : ''}`}
+                    onClick={() => {
+                      setStatusDropdownOpen(!statusDropdownOpen);
+                      setZoneDropdownOpen(false);
+                      setTypeDropdownOpen(false);
+                    }}
+                  >
+                    <span className="sec-dropdown-label">Status:</span>
+                    <span className="sec-dropdown-val">
+                      {statusFilter === 'all' ? 'All' : statusFilter === 'incomplete' ? 'Incomplete' : 'Completed'}
+                    </span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="sec-dropdown-chevron">
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                  {statusDropdownOpen && (
+                    <div ref={adjustMenuPosition} className="sec-premium-dropdown-menu">
+                      <button
+                        type="button"
+                        className={`sec-dropdown-item ${statusFilter === 'all' ? 'active' : ''}`}
+                        onClick={() => {
+                          setStatusFilter('all');
+                          setStatusDropdownOpen(false);
+                        }}
+                      >
+                        <span>All Status</span>
+                        <span className="sec-item-count">{activeSections.length}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`sec-dropdown-item ${statusFilter === 'incomplete' ? 'active' : ''}`}
+                        onClick={() => {
+                          setStatusFilter('incomplete');
+                          setStatusDropdownOpen(false);
+                        }}
+                      >
+                        <span>Incomplete</span>
+                        <span className="sec-item-count">
+                          {activeSections.filter((s) => s.photoOnly ? (photosBySection.get(s.id) ?? 0) === 0 : ((progressBySection.get(s.id)?.total ?? 0) === 0 || (progressBySection.get(s.id)?.done ?? 0) < (progressBySection.get(s.id)?.total ?? 0))).length}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`sec-dropdown-item ${statusFilter === 'completed' ? 'active' : ''}`}
+                        onClick={() => {
+                          setStatusFilter('completed');
+                          setStatusDropdownOpen(false);
+                        }}
+                      >
+                        <span>Completed</span>
+                        <span className="sec-item-count">
+                          {activeSections.filter((s) => s.photoOnly ? (photosBySection.get(s.id) ?? 0) > 0 : ((progressBySection.get(s.id)?.total ?? 0) > 0 && (progressBySection.get(s.id)?.done ?? 0) >= (progressBySection.get(s.id)?.total ?? 0))).length}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Type Filter Dropdown (when both checklist and photo sections exist) */}
+                {!light && normalDisplaySections.length > 0 && photoDisplaySections.length > 0 && (
+                  <div className={`sec-premium-filter-wrap ${typeDropdownOpen ? 'open' : ''}`}>
+                    <button
+                      type="button"
+                      className={`sec-premium-dropdown-trigger ${typeDropdownOpen ? 'open' : ''} ${typeFilter !== 'all' ? 'active' : ''}`}
+                      onClick={() => {
+                        setTypeDropdownOpen(!typeDropdownOpen);
+                        setZoneDropdownOpen(false);
+                        setStatusDropdownOpen(false);
+                      }}
+                    >
+                      <span className="sec-dropdown-label">Type:</span>
+                      <span className="sec-dropdown-val">
+                        {typeFilter === 'all' ? 'All' : typeFilter === 'normal' ? 'Inspection Section' : 'Photo Section'}
+                      </span>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="sec-dropdown-chevron">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                    {typeDropdownOpen && (
+                      <div ref={adjustMenuPosition} className="sec-premium-dropdown-menu align-right">
+                        <button
+                          type="button"
+                          className={`sec-dropdown-item ${typeFilter === 'all' ? 'active' : ''}`}
+                          onClick={() => {
+                            setTypeFilter('all');
+                            setTypeDropdownOpen(false);
+                          }}
+                        >
+                          <span>All Types</span>
+                          <span className="sec-item-count">{displaySections.length}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`sec-dropdown-item ${typeFilter === 'normal' ? 'active' : ''}`}
+                          onClick={() => {
+                            setTypeFilter('normal');
+                            setTypeDropdownOpen(false);
+                          }}
+                        >
+                          <span>Inspection Section</span>
+                          <span className="sec-item-count">{normalDisplaySections.length}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`sec-dropdown-item ${typeFilter === 'photo' ? 'active' : ''}`}
+                          onClick={() => {
+                            setTypeFilter('photo');
+                            setTypeDropdownOpen(false);
+                          }}
+                        >
+                          <span>Photo Section</span>
+                          <span className="sec-item-count">{photoDisplaySections.length}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Reset button when any filter or search query is active */}
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    className="sec-reset-filters-btn"
+                    onClick={resetAllFilters}
+                    title="Reset all filters and search"
+                    aria-label="Reset all filters and search"
+                  >
+                    <XIcon width={13} height={13} />
+                    <span className="sec-reset-text">Reset</span>
+                  </button>
+                )}
+              </div>
+            </div>
+        )}
+
+        {/* ── Section header with label and add button ── */}
+        {(!hasActiveFilters || totalFilteredSections > 0) && (
+          <div className="section-list-header">
+            <div className="section-list-header-title" style={{ color: light ? '#0d9488' : '#94a3b8' }}>
+              {light && <CameraIcon width={14} height={14} />}
+              <span>
+                {light
+                  ? (hasActiveFilters
+                      ? `Photo Sections (${filteredPhotoSections.length} of ${photoDisplaySections.length})`
+                      : `Photo Sections (${photoDisplaySections.length})`)
+                  : normalDisplaySections.length > 0
+                  ? (hasActiveFilters
+                      ? `Inspection Sections (${filteredNormalSections.length} of ${normalDisplaySections.length})`
+                      : `Inspection Sections (${normalDisplaySections.length})`)
+                  : (hasActiveFilters
+                      ? `Photo Sections (${filteredPhotoSections.length} of ${photoDisplaySections.length})`
+                      : `Photo Sections (${photoDisplaySections.length})`)}
+              </span>
+            </div>
+
+            {canAddSection && (
+              <button
+                type="button"
+                className="section-list-add-btn"
+                onClick={() => setShowAddSection(true)}
+              >
+                <PlusIcon width={14} height={14} /> <span>Add Photo Section</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* ── Section cards or Empty State (Grouped: Normal Checklist Sections first, then Photo Sections) ── */}
         {displaySections.length === 0 ? (
@@ -746,20 +1152,44 @@ export function SectionListPage() {
               )}
             </div>
           </div>
+        ) : hasActiveFilters && totalFilteredSections === 0 ? (
+          <div className="empty-search-sections-card">
+            <div className="essc-icon">
+              <SearchIcon width={24} height={24} />
+            </div>
+            <h3 className="essc-title">No matching sections</h3>
+            <p className="essc-desc">
+              {searchQuery.trim()
+                ? `No sections found matching "${searchQuery}" with the active filters.`
+                : 'No sections match the selected filter criteria.'}
+            </p>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={resetAllFilters}
+              style={{ borderRadius: 10, padding: '8px 20px', fontSize: 13 }}
+            >
+              Reset All Filters
+            </button>
+          </div>
         ) : (
           <>
-            {!light && normalDisplaySections.map((s, idx) => renderSectionCard(s, idx + 1))}
+            {!light && filteredNormalSections.map((s) => renderSectionCard(s, s.badgeNumber))}
 
-            {!light && normalDisplaySections.length > 0 && photoDisplaySections.length > 0 && (
+            {!light && normalDisplaySections.length > 0 && filteredPhotoSections.length > 0 && (
               <div className="section-list-header" style={{ marginTop: 18 }}>
                 <div className="section-list-header-title" style={{ color: '#0d9488' }}>
                   <CameraIcon width={14} height={14} />
-                  <span>Photo Sections ({photoDisplaySections.length})</span>
+                  <span>
+                    {hasActiveFilters
+                      ? `Photo Sections (${filteredPhotoSections.length} of ${photoDisplaySections.length})`
+                      : `Photo Sections (${photoDisplaySections.length})`}
+                  </span>
                 </div>
               </div>
             )}
 
-            {photoDisplaySections.map((s, idx) => renderSectionCard(s, idx + 1))}
+            {filteredPhotoSections.map((s) => renderSectionCard(s, s.badgeNumber))}
           </>
         )}
 

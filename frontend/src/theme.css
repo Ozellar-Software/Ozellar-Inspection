@@ -288,13 +288,13 @@ svg:not([width]):not([class*="-svg"]) { width: 18px; height: 18px; }
 ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Appbar — polished sticky top bar ───────────────────────────── */
-.appbar { position: sticky; top: 56px; z-index: 10;
+.appbar { position: sticky; top: 56px; z-index: 40;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 0 8px 0 4px;
   height: 56px;
-  background: rgba(255,255,255,0.95);
+  background: #ffffff;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
@@ -469,7 +469,7 @@ textarea.auth-input:focus,
 
 /* ── Appbar Background & Control Bar ── */
 .appbar {
-  background: rgba(255,255,255,0.95);
+  background: #ffffff;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
