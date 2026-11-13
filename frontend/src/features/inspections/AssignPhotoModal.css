@@ -349,3 +349,7 @@
     width: 100%;
   }
 }
+
+/* Large monitors: slightly bigger dialog (zoom also scales vh, so the height cap is divided by the zoom) */
+@media (min-width: 2400px) { .apm-card { --mz: 1.25; zoom: var(--mz); max-height: min(calc(90vh / var(--mz)), 620px); } }
+@media (min-width: 3200px) { .apm-card { --mz: 1.5; } }

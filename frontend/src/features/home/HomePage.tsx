@@ -286,7 +286,7 @@ export function HomePage() {
       </div>
 
       {light && (
-        <div style={{
+        <div className="light-mode-banner" style={{
           margin: '0 0 16px',
           padding: '12px 18px',
           borderRadius: 12,
@@ -298,7 +298,7 @@ export function HomePage() {
           gap: 12,
           boxShadow: '0 2px 8px rgba(13,148,136,0.08)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="light-mode-banner-info" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{
               width: 32, height: 32, borderRadius: 8,
               background: '#ccfbf1', color: '#0d9488',
@@ -311,7 +311,7 @@ export function HomePage() {
               <div style={{ fontSize: 12, color: '#115e59' }}>Showing Photo Sections only. Checklist questions are hidden.</div>
             </div>
           </div>
-          <button
+          <button className="light-mode-banner-btn"
             type="button"
             onClick={() => setLight(false)}
             style={{

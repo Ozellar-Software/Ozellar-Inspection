@@ -469,3 +469,9 @@
   }
 }
 
+
+/* Large screens: nav spans the full width like the pages below it */
+@media (min-width: 1500px) { .ptn-container { max-width: none; padding: 0 40px; } }
+@media (min-width: 2400px) { .ptn-container { padding: 0 56px; } }
+/* Landscape phones / short windows: don't keep the nav sticky */
+@media (max-height: 520px) and (orientation: landscape) { .premium-top-nav { position: relative; } }

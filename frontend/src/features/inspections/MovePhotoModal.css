@@ -769,3 +769,11 @@
     min-height: 42px;
   }
 }
+
+/* Short screens (landscape phones): the card's minimum height must not exceed the screen */
+@media (max-height: 560px) {
+  .mpm-card { min-height: 0; }
+}
+/* Large monitors: slightly bigger dialog (zoom also scales vh, so the height cap is divided by the zoom) */
+@media (min-width: 2400px) { .mpm-card { --mz: 1.25; zoom: var(--mz); max-height: min(calc(92vh / var(--mz)), 720px); } }
+@media (min-width: 3200px) { .mpm-card { --mz: 1.5; } }

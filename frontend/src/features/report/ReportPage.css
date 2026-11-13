@@ -931,3 +931,21 @@
 .cover-photo-viewer-close:hover {
   background: rgba(255, 255, 255, 0.22);
 }
+
+/* Photo-section report: its second stat row is an inline 2-column grid (2 tiles). The mobile rule forces
+   3 columns, leaving the two tiles cramped in two thirds of the row — keep it 2 columns on phones. */
+@media (max-width: 900px) {
+  .stats-grid-bottom[style*="repeat(2"] { grid-template-columns: repeat(2, 1fr) !important; }
+}
+/* Stat labels wrap at word boundaries (only split a word when it truly can't fit) */
+@media (max-width: 640px) {
+  .stat-tile-label { word-break: normal !important; overflow-wrap: break-word !important; }
+}
+
+/* Cover photo row: when the thumbnail, text and View / Replace / remove buttons can't fit on one line
+   (small phones), the buttons drop to their own line instead of covering the text */
+@media (max-width: 480px) {
+  .report-cover-photo-row { flex-wrap: wrap; row-gap: 10px; }
+  .report-cover-photo-copy { flex: 1 1 0; min-width: 120px; }
+  .report-cover-photo-actions { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-start; }
+}

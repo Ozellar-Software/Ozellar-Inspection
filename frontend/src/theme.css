@@ -511,3 +511,37 @@ textarea.auth-input:focus,
   transform: translateX(-4px);
 }
 .back-btn-premium svg { width: 20px; height: 20px; }
+
+/* ── Responsive: base safety net + large screens ── */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { overflow-x: clip; } /* clip (not hidden) keeps sticky bars working */
+img, video { max-width: 100%; }
+.page-wrap > * { min-width: 0; }
+.home-dashboard .notice-card { margin-left: 0; margin-right: 0; }
+
+@media (min-width: 641px) and (max-width: 1023px) {
+  .appbar .title-wrap h1 { font-size: 16.5px; }
+}
+
+/* Large screens (≥1500px incl. 2K / 4K): pages fill the full window width */
+@media (min-width: 1500px) {
+  .page-wrap { max-width: none; padding-left: 40px; padding-right: 40px; }
+  .appbar { padding-left: 40px; padding-right: 40px; }
+}
+@media (min-width: 2400px) {
+  .page-wrap { padding-left: 56px; padding-right: 56px; }
+  .appbar { padding-left: 56px; padding-right: 56px; }
+}
+
+/* Landscape phones / very short windows: don't let two sticky bars eat the screen */
+@media (max-height: 520px) and (orientation: landscape) {
+  .appbar { top: 0 !important; }
+}
+
+/* Notched / rounded-corner devices */
+@media (max-width: 1023px) {
+  #root { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+}
+
+/* Sub-header grows when its title wraps onto extra lines (long vessel name + report-type chip) instead of overflowing its fixed 56px */
+.appbar { height: auto; min-height: 56px; padding-top: 4px; padding-bottom: 4px; }

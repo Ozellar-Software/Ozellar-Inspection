@@ -293,3 +293,7 @@
     display: none;
   }
 }
+
+/* Large monitors: slightly bigger dialog (zoom also scales vh, so the height is divided by the zoom) */
+@media (min-width: 2400px) { .rppm-modal { --mz: 1.25; zoom: var(--mz); height: calc(94vh / var(--mz)); } }
+@media (min-width: 3200px) { .rppm-modal { --mz: 1.5; } }

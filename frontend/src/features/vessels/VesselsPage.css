@@ -2189,3 +2189,48 @@
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ── LARGE SCREENS (≥ 1500px, incl. 2K / 4K): fill the full width ── */
+@media (min-width: 1500px) { .vessel-page-wrap { max-width: none; padding-left: 40px; padding-right: 40px; } }
+@media (min-width: 2400px) { .vessel-page-wrap { padding-left: 56px; padding-right: 56px; } }
+
+/* ── Expanded vessel details: grid columns must be allowed to shrink (min 0) so long, no-wrap values
+   can't stretch the cards past the screen edge on phones/tablets ── */
+.vessel-drawer-matrix { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.vessel-mgmt-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.vessel-drawer-card, .vessel-mgmt-col, .vessel-field-row { min-width: 0; }
+@media (max-width: 1120px) {
+  .vessel-drawer-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vessel-mgmt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .vessel-drawer-matrix { grid-template-columns: minmax(0, 1fr) !important; }
+  .vessel-mgmt-grid { grid-template-columns: minmax(0, 1fr) !important; }
+}
+@media (max-width: 768px) {
+  /* On narrow screens show the whole value (wrap) instead of cutting it off */
+  .vessel-field-value { white-space: normal; overflow-wrap: anywhere; }
+  .vessel-mgmt-val { overflow-wrap: anywhere; }
+}
+
+/* ── Unregistered vessels (View Report / Approve + icon buttons): on phones the action buttons move to
+   their own wrapped row under the vessel details instead of squeezing the name into a narrow column ── */
+@media (max-width: 640px) {
+  .vessel-row-header:has(.vessel-row-controls .vessel-primary-btn) { flex-wrap: wrap !important; }
+  .vessel-row-header:has(.vessel-row-controls .vessel-primary-btn) .vessel-row-controls {
+    flex: 1 1 100% !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    margin-top: 2px !important;
+    padding-left: 46px; /* line up with the vessel name, after the avatar */
+  }
+}
+
+/* Long vessel names wrap inside their row instead of poking out of it */
+.vessel-title-main { min-width: 0; }
+.vessel-name-text { min-width: 0; overflow-wrap: anywhere; }
+
+/* Large monitors: slightly bigger vessel dialog (zoom also scales vh, so the height cap is divided by the zoom) */
+@media (min-width: 2400px) { .vessel-modal-card { --mz: 1.25; zoom: var(--mz); max-height: calc(90vh / var(--mz)); } }
+@media (min-width: 3200px) { .vessel-modal-card { --mz: 1.5; } }

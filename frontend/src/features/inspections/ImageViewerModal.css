@@ -884,3 +884,17 @@
     min-width: 35px !important;
   }
 }
+
+/* Phones: let the top bar wrap (counter + defect badge on one line, action buttons on the next if needed)
+   and stack the description label / text / edit button instead of squeezing them side by side */
+@media (max-width: 640px) {
+  .ivm-topbar { flex-wrap: wrap; row-gap: 8px; }
+  .ivm-meta { flex: 1 1 auto; }
+  .ivm-badge { white-space: nowrap; }
+  .ivm-actions { flex-wrap: wrap; margin-left: auto; justify-content: flex-end; }
+
+  .ivm-desc-display-wrap { flex-direction: column; align-items: stretch; gap: 8px; }
+  .ivm-desc-content { flex-wrap: wrap; align-items: flex-start; row-gap: 2px; }
+  .ivm-desc-label { flex: 1 1 100%; }
+  .ivm-desc-edit-btn { align-self: stretch; text-align: center; padding: 8px 12px; }
+}

@@ -802,3 +802,10 @@
     max-width: 130px;
   }
 }
+
+/* Large monitors: slightly bigger dialog (zoom also scales vh, so vh caps are divided by the zoom) */
+@media (min-width: 2400px) {
+  .pum-modal { --mz: 1.25; zoom: var(--mz); max-height: calc(88vh / var(--mz)); }
+  .pum-items-grid { max-height: calc(48vh / var(--mz, 1.25)); }
+}
+@media (min-width: 3200px) { .pum-modal { --mz: 1.5; } }

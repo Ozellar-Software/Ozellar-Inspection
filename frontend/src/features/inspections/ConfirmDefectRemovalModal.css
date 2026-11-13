@@ -190,3 +190,10 @@
   background: #b91c1c !important;
   border-color: #b91c1c !important;
 }
+
+@media (max-height: 560px) {
+  .cdrm-modal { max-height: calc(100vh - 24px); overflow-y: auto; }
+}
+/* Large monitors: slightly bigger dialog */
+@media (min-width: 2400px) { .cdrm-modal { zoom: 1.25; } }
+@media (min-width: 3200px) { .cdrm-modal { zoom: 1.5; } }

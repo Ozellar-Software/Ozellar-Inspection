@@ -198,3 +198,11 @@
     font-size: 12.5px;
   }
 }
+
+/* Short screens (landscape phones): keep the card inside the screen and scroll if needed */
+@media (max-height: 560px) {
+  .confirm-delete-card { max-height: calc(100vh - 24px); overflow-y: auto; }
+}
+/* Large monitors: slightly bigger dialog */
+@media (min-width: 2400px) { .confirm-delete-card { zoom: 1.25; } }
+@media (min-width: 3200px) { .confirm-delete-card { zoom: 1.5; } }

@@ -1490,3 +1490,24 @@
 
 
 
+
+/* Tablet / medium viewports: the stacked search + filters layout. These rules are repeated here at the
+   end of the file because the identical rules near the top were being overridden by the base
+   .sec-controls-bar / .sec-search-wrap rules defined further down, which left a tall blank search block
+   (flex-basis 240px applied as a height in a column). */
+@media (max-width: 768px) {
+  .sec-controls-bar {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  .sec-search-wrap {
+    width: 100%;
+    flex: none;
+    min-width: 0;
+  }
+  .sec-ctrl-divider { display: none; }
+  .sec-filters-row { width: 100%; }
+}

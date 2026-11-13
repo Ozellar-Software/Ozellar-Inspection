@@ -2486,3 +2486,7 @@
   }
 }
 
+
+/* ── LARGE SCREENS (≥ 1500px, incl. 2K / 4K): fill the full width ── */
+@media (min-width: 1500px) { .cl-page-wrap { max-width: none; padding-left: 40px; padding-right: 40px; } }
+@media (min-width: 2400px) { .cl-page-wrap { padding-left: 56px; padding-right: 56px; } }

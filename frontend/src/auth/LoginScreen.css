@@ -802,3 +802,8 @@ body:has(.login-root) {
 .observation-row { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--bad); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
 .observation-row .oref { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; }
 .observation-row .otext { font-size: 13.5px; color: var(--ink); margin-top: 2px; }
+
+/* Large monitors: scale the fixed-size sign-in card up */
+@media (min-width: 1800px) and (min-height: 900px) { .login-card { zoom: 1.2; } }
+@media (min-width: 2400px) and (min-height: 1200px) { .login-card { zoom: 1.5; } }
+@media (min-width: 3200px) and (min-height: 1600px) { .login-card { zoom: 1.8; } }

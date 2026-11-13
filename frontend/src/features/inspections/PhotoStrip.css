@@ -919,3 +919,17 @@
   height: 9px;
   stroke-width: 2.5;
 }
+
+/* Phone sizing for the primary photo button. The same rules earlier in this file (inside the phone media
+   queries) were being overridden by the base .photostrip-btn-primary rule defined further down. */
+@media (max-width: 640px) {
+  .photostrip-btn-primary {
+    padding: 6px 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    border-radius: 8px;
+  }
+}
+@media (max-width: 380px) {
+  .photostrip-btn-primary { font-size: 11px; padding: 5px 2px; }
+}
