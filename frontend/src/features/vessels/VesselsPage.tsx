@@ -84,7 +84,7 @@ export function VesselsPage() {
 
   const { registeredCount, unregisteredCount } = useMemo(() => {
     const active = rawVessels.filter(v => !(v as any).deletedAt);
-    const accessible = (me.data?.role === 'techManager' || me.data?.role === 'vesselManager')
+    const accessible = (me.data?.role === 'techManager' || me.data?.role === 'vesselManager' || me.data?.role === 'vesselUser')
       ? active.filter(v => (me.data?.vesselIds ?? []).map(id => id.toLowerCase().trim()).includes(v.id.toLowerCase().trim()))
       : active;
     let reg = 0;
@@ -102,7 +102,7 @@ export function VesselsPage() {
   const vessels = useMemo(() => {
     const active = rawVessels.filter(v => !(v as any).deletedAt);
     const byStatus = active.filter(v => ((v as any).registrationStatus ?? 'registered') === effectiveTab);
-    if (me.data?.role === 'techManager' || me.data?.role === 'vesselManager') {
+    if (me.data?.role === 'techManager' || me.data?.role === 'vesselManager' || me.data?.role === 'vesselUser') {
       const ids = (me.data.vesselIds ?? []).map(id => id.toLowerCase().trim());
       return byStatus.filter(v => ids.includes(v.id.toLowerCase().trim()));
     }

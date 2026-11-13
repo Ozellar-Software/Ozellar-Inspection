@@ -73,7 +73,6 @@ export function FindingCard({
 
   const [text, setText] = useState(finding.text);
   const [correctiveAction, setCorrectiveAction] = useState(finding.correctiveAction);
-  const [preventiveAction, setPreventiveAction] = useState(finding.preventiveAction);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -87,10 +86,6 @@ export function FindingCard({
   useEffect(() => {
     setCorrectiveAction(finding.correctiveAction);
   }, [finding.correctiveAction]);
-
-  useEffect(() => {
-    setPreventiveAction(finding.preventiveAction);
-  }, [finding.preventiveAction]);
 
   const handleDeleteFinding = async () => {
     setIsDeleting(true);
@@ -361,7 +356,7 @@ export function FindingCard({
         </PillBtn>
       </div>
 
-      {/* ── Corrective & Preventive Actions (Active when Observation / Defect for Vessel Inspections) ── */}
+      {/* ── Corrective Action (Active when Observation / Defect for Vessel Inspections) ── */}
       {!isSatisfactory && showActions && (
         <div className="corrective-preventive-block" style={{ marginTop: 10, paddingBottom: 0 }}>
           <div className="seg-label" style={{ margin: '0 0 6px' }}>Corrective Action</div>
@@ -371,16 +366,6 @@ export function FindingCard({
             value={correctiveAction}
             onChange={setCorrectiveAction}
             onBlur={() => void save(finding.id, { correctiveAction })}
-            minHeight={65}
-            style={{ marginBottom: 10 }}
-          />
-          <div className="seg-label" style={{ margin: '0 0 6px' }}>Preventive Action</div>
-          <RichTextEditor
-            placeholder="Describe the preventive action to avoid recurrence..."
-            disabled={locked}
-            value={preventiveAction}
-            onChange={setPreventiveAction}
-            onBlur={() => void save(finding.id, { preventiveAction })}
             minHeight={65}
           />
         </div>

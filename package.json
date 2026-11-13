@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "build": "npm run build -w @ozellar/shared && npm run build -w @ozellar/api && npm run build -w @ozellar/web",
-    "test": "npm test -w @ozellar/shared",
+    "test": "vitest run --exclude \"**/node_modules/**\" --exclude \"**/_backups/**\" --exclude \"backend/test/integration.test.ts\" --exclude \"backend/test/test_all_endpoints.ts\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "dev:frontend": "npm run dev -w @ozellar/web",
     "dev:backend": "npm run start -w @ozellar/api"

@@ -13,6 +13,15 @@ export async function getVesselManagers(c: DbConn, vesselId: string | null | und
   return r.rows.map((row: { id: string }) => row.id);
 }
 
+export async function getVesselUsers(c: DbConn, vesselId: string | null | undefined): Promise<string[]> {
+  if (!vesselId) return [];
+  const r = await c.query(
+    `select u.id from user_vessels uv join users u on u.id = uv.user_id where uv.vessel_id = $1 and u.role = 'vesselUser' and u.is_active = true`,
+    [vesselId]
+  );
+  return r.rows.map((row: { id: string }) => row.id);
+}
+
 export async function getTechManagers(c: DbConn, vesselId: string | null | undefined): Promise<string[]> {
   if (!vesselId) return [];
   const r = await c.query(
@@ -67,10 +76,7 @@ export async function createNotifications(c: DbConn, params: CreateNotificationP
     const emails = emailRows.map((r: { email: string }) => r.email).filter(Boolean);
 
     if (emails.length > 0) {
-      const appUrl = process.env.APP_URL ?? 'https://inspection.ozellar.com';
-      const fullLink = link.startsWith('http') ? link : `${appUrl}${link}`;
-      const emailBody = `${params.title}\n\n${params.message}\n\nView details: ${fullLink}`;
-      void sendMail(emails, params.title, emailBody);
+      void sendMail(emails, params.title, `${params.title}\n\n${params.message}`, { link });
     }
   } catch (err) {
     console.error('Failed to create notifications:', err);

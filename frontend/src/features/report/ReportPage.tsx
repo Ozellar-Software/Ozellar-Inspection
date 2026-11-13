@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { can, isEditable, ROLE_LABELS, STATUS_LABELS, type ApprovalEvent, type InspectionStatus, type User, type Vessel, type VesselParticularKey } from '@ozellar/shared';
+import { can, isEditable, ROLE_LABELS, STATUS_LABELS, type ApprovalEvent, type InspectionStatus, type User } from '@ozellar/shared';
 import { api, ApiError } from '../../api/client';
 import { db } from '../../offline/db';
 import { localWrite, localDelete } from '../../offline/outbox';
@@ -12,19 +12,13 @@ import { queueApprovalAction } from '../../offline/approvalQueue';
 import { BackIcon, WarningIcon, LockIcon, CheckIcon, UploadIcon, XIcon, EyeIcon } from '../../icons';
 import { loadReportData, type ReportData } from './reportData';
 import { generateInspectionPdf } from './pdf';
-import { VesselParticularsModal } from './VesselParticularsModal';
-import { RichTextEditor } from '../../components/RichTextEditor/RichTextEditor';
 import './ReportPage.css';
 
 interface Approver { id: string; email: string; name: string; designation: string; role: string }
-interface HistoryResponse { approval: { stage: string; tmUserId: string | null; directorUserId: string | null; returnComment?: string } | null; history: ApprovalEvent[] }
+interface HistoryResponse { approval: { stage: string; vuUserId: string | null; tmUserId: string | null; directorUserId: string | null; returnComment?: string } | null; history: ApprovalEvent[] }
 
 function fmtDateTime(d: string): string {
   return new Date(d).toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function hasVesselParticulars(p?: Partial<Record<VesselParticularKey, string>> | null): boolean {
-  return !!p && Object.values(p).some((v) => !!v && String(v).trim() !== '');
 }
 
 // ─── Mock report stats (shown when real report hasn't loaded yet) ──────────
@@ -157,106 +151,6 @@ function actionColor(action: string) {
   return { bg: 'var(--na-tint)', text: 'var(--na)', border: 'var(--na)' };
 }
 
-// ─── Observation photo strip ───────────────────────────────────────────────
-function ObservationPhotoStrip({
-  photoIds,
-  onPhotoClick,
-}: {
-  photoIds: string[];
-  onPhotoClick: (photoId: string) => void;
-}) {
-  const [urls, setUrls] = useState<Record<string, string>>({});
-  const [meta, setMeta] = useState<Record<string, { isDefect?: boolean; description?: string }>>({});
-
-  useEffect(() => {
-    let alive = true;
-    for (const id of photoIds) {
-      if (!urls[id]) {
-        void photoSrc(id).then((src) => {
-          if (alive && src) setUrls((prev) => ({ ...prev, [id]: src }));
-        });
-      }
-      if (!meta[id]) {
-        void db.photos.get(id).then((p) => {
-          if (alive && p) {
-            setMeta((prev) => ({
-              ...prev,
-              [id]: { isDefect: !!p.isDefect, description: p.description },
-            }));
-          }
-        });
-      }
-    }
-    return () => { alive = false; };
-  }, [photoIds]);
-
-  if (!photoIds || photoIds.length === 0) return null;
-
-  return (
-    <div style={{ display: 'flex', gap: 8, marginTop: 8, overflowX: 'auto', paddingBottom: 2 }}>
-      {photoIds.map((id, pIdx) => {
-        const src = urls[id];
-        const isDef = !!meta[id]?.isDefect;
-        const desc = meta[id]?.description;
-        return (
-          <div
-            key={id}
-            onClick={(e) => {
-              e.stopPropagation();
-              onPhotoClick(id);
-            }}
-            title={desc ? `${desc} (${isDef ? 'Defect' : 'Normal'} photo - click to view)` : `${isDef ? 'Defect' : 'Normal'} photo - click to view`}
-            style={{
-              position: 'relative',
-              width: 62,
-              height: 62,
-              borderRadius: 6,
-              overflow: 'hidden',
-              background: '#f1f5f9',
-              border: isDef ? '2px solid #ef4444' : '1.5px solid #cbd5e1',
-              boxShadow: isDef ? '0 0 0 1px #ef4444, 0 2px 6px rgba(239, 68, 68, 0.25)' : '0 1px 3px rgba(0,0,0,0.06)',
-              flexShrink: 0,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {src ? (
-              <img src={src} alt={`Photo ${pIdx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <CameraIcon color="#94a3b8" />
-            )}
-            {isDef && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 2,
-                  right: 2,
-                  background: '#dc2626',
-                  color: '#ffffff',
-                  borderRadius: 3,
-                  padding: '1px 3px',
-                  fontSize: 7.5,
-                  fontWeight: 800,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  zIndex: 2,
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
-                }}
-              >
-                <WarningIcon style={{ width: 7, height: 7 }} />
-                DEFECT
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 import { useCurrentUser } from '../../auth/useCurrentUser';
 
 export function ReportPage() {
@@ -323,20 +217,6 @@ export function ReportPage() {
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isCoverViewerOpen, setIsCoverViewerOpen] = useState(false);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
-  const [viewingObservationPhotoId, setViewingObservationPhotoId] = useState<string | null>(null);
-  const [viewingObservationPhotoUrl, setViewingObservationPhotoUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!viewingObservationPhotoId) {
-      setViewingObservationPhotoUrl(null);
-      return;
-    }
-    let alive = true;
-    void photoSrc(viewingObservationPhotoId).then((src) => {
-      if (alive && src) setViewingObservationPhotoUrl(src);
-    });
-    return () => { alive = false; };
-  }, [viewingObservationPhotoId]);
 
   useEffect(() => {
     let alive = true;
@@ -394,11 +274,6 @@ export function ReportPage() {
     [inspectionId],
   ) ?? null;
   const [exporting, setExporting] = useState(false);
-  const [particularsModalOpen, setParticularsModalOpen] = useState(false);
-  const [particularsDraft, setParticularsDraft] = useState<Partial<Record<VesselParticularKey, string>>>({});
-  const [savingParticulars, setSavingParticulars] = useState(false);
-  const [particularsError, setParticularsError] = useState<string | null>(null);
-  const pendingExportModeRef = useRef<'full' | 'photo'>('full');
 
   const isMock = !inspection && inspectionId?.startsWith('mock');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -433,8 +308,10 @@ export function ReportPage() {
     photoSectionExtraFindings: 0,
   };
 
-  async function runExportPdf(mode: 'full' | 'photo', vesselOverride?: Vessel) {
+  async function onExportPdf(overrideMode?: 'full' | 'photo') {
+    if (!canExport) return;
     setExporting(true); setError(null);
+    const mode = overrideMode || reportMode;
     try {
       let exportData = report;
       if (!exportData && isMock) {
@@ -442,13 +319,12 @@ export function ReportPage() {
           inspection: dispInspection,
           sections: [],
           observations: [],
-          stats: EMPTY_STATS,
           photos: [],
+          stats: EMPTY_STATS
         };
       }
       const blob = await generateInspectionPdf({
         ...exportData!,
-        vessel: vesselOverride ?? exportData!.vessel,
         approvalHistory: history.data?.history,
         reportType: mode === 'photo' ? 'photo_only' : 'full',
       });
@@ -467,57 +343,15 @@ export function ReportPage() {
     }
   }
 
-  async function onExportPdf(overrideMode?: 'full' | 'photo') {
-    if (!canExport) return;
-    const mode = overrideMode || reportMode;
-
-    // Pre Purchase / Take Over reports lead with Vessel Technical Particulars — prompt for them
-    // once up front instead of letting the PDF go out with a "not registered" placeholder.
-    if (isSpecialCategory && report?.vessel && !hasVesselParticulars(report.vessel.particulars)) {
-      setParticularsDraft(report.vessel.particulars ?? {});
-      pendingExportModeRef.current = mode;
-      setParticularsError(null);
-      setParticularsModalOpen(true);
-      return;
-    }
-
-    await runExportPdf(mode);
-  }
-
-  async function onSaveVesselParticulars() {
-    const vessel = report?.vessel;
-    if (!vessel?.id) { setParticularsModalOpen(false); return; }
-    if (!navigator.onLine) {
-      setParticularsError("You're offline — connect to save, or use Skip & Download to export without saving.");
-      return;
-    }
-    setSavingParticulars(true); setParticularsError(null);
-    try {
-      const cleaned = Object.fromEntries(
-        Object.entries(particularsDraft).filter(([, v]) => !!v && String(v).trim() !== ''));
-      await api(`/vessels/${vessel.id}/particulars`, { method: 'POST', body: { particulars: cleaned } });
-      const mergedVessel: Vessel = {
-        ...vessel,
-        particulars: { ...(vessel.particulars ?? {}), ...cleaned },
-        updatedAt: new Date().toISOString(),
-      };
-      // Write straight to the local cache (no outbox entry): the server already has this change via the
-      // particulars endpoint above, and queuing a full-vessel sync mutation would need vessels.manage.
-      await db.vessels.put(mergedVessel);
-      setParticularsModalOpen(false);
-      await runExportPdf(pendingExportModeRef.current, mergedVessel);
-    } catch (err: any) {
-      setParticularsError(err instanceof ApiError ? err.message : (err?.message || 'Failed to save vessel particulars'));
-    } finally {
-      setSavingParticulars(false);
-    }
-  }
-
-  const approvalLevel = dispInspection?.status === 'pending_tm' ? 'director'
-    : me.data?.role === 'vesselManager' ? 'tm' : 'director';
+  const approvalLevel = dispInspection?.status === 'pending_vu' ? 'tm'
+    : dispInspection?.status === 'pending_tm' ? 'director'
+    : me.data?.role === 'vesselManager' ? 'vu'
+    : me.data?.role === 'vesselUser' ? 'tm'
+    : 'director';
+  const approvalLevelLabel = approvalLevel === 'vu' ? 'Vessel User' : approvalLevel === 'tm' ? 'Technical Manager' : 'Director';
   const approvers = useQuery({
     queryKey: ['approvers', approvalLevel, inspectionId, dispInspection?.vesselId],
-    enabled: !!inspectionId && !!dispInspection && (dispInspection?.status === 'in_progress' || dispInspection?.status === 'returned' || dispInspection?.status === 'pending_tm'),
+    enabled: !!inspectionId && !!dispInspection && (dispInspection?.status === 'in_progress' || dispInspection?.status === 'returned' || dispInspection?.status === 'pending_vu' || dispInspection?.status === 'pending_tm'),
     queryFn: async () => {
       if (isMock) {
         return [{ id: 'mock-1', email: 'demo@ozellar.com', name: 'Demo Approver', designation: 'Technical Manager', role: 'techManager' }] as Approver[];
@@ -530,14 +364,14 @@ export function ReportPage() {
         }
       }
       const allUsers = await db.users.toArray();
-      const targetRole = approvalLevel === 'tm' ? 'techManager' : 'director';
+      const targetRole = approvalLevel === 'vu' ? 'vesselUser' : approvalLevel === 'tm' ? 'techManager' : 'director';
       const vesselId = dispInspection?.vesselId?.toLowerCase().trim();
       return allUsers
         .filter((u) => {
           if (u.isActive === false) return false;
           if (targetRole === 'director') return u.role === 'director';
-          if (targetRole === 'techManager') {
-            if (u.role === 'techManager') {
+          if (targetRole === 'vesselUser' || targetRole === 'techManager') {
+            if (u.role === targetRole) {
               if (!vesselId) return true;
               return (u.vesselIds ?? []).some((vid) => vid.toLowerCase().trim() === vesselId);
             }
@@ -577,7 +411,9 @@ export function ReportPage() {
 
   const canSubmit = isOrdinaryInspection && can(me.data, 'inspection.submit', { inspection: dispInspection });
   const approval = history.data?.approval;
-  const canApproveHere = isOrdinaryInspection && (dispInspection.status as any === 'pending_tm'
+  const canApproveHere = isOrdinaryInspection && (dispInspection.status as any === 'pending_vu'
+    ? (me.data.role === 'admin' || (me.data.role === 'vesselUser' && approval?.vuUserId === me.data.id))
+    : dispInspection.status as any === 'pending_tm'
     ? (me.data.role === 'admin' || (me.data.role === 'techManager' && approval?.tmUserId === me.data.id))
     : dispInspection.status as any === 'pending_director'
     ? (me.data.role === 'admin' || (me.data.role === 'director' && approval?.directorUserId === me.data.id))
@@ -847,9 +683,13 @@ export function ReportPage() {
       // Offline Transition Handling: update local IndexedDB and queue for sync
       let nextStatus: InspectionStatus = dispInspection.status;
       if (path === 'submit') {
-        nextStatus = me.data?.role === 'vesselManager' ? 'pending_tm' : 'pending_director';
+        nextStatus = me.data?.role === 'vesselManager' ? 'pending_vu'
+          : me.data?.role === 'vesselUser' ? 'pending_tm'
+          : 'pending_director';
       } else if (path === 'approve') {
-        nextStatus = dispInspection.status === 'pending_tm' ? 'pending_director' : 'approved';
+        nextStatus = dispInspection.status === 'pending_vu' ? 'pending_tm'
+          : dispInspection.status === 'pending_tm' ? 'pending_director'
+          : 'approved';
       } else if (path === 'reject') {
         nextStatus = 'returned';
       } else if (path === 'reopen') {
@@ -860,7 +700,7 @@ export function ReportPage() {
       await db.inspections.update(inspectionId!, { status: nextStatus, updatedAt: now });
       await queueApprovalAction(inspectionId!, path, body);
 
-      const stage = nextStatus === 'pending_tm' ? 'tm' : nextStatus === 'pending_director' ? 'director' : nextStatus === 'approved' ? 'approved' : 'returned';
+      const stage = nextStatus === 'pending_vu' ? 'vu' : nextStatus === 'pending_tm' ? 'tm' : nextStatus === 'pending_director' ? 'director' : nextStatus === 'approved' ? 'approved' : 'returned';
       const existingAppr = await db.approvals.get(inspectionId!);
       await db.approvals.put({
         id: inspectionId!,
@@ -868,9 +708,14 @@ export function ReportPage() {
         stage,
         submittedBy: existingAppr?.submittedBy || me.data?.id || '',
         submittedAt: existingAppr?.submittedAt || now,
+        vuUserId: path === 'submit'
+          ? (nextStatus === 'pending_vu' ? (body.approverId as string) || null : null)
+          : existingAppr?.vuUserId || null,
         tmUserId: path === 'submit'
           ? (nextStatus === 'pending_tm' ? (body.approverId as string) || null : null)
-          : existingAppr?.tmUserId || null,
+          : path === 'approve' && dispInspection.status === 'pending_vu'
+            ? (body.nextApproverId as string) || existingAppr?.tmUserId || null
+            : existingAppr?.tmUserId || null,
         directorUserId: path === 'submit'
           ? (nextStatus === 'pending_director' ? (body.approverId as string) || null : null)
           : path === 'approve' && dispInspection.status === 'pending_tm'
@@ -884,9 +729,9 @@ export function ReportPage() {
 
       // Save local ApprovalEvent so Audit Trail shows immediately offline!
       const levelLabel = path === 'submit'
-        ? (me.data?.role === 'vesselManager' ? 'To Tech Manager' : 'To Director')
+        ? (me.data?.role === 'vesselManager' ? 'To Vessel User' : me.data?.role === 'vesselUser' ? 'To Tech Manager' : 'To Director')
         : path === 'approve'
-          ? (dispInspection.status === 'pending_tm' ? 'Level 1 — Tech Manager' : 'Final — Director')
+          ? (dispInspection.status === 'pending_vu' ? 'Level 1 — Vessel User' : dispInspection.status === 'pending_tm' ? 'Level 2 — Tech Manager' : 'Final — Director')
           : path === 'reject' ? 'Returned by Reviewer' : 'Reopened by Admin';
 
       const localEvent: ApprovalEvent = {
@@ -957,7 +802,9 @@ export function ReportPage() {
       return;
     }
     if (!approverId) {
-      setError(me.data!.role === 'vesselManager' ? 'Choose a Technical Manager to review' : 'Choose a Director for sign-off');
+      setError(me.data!.role === 'vesselManager' ? 'Choose a Vessel User to review'
+        : me.data!.role === 'vesselUser' ? 'Choose a Technical Manager to review'
+        : 'Choose a Director for sign-off');
       return;
     }
     await saveSummaryConclusion();
@@ -966,7 +813,10 @@ export function ReportPage() {
   }
 
   async function onApprove() {
-    if (dispInspection.status === 'pending_tm') {
+    if (dispInspection.status === 'pending_vu') {
+      if (!approverId) { setError('Choose the Tech Manager to review next'); return; }
+      await act('approve', { nextApproverId: approverId, comment });
+    } else if (dispInspection.status === 'pending_tm') {
       if (!approverId) { setError('Choose the Director for final approval'); return; }
       await act('approve', { nextApproverId: approverId, comment });
     } else {
@@ -1018,6 +868,13 @@ export function ReportPage() {
           isDone: dispInspection.status !== 'in_progress' && dispInspection.status !== 'returned',
           isCurrent: dispInspection.status === 'in_progress' || dispInspection.status === 'returned',
           isReturned: dispInspection.status === 'returned',
+        },
+        {
+          label: 'Vessel User Review',
+          sub: 'Vessel User',
+          isDone: dispInspection.status === 'pending_tm' || dispInspection.status === 'pending_director' || dispInspection.status === 'approved',
+          isCurrent: dispInspection.status === 'pending_vu',
+          isReturned: false,
         },
         {
           label: 'Technical Review',
@@ -1199,6 +1056,15 @@ export function ReportPage() {
         </div>
 
         {/* ── Locked State Banners ── */}
+        {dispInspection.status === 'pending_vu' && (
+          <div className="locked-banner info">
+            <div className="locked-banner-icon"><LockIcon width={20} height={20} /></div>
+            <div className="locked-banner-content">
+              <strong>Inspection Under Vessel User Review</strong>
+              <span>Submitted to Vessel User. Further edits are locked while review is in progress.</span>
+            </div>
+          </div>
+        )}
         {dispInspection.status === 'pending_tm' && (
           <div className="locked-banner info">
             <div className="locked-banner-icon"><LockIcon width={20} height={20} /></div>
@@ -1268,7 +1134,7 @@ export function ReportPage() {
                   accentText={stats.photoSectionDefectCount ? "var(--bad)" : "var(--muted)"} />
               </div>
               <div className="stats-grid-bottom" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                <StatTile value={stats.photoSectionExtraFindings ?? 0} label="Section Observations"
+                <StatTile value={stats.photoSectionExtraFindings ?? 0} label="Extra Observations"
                   icon={<ListIcon color="var(--accent-dark)" />}
                   accentBg="var(--accent-tint)" accentText="var(--accent-dark)" />
                 <StatTile value={STATUS_LABELS[dispInspection.status as import('@ozellar/shared').InspectionStatus] || dispInspection.status} label="Inspection State"
@@ -1299,7 +1165,7 @@ export function ReportPage() {
                 <StatTile value={stats.photoCount} label="Photos"
                   icon={<CameraIcon color="#1F5C99" />}
                   accentBg="#E6F0FA" accentText="#1F5C99" />
-                <StatTile value={stats.extraFindings} label="Section Observations"
+                <StatTile value={stats.extraFindings} label="Extra Findings"
                   icon={<ListIcon color="var(--accent-dark)" />}
                   accentBg="var(--accent-tint)" accentText="var(--accent-dark)" />
               </div>
@@ -1394,25 +1260,6 @@ export function ReportPage() {
             </div>
           )}
 
-          {viewingObservationPhotoUrl && (
-            <div className="cover-photo-viewer-backdrop" onClick={() => setViewingObservationPhotoId(null)}>
-              <button
-                type="button"
-                className="cover-photo-viewer-close"
-                aria-label="Close"
-                onClick={() => setViewingObservationPhotoId(null)}
-              >
-                <XIcon width={18} height={18} />
-              </button>
-              <img
-                src={viewingObservationPhotoUrl}
-                alt="Observation photo"
-                className="cover-photo-viewer-img"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-          )}
-
           {/* ── Export PDF buttons ── */}
           <div className="report-pdf-download-actions">
             <button
@@ -1447,18 +1294,20 @@ export function ReportPage() {
           </div>
         </div>
 
-        {/* ── Summary textarea with Rich Formatting ── */}
+        {/* ── Summary textarea ── */}
         <div className="premium-report-card">
           <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-            Executive Summary
+            Summary
           </div>
-          <RichTextEditor
-            placeholder="Overall executive summary of this inspection (supports bold, italics, bullets, font styles, and live preview)..."
+          <textarea
+            placeholder="Overall summary of this inspection..."
             disabled={!editable}
             value={summary}
-            onChange={setSummary}
+            onChange={(e) => setSummary(e.target.value)}
             onBlur={saveSummaryConclusion}
-            minHeight={110}
+            style={{ width: '100%', minHeight: 80, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 10, padding: 12, fontSize: 14, outline: 'none', color: '#0f172a', resize: 'vertical' }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.background = '#ffffff'; }}
+            onBlurCapture={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
           />
         </div>
 
@@ -1665,22 +1514,16 @@ export function ReportPage() {
           <div className="premium-report-card">
             <div style={{ fontWeight: 800, fontSize: 16, color: '#0f172a', marginBottom: 4, letterSpacing: '-0.3px' }}>
               {reportMode === 'photo'
-                ? (me.data.role === 'vesselManager'
-                    ? 'Submit Photo Section Report to Technical Manager'
-                    : me.data.role === 'techManager'
-                    ? 'Submit Photo Section Report to Director'
-                    : 'Submit Photo Section Report for Approval')
-                : (me.data.role === 'vesselManager'
-                    ? 'Submit to Technical Manager'
-                    : me.data.role === 'techManager'
-                    ? 'Submit to Director for Sign-off'
-                    : 'Submit for Approval')}
+                ? `Submit Photo Section Report to ${approvalLevelLabel}`
+                : `Submit to ${approvalLevelLabel}${approvalLevel === 'director' && me.data.role === 'techManager' ? ' for Sign-off' : ''}`}
             </div>
             <div style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
               {reportMode === 'photo'
                 ? 'Photo Section Submission: Only photo sections, summary, and conclusion will be submitted for technical sign-off. Standard checklist questions are bypassed.'
                 : (me.data.role === 'vesselManager'
-                    ? 'Select an assigned Technical Manager to review your findings and photos.'
+                    ? 'Select an assigned Vessel User to review your findings and photos.'
+                    : me.data.role === 'vesselUser'
+                    ? 'Select an assigned Technical Manager to review this inspection.'
                     : me.data.role === 'techManager'
                     ? 'As Technical Manager, your inspection is submitted directly to the Director for final executive sign-off.'
                     : 'Select an approver to review this inspection.')}
@@ -1728,15 +1571,15 @@ export function ReportPage() {
               }}>
                 <WarningIcon width={16} height={16} style={{ flexShrink: 0 }} />
                 <span>
-                  {me.data.role === 'vesselManager'
-                    ? 'No Technical Manager is assigned to this vessel yet. Ask an Administrator to assign a Technical Manager to this vessel.'
-                    : 'No Director found in the system for final approval.'}
+                  {approvalLevel === 'director'
+                    ? 'No Director found in the system for final approval.'
+                    : `No ${approvalLevelLabel} is assigned to this vessel yet. Ask an Administrator to assign a ${approvalLevelLabel} to this vessel.`}
                 </span>
               </div>
             )}
 
             <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-              {me.data.role === 'vesselManager' ? 'Select Technical Manager' : 'Select Director'}
+              Select {approvalLevelLabel}
             </div>
             <select
               value={approverId}
@@ -1747,8 +1590,8 @@ export function ReportPage() {
             >
               <option value="">
                 {approvers.data && approvers.data.length === 0
-                  ? (me.data.role === 'vesselManager' ? 'No Technical Manager assigned to this vessel' : 'No Director available')
-                  : (me.data.role === 'vesselManager' ? 'Select assigned Technical Manager…' : 'Select Director…')}
+                  ? `No ${approvalLevelLabel} assigned to this vessel`
+                  : `Select ${approvalLevel === 'director' ? '' : 'assigned '}${approvalLevelLabel}…`}
               </option>
               {approvers.data?.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -1786,13 +1629,9 @@ export function ReportPage() {
                   {busy ? 'Sending…'
                     : reportMode === 'photo'
                     ? (photoSecCount === 0 ? 'Capture Photos in Photo Sections First'
-                      : me.data.role === 'vesselManager' ? 'Submit Photo Report to Technical Manager'
-                      : me.data.role === 'techManager' ? 'Submit Photo Report to Director'
-                      : 'Submit Photo Section Report')
+                      : `Submit Photo Report to ${approvalLevelLabel}`)
                     : (stats.pending > 0 ? `Answer All Questions First (${stats.pending} remaining)`
-                      : me.data.role === 'vesselManager' ? 'Submit to Technical Manager'
-                      : me.data.role === 'techManager' ? 'Submit to Director'
-                      : 'Submit for Approval')}
+                      : `Submit to ${approvalLevelLabel}`)}
                 </button>
               );
             })()}
@@ -1800,27 +1639,35 @@ export function ReportPage() {
         )}
 
         {/* ── Approve / Reject card ── */}
-        {canApproveHere && (
+        {canApproveHere && (() => {
+          const status = dispInspection.status as InspectionStatus;
+          const needsNextApprover = status === 'pending_vu' || status === 'pending_tm';
+          const nextApprovalLabel = status === 'pending_vu' ? 'Technical Manager' : 'Director';
+          return (
           <div className="premium-report-card">
             <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--ink)', marginBottom: 4 }}>
-              {dispInspection.status as any === 'pending_tm' ? 'Technical Review (Level 1)' : 'Executive Sign-off (Director)'}
+              {status === 'pending_vu' ? 'Vessel User Review (Level 1)'
+                : status === 'pending_tm' ? 'Technical Review (Level 2)'
+                : 'Executive Sign-off (Director)'}
             </div>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
-              {dispInspection.status as any === 'pending_tm'
-                ? 'Review the inspection findings, observations, and photos. Forward to a Director for final sign-off, or return to the Vessel Manager for corrections.'
+              {status === 'pending_vu'
+                ? 'Review the inspection findings, observations, and photos. Forward to a Technical Manager, or return to the Vessel Manager for corrections.'
+                : status === 'pending_tm'
+                ? 'Review the inspection findings, observations, and photos. Forward to a Director for final sign-off, or return for corrections.'
                 : 'You have executive approval authority. Granting final approval will officially complete and permanently lock this inspection.'}
             </div>
 
-            {dispInspection.status as any === 'pending_tm' && (
+            {needsNextApprover && (
               <>
-                <div className="seg-label" style={{ marginTop: 0 }}>Select Director for Final Approval</div>
+                <div className="seg-label" style={{ marginTop: 0 }}>Select {nextApprovalLabel}{status === 'pending_tm' ? ' for Final Approval' : ''}</div>
                 <select
                   className="auth-input"
                   value={approverId}
                   onChange={(e) => setApproverId(e.target.value)}
                   style={{ marginBottom: 12 }}
                 >
-                  <option value="">Select a Director…</option>
+                  <option value="">Select a {nextApprovalLabel}…</option>
                   {approvers.data?.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name || a.email}{a.designation ? ` — ${a.designation}` : ''}
@@ -1839,22 +1686,23 @@ export function ReportPage() {
 
             {/* Approve button */}
             <button
-              disabled={busy || (dispInspection.status as any === 'pending_tm' && !approverId)}
+              disabled={busy || (needsNextApprover && !approverId)}
               onClick={() => void onApprove()}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                background: (dispInspection.status as any === 'pending_tm' && !approverId) ? '#94a3b8' : 'var(--ok)',
+                background: (needsNextApprover && !approverId) ? '#94a3b8' : 'var(--ok)',
                 color: '#fff', border: 'none',
                 borderRadius: 10, padding: '13px 20px',
                 fontWeight: 700, fontSize: 14.5,
-                cursor: (busy || (dispInspection.status as any === 'pending_tm' && !approverId)) ? 'not-allowed' : 'pointer',
+                cursor: (busy || (needsNextApprover && !approverId)) ? 'not-allowed' : 'pointer',
                 minHeight: 48, opacity: busy ? 0.7 : 1, marginBottom: 16,
                 boxShadow: '0 4px 12px rgba(31,138,87,0.25)',
               }}
             >
               <ThumbUpIcon />
               {busy ? 'Please wait…'
-                : dispInspection.status as any === 'pending_tm' ? 'Approve & Forward to Director'
+                : status === 'pending_vu' ? 'Approve & Forward to Technical Manager'
+                : status === 'pending_tm' ? 'Approve & Forward to Director'
                 : 'Give Final Approval'}
             </button>
 
@@ -1869,9 +1717,7 @@ export function ReportPage() {
 
             {/* Reject section */}
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--bad)', marginBottom: 6 }}>
-              {dispInspection.status as any === 'pending_tm'
-                ? 'Reject / Return to Vessel Manager'
-                : 'Reject / Return for Correction'}
+              Reject / Return for Correction
             </div>
             <textarea
               placeholder="Specify what needs correction (required)..."
@@ -1894,12 +1740,11 @@ export function ReportPage() {
               }}
             >
               <ReturnIcon />
-              {dispInspection.status as any === 'pending_tm'
-                ? 'Reject & Return to Vessel Manager'
-                : 'Reject & Return for Correction'}
+              Reject & Return for Correction
             </button>
           </div>
-        )}
+          );
+        })()}
 
         {/* ── Admin reopen ── */}
         {(canReopen || canAdminSpecialReopen) && (
@@ -1919,61 +1764,40 @@ export function ReportPage() {
         )}
 
         {/* ── Observations list ── */}
-        {(() => {
-          const photoSectionIdSet = new Set(
-            report?.sections.filter((s) => s.section.photoOnly).map((s) => s.section.id) ?? []
-          );
-          const dispObservations = (report?.observations ?? []).filter((o) =>
-            reportMode === 'photo' ? photoSectionIdSet.has(o.sectionId) : true
-          );
-          return (
-            <>
-              <div className="report-section-header" style={{ margin: '8px 16px 10px' }}>
-                Observations ({dispObservations.length})
-              </div>
-              {!dispObservations.length ? (
-                <p className="extras-hint report-empty-hint" style={{ margin: '0 16px 16px' }}>No observations recorded.</p>
-              ) : dispObservations.map((o, i) => (
-                <div
-                  key={i}
-                  className="observation-row-card"
-                  onClick={() => nav(`/inspections/${inspectionId}/sections/${o.sectionId}`)}
-                  style={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    borderLeft: '4px solid var(--bad)',
-                    borderRadius: 'var(--radius)',
-                    padding: '12px 14px',
-                    cursor: 'pointer',
-                    boxShadow: '0 1px 4px rgba(11,33,56,0.05)',
-                    transition: 'box-shadow 0.15s ease',
-                  }}
-                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 3px 12px rgba(11,33,56,0.10)'}
-                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(11,33,56,0.05)'}
-                >
-                  <div style={{
-                    fontSize: 11, fontWeight: 800, color: 'var(--bad)',
-                    letterSpacing: '0.3px', marginBottom: 4,
-                  }}>
-                    {o.ref.startsWith('Observation') ? `${o.ref} • ${o.sectionName}` : `${o.sectionName} — Question ${o.ref}`}
-                  </div>
-                  <div
-                    style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }}
-                    dangerouslySetInnerHTML={{
-                      __html: o.text && o.text.trim() ? o.text : '<em>(no description)</em>',
-                    }}
-                  />
-                  {o.photoIds && o.photoIds.length > 0 && (
-                    <ObservationPhotoStrip
-                      photoIds={o.photoIds}
-                      onPhotoClick={(pId) => setViewingObservationPhotoId(pId)}
-                    />
-                  )}
-                </div>
-              ))}
-            </>
-          );
-        })()}
+        <div className="report-section-header" style={{ margin: '8px 16px 10px' }}>
+          Observations ({report?.observations.length ?? 0})
+        </div>
+        {!report?.observations.length ? (
+          <p className="extras-hint report-empty-hint" style={{ margin: '0 16px 16px' }}>No observations recorded.</p>
+        ) : report.observations.map((o, i) => (
+          <div
+            key={i}
+            className="observation-row-card"
+            onClick={() => nav(`/inspections/${inspectionId}/sections/${o.sectionId}`)}
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderLeft: '4px solid var(--bad)',
+              borderRadius: 'var(--radius)',
+              padding: '12px 14px',
+              cursor: 'pointer',
+              boxShadow: '0 1px 4px rgba(11,33,56,0.05)',
+              transition: 'box-shadow 0.15s ease',
+            }}
+            onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 3px 12px rgba(11,33,56,0.10)'}
+            onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(11,33,56,0.05)'}
+          >
+            <div style={{
+              fontSize: 10.5, fontWeight: 800, color: 'var(--bad)',
+              textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 4,
+            }}>
+              {o.sectionName} — {o.ref}
+            </div>
+            <div style={{ fontSize: 13.5, color: 'var(--ink)' }}>
+              {o.text || '(no description)'}
+            </div>
+          </div>
+        ))}
 
         {/* ── Approval history ── */}
         <div className="report-section-header" style={{
@@ -2037,44 +1861,25 @@ export function ReportPage() {
           );
         })}
 
-        {/* ── Conclusion textarea with Rich Formatting ── */}
+        {/* ── Conclusion textarea (shown last) ── */}
         <div className="premium-report-card">
           <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-            Conclusion & Recommendations
+            Conclusion
           </div>
-          <RichTextEditor
-            placeholder="Conclusion, statutory recommendations, and survey close-out findings..."
+          <textarea
+            placeholder="Conclusion / recommendation..."
             disabled={!editable}
             value={conclusion}
-            onChange={setConclusion}
+            onChange={(e) => setConclusion(e.target.value)}
             onBlur={saveSummaryConclusion}
-            minHeight={120}
+            style={{ width: '100%', minHeight: 80, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 10, padding: 12, fontSize: 14, outline: 'none', color: '#0f172a', resize: 'vertical' }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.background = '#ffffff'; }}
+            onBlurCapture={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
           />
         </div>
 
         <div style={{ height: 24 }} />
       </div>
-
-      <VesselParticularsModal
-        isOpen={particularsModalOpen}
-        vesselName={report?.vessel?.name || dispInspection.vesselName}
-        reportCategoryLabel={isSpecialTakeOver ? 'Take Over' : 'Pre Purchase'}
-        values={particularsDraft}
-        onChange={(key, value) => setParticularsDraft((prev) => ({ ...prev, [key]: value }))}
-        saving={savingParticulars}
-        error={particularsError}
-        onCancel={() => { setParticularsModalOpen(false); setParticularsError(null); }}
-        onSkip={() => {
-          setParticularsModalOpen(false);
-          const draftCleaned = Object.fromEntries(
-            Object.entries(particularsDraft).filter(([, v]) => !!v && String(v).trim() !== ''));
-          const tempVessel: Vessel | undefined = report?.vessel
-            ? { ...report.vessel, particulars: { ...(report.vessel.particulars ?? {}), ...draftCleaned } }
-            : undefined;
-          void runExportPdf(pendingExportModeRef.current, tempVessel);
-        }}
-        onSave={() => void onSaveVesselParticulars()}
-      />
     </>
   );
 }

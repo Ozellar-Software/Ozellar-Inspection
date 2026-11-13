@@ -13,10 +13,11 @@ import {
 } from '../../icons';
 import { ROLE_LABELS } from '@ozellar/shared';
 
-const ROLES: Role[] = ['vesselManager', 'techManager', 'director', 'admin'];
+const ROLES: Role[] = ['vesselManager', 'vesselUser', 'techManager', 'director', 'admin'];
 
 const ROLE_DESCRIPTIONS: Record<Role, string> = {
   vesselManager: 'Conducts ship inspections, records findings & uploads photos.',
+  vesselUser:    'Same inspection rights as a Vessel Manager, plus first-level approval of submitted inspections.',
   techManager:   'Reviews submitted inspections, approves or requests revisions.',
   director:      'Executive fleet oversight and final inspection sign-offs.',
   admin:         'System administration, manage users, vessels, and roles.',
@@ -24,6 +25,7 @@ const ROLE_DESCRIPTIONS: Record<Role, string> = {
 
 const ROLE_COLORS: Record<Role, { bg: string; text: string; border: string }> = {
   vesselManager: { bg: '#E4F1F1', text: '#0A5F67', border: '#B6DFE2' },
+  vesselUser:    { bg: '#E9F3E3', text: '#3F7D1F', border: '#C6E2B4' },
   techManager:   { bg: '#E6F0FA', text: '#1F5C99', border: '#BAD4EE' },
   director:      { bg: '#F1EBF9', text: '#7C3EC6', border: '#D9C6F0' },
   admin:         { bg: '#FBF1DE', text: '#C98A1A', border: '#F5DCAD' },
@@ -193,7 +195,7 @@ export function RegisterUserPage() {
       return;
     }
 
-    const needsVessels = form.role === 'techManager' || form.role === 'vesselManager';
+    const needsVessels = form.role === 'techManager' || form.role === 'vesselManager' || form.role === 'vesselUser';
     const validVesselIdSet = new Set(vessels.map(v => v.id.toLowerCase().trim()));
     const sanitizedVesselIds = needsVessels
       ? form.vesselIds.filter(id => validVesselIdSet.has(id.toLowerCase().trim()))
@@ -255,7 +257,7 @@ export function RegisterUserPage() {
     }
   }
 
-  const needsVessels = form.role === 'techManager' || form.role === 'vesselManager';
+  const needsVessels = form.role === 'techManager' || form.role === 'vesselManager' || form.role === 'vesselUser';
 
   return (
     <div className="ru-page-wrap">

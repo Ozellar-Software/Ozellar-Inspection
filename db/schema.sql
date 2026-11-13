@@ -26,7 +26,7 @@ create table if not exists users (
   password_hash text,                        -- bcrypt hash; null until the user sets a password
   name          text not null default '',
   designation   text not null default '',
-  role          text not null check (role in ('admin','director','techManager','vesselManager')),
+  role          text not null check (role in ('admin','director','techManager','vesselUser','vesselManager')),
   is_active     boolean not null default true,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
@@ -47,6 +47,9 @@ create unique index if not exists users_email_lower_uq on users (lower(email));
 -- `create table if not exists` above is a no-op on a database that already has `users`,
 -- so this column has to be added separately for anyone upgrading from before password auth.
 alter table users add column if not exists password_hash text;
+-- Same reasoning for the 'vesselUser' role added later: widen the check constraint in place.
+alter table users drop constraint if exists users_role_check;
+alter table users add constraint users_role_check check (role in ('admin','director','techManager','vesselUser','vesselManager'));
 
 create table if not exists vessels (
   id            uuid primary key,
@@ -118,7 +121,7 @@ create table if not exists inspections (
   conclusion       text not null default '',
   cover_photo_id   uuid,
   status           text not null default 'in_progress'
-                   check (status in ('in_progress','pending_tm','pending_director','approved','returned')),
+                   check (status in ('in_progress','pending_vu','pending_tm','pending_director','approved','returned')),
   created_by       uuid references users(id),
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now(),
@@ -127,6 +130,10 @@ create table if not exists inspections (
 );
 create index if not exists inspections_vessel_idx on inspections (vessel_id);
 create index if not exists inspections_status_idx on inspections (status);
+-- Widen the status check in place for databases created before the 'pending_vu' stage existed.
+alter table inspections drop constraint if exists inspections_status_check;
+alter table inspections add constraint inspections_status_check
+  check (status in ('in_progress','pending_vu','pending_tm','pending_director','approved','returned'));
 
 -- Each inspection's own frozen copy of the checklist, plus sections added to
 -- this inspection only (is_custom = true, replaces the old customSections store).
@@ -147,6 +154,7 @@ create table if not exists inspection_sections (
 );
 alter table inspection_sections add column if not exists vessel_types text[] not null default '{}'::text[];
 alter table inspection_sections add column if not exists remarks text not null default '';
+alter table inspection_sections add column if not exists applicable boolean not null default true;
 create index if not exists insp_sections_insp_idx on inspection_sections (inspection_id);
 
 create table if not exists inspection_questions (
@@ -229,9 +237,10 @@ alter table photos add column if not exists description text not null default ''
 -- ---------- Approvals ----------
 create table if not exists approvals (
   inspection_id     uuid primary key references inspections(id) on delete cascade,
-  stage             text not null check (stage in ('tm','director','approved','returned')),
+  stage             text not null check (stage in ('vu','tm','director','approved','returned')),
   submitted_by      uuid not null references users(id),
   submitted_at      timestamptz not null,
+  vu_user_id        uuid references users(id),
   tm_user_id        uuid references users(id),
   director_user_id  uuid references users(id),
   approved_at       timestamptz,
@@ -240,6 +249,11 @@ create table if not exists approvals (
   updated_at        timestamptz not null default now(),
   row_version       bigint not null default nextval('sync_seq')
 );
+-- 'vu_user_id' and the 'vu' stage were added later; make both additive for existing databases.
+alter table approvals add column if not exists vu_user_id uuid references users(id);
+alter table approvals drop constraint if exists approvals_stage_check;
+alter table approvals add constraint approvals_stage_check check (stage in ('vu','tm','director','approved','returned'));
+
 create table if not exists approval_events (
   id                    uuid primary key default gen_random_uuid(),
   inspection_id         uuid not null references inspections(id) on delete cascade,

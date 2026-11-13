@@ -118,9 +118,13 @@ export async function localDelete(entity: SyncEntity, id: string): Promise<void>
       }
     }
   } else if (entity === 'inspectionSections') {
-    // Backend cascades photo deletion when a section is removed — mirror that locally
-    const sectionPhotos = await db.photos.where('inspectionSectionId').equals(id).toArray();
+    // Backend cascades findings & photo deletion when a section is removed — mirror that locally
     const deletedAt = new Date().toISOString();
+    const sectionFindings = await db.findings.where('inspectionSectionId').equals(id).toArray();
+    for (const f of sectionFindings) {
+      if (!(f as any).deletedAt) await db.findings.update(f.id, { deletedAt });
+    }
+    const sectionPhotos = await db.photos.where('inspectionSectionId').equals(id).toArray();
     for (const p of sectionPhotos) {
       if (!p.deletedAt) await db.photos.update(p.id, { deletedAt });
       void evictPhotoCache(p.id);

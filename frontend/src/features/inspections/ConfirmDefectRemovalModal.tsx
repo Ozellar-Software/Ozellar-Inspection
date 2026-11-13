@@ -32,7 +32,6 @@ export function ConfirmDefectRemovalModal({
   const isVessel = showActions ?? (!reportCategory || reportCategory === 'inspection');
   const findingTextClean = stripHtmlToPlainText(finding.text || '');
   const caClean = stripHtmlToPlainText(finding.correctiveAction || '');
-  const paClean = stripHtmlToPlainText(finding.preventiveAction || '');
 
   return (
     <div className="cdrm-backdrop" onClick={onCancel}>
@@ -69,12 +68,6 @@ export function ConfirmDefectRemovalModal({
               <div className="cdrm-preview-row">
                 <span className="cdrm-preview-label">Corrective Action:</span>
                 <span className="cdrm-preview-val">{caClean}</span>
-              </div>
-            )}
-            {isVessel && paClean && (
-              <div className="cdrm-preview-row">
-                <span className="cdrm-preview-label">Preventive Action:</span>
-                <span className="cdrm-preview-val">{paClean}</span>
               </div>
             )}
           </div>

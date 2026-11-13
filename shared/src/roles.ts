@@ -5,8 +5,14 @@ export const ROLE_LABELS: Record<Role, string> = {
   admin: 'Admin',
   director: 'Director',
   techManager: 'Tech Manager',
+  vesselUser: 'Vessel',
   vesselManager: 'Vessel Manager',
 };
+
+/** Whether a role is a management/operating role requiring vessel assignments */
+export function isManagerRole(role: Role): boolean {
+  return role === 'techManager' || role === 'vesselManager' || role === 'vesselUser';
+}
 
 /** Does this user see / work on this vessel? Admin & Director see all. */
 export function canSeeVessel(user: User, vesselId: string | null | undefined): boolean {
@@ -43,7 +49,7 @@ export function can(
   if (!user.isActive) return false;
   const r = user.role;
   const isAdmin = r === 'admin';
-  const isManager = r === 'techManager' || r === 'vesselManager';
+  const isManager = isManagerRole(r);
 
   // The creator of an inspection can always see/work on it — e.g. a Tech/Vessel Manager who just
   // registered a Pre Purchase / Take Over vessel inline needs to open their own report immediately,
@@ -113,7 +119,7 @@ export function can(
 
 /** Designation pick-list presets (the app adds any designation already in use). */
 export const DESIGNATION_PRESETS = [
-  'Master', 'Chief Engineer', 'Chief Officer', 'Second Engineer', 'Vessel Manager',
+  'Master', 'Chief Engineer', 'Chief Officer', 'Second Engineer', 'Vessel Manager', 'Vessel User',
   'Technical Superintendent', 'Marine Superintendent', 'Fleet Manager', 'Technical Manager',
   'Technical Director', 'Director', 'QHSE Manager', 'Crewing Manager', 'Purchase Manager', 'Admin',
 ] as const;

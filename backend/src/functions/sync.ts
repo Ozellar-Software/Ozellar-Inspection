@@ -140,7 +140,7 @@ const WRITABLE: Partial<Record<SyncEntity, string[]>> = {
   inspections: ['vesselId', 'vesselName', 'imo', 'vesselType', 'inspectionType', 'reportCategory', 'port', 'startDate', 'completionDate',
     'sailFromDate', 'sailFromPort', 'sailToDate', 'sailToPort', 'remoteFromDate', 'remoteToDate',
     'inspector', 'company', 'summary', 'conclusion', 'coverPhotoId'],
-  inspectionSections: ['inspectionId', 'templateSr', 'zone', 'name', 'position', 'photoOnly', 'isCustom', 'vesselTypes', 'remarks'],
+  inspectionSections: ['inspectionId', 'templateSr', 'zone', 'name', 'position', 'photoOnly', 'isCustom', 'vesselTypes', 'remarks', 'applicable'],
   inspectionQuestions: ['inspectionSectionId', 'qid', 'ref', 'text', 'position'],
   responses: ['inspectionId', 'inspectionQuestionId', 'applicable', 'answer', 'remarks', 'correctiveAction', 'preventiveAction'],
   findings: ['inspectionId', 'inspectionSectionId', 'text', 'answer', 'correctiveAction', 'preventiveAction', 'position'],

@@ -8,7 +8,7 @@ import { sendMail } from '../lib/mail.js';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // a week to set a first password, longer than a forgot-password link
 
-const ROLES: Role[] = ['admin', 'director', 'techManager', 'vesselManager'];
+const ROLES: Role[] = ['admin', 'director', 'techManager', 'vesselUser', 'vesselManager'];
 
 async function handleGet(req: HttpRequest, _me: User) {
 
@@ -66,7 +66,7 @@ async function handleUpsert(req: HttpRequest, me: User) {
     const designation = b.designation !== undefined ? b.designation : (existingUser?.designation ?? '');
     const isActive = b.isActive !== undefined ? b.isActive : (existingUser?.is_active ?? true);
 
-    const needsVessels = role === 'techManager' || role === 'vesselManager';
+    const needsVessels = role === 'techManager' || role === 'vesselManager' || role === 'vesselUser';
     // Strip legacy "ves-timestamp" IDs - only allow proper UUIDs
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const rawVesselIds = b.vesselIds !== undefined ? b.vesselIds : (existingUser?.vessel_ids ?? []);
@@ -193,7 +193,7 @@ app.http('designations', {
   handler: designationsHandler,
 });
 
-/** Who can the caller send this inspection to? level=tm → Tech Managers with the vessel; level=director → Directors. */
+/** Who can the caller send this inspection to? level=vu → Vessel Users with the vessel; level=tm → Tech Managers with the vessel; level=director → Directors. */
 export const approversHandler = handler(async (req) => {
     await requireUser(req);
     const level = req.query.get('level');
@@ -202,7 +202,8 @@ export const approversHandler = handler(async (req) => {
       const r = await pool.query(`select id, email, name, designation, role from users where role = 'director' and is_active order by lower(name)`);
       return r.rows.map((row) => camel(row));
     }
-    if (level === 'tm') {
+    if (level === 'vu' || level === 'tm') {
+      const roleCol = level === 'vu' ? 'vesselUser' : 'techManager';
       const vesselId = req.query.get('vesselId');
       let r = null;
       if (inspectionId) {
@@ -210,17 +211,17 @@ export const approversHandler = handler(async (req) => {
           `select u.id, u.email, u.name, u.designation, u.role
              from users u join user_vessels uv on uv.user_id = u.id
              join inspections i on i.vessel_id = uv.vessel_id
-            where i.id = $1 and u.role = 'techManager' and u.is_active order by lower(u.name)`, [inspectionId]);
+            where i.id = $1 and u.role = $2 and u.is_active order by lower(u.name)`, [inspectionId, roleCol]);
       }
       if ((!r || !r.rows.length) && vesselId) {
         r = await pool.query(
           `select u.id, u.email, u.name, u.designation, u.role
              from users u join user_vessels uv on uv.user_id = u.id
-            where uv.vessel_id = $1 and u.role = 'techManager' and u.is_active order by lower(u.name)`, [vesselId]);
+            where uv.vessel_id = $1 and u.role = $2 and u.is_active order by lower(u.name)`, [vesselId, roleCol]);
       }
       if (r) return r.rows.map((row) => camel(row));
     }
-    throw fail('VALIDATION', 'level must be tm (with inspectionId or vesselId) or director');
+    throw fail('VALIDATION', 'level must be vu, tm (with inspectionId or vesselId) or director');
   });
 app.http('approvers', {
   route: 'approvers', methods: ['GET', 'OPTIONS'], authLevel: 'anonymous',

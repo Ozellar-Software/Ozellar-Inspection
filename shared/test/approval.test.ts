@@ -12,66 +12,79 @@ const dir = mk('dir', 'director');
 const dir2 = mk('dir2', 'director');
 const tm = mk('tm', 'techManager', [V]);
 const tmOther = mk('tm2', 'techManager', ['vessel-beta']);
+const vu = mk('vu', 'vesselUser', [V]);
+const vuOther = mk('vu2', 'vesselUser', ['vessel-beta']);
 const vm = mk('vm', 'vesselManager', [V]);
 
 const insp = (status: Inspection['status'], extra: Partial<Inspection> = {}) =>
   ({ id: 'i1', vesselId: V, status, summary: 'ok', conclusion: 'ok', ...extra });
 
 describe('submit', () => {
-  it('VM submits to a TM who has the vessel', () => {
-    const r = applyApproval({ type: 'submit', approverId: 'tm' }, { actor: vm, inspection: insp('in_progress'), approval: null, target: tm });
-    expect(r.status).toBe('pending_tm');
-    expect(r.approval.tmUserId).toBe('tm');
-    expect(r.notify).toEqual(['tm']);
+  it('VM submits to a VU who has the vessel', () => {
+    const r = applyApproval({ type: 'submit', approverId: 'vu' }, { actor: vm, inspection: insp('in_progress'), approval: null, target: vu });
+    expect(r.status).toBe('pending_vu');
+    expect(r.approval.vuUserId).toBe('vu');
+    expect(r.notify).toEqual(['vu']);
   });
-  it('VM cannot submit to a TM without the vessel', () => {
-    expect(() => applyApproval({ type: 'submit', approverId: 'tm2' }, { actor: vm, inspection: insp('in_progress'), approval: null, target: tmOther }))
+  it('VM cannot submit to a VU without the vessel', () => {
+    expect(() => applyApproval({ type: 'submit', approverId: 'vu2' }, { actor: vm, inspection: insp('in_progress'), approval: null, target: vuOther }))
       .toThrow(ApprovalError);
+  });
+  it('VU submits straight to a Tech Manager', () => {
+    const r = applyApproval({ type: 'submit', approverId: 'tm' }, { actor: vu, inspection: insp('in_progress'), approval: null, target: tm });
+    expect(r.status).toBe('pending_tm');
   });
   it('TM submits straight to a Director', () => {
     const r = applyApproval({ type: 'submit', approverId: 'dir' }, { actor: tm, inspection: insp('in_progress'), approval: null, target: dir });
     expect(r.status).toBe('pending_director');
   });
   it('requires summary and conclusion', () => {
-    expect(() => applyApproval({ type: 'submit', approverId: 'tm' }, { actor: vm, inspection: insp('in_progress', { summary: ' ' }), approval: null, target: tm }))
+    expect(() => applyApproval({ type: 'submit', approverId: 'vu' }, { actor: vm, inspection: insp('in_progress', { summary: ' ' }), approval: null, target: vu }))
       .toThrow(/Summary/);
   });
   it('Director cannot submit; locked inspection cannot be resubmitted', () => {
     expect(() => applyApproval({ type: 'submit', approverId: 'dir' }, { actor: dir, inspection: insp('in_progress'), approval: null, target: dir2 })).toThrow();
-    expect(() => applyApproval({ type: 'submit', approverId: 'tm' }, { actor: vm, inspection: insp('pending_tm'), approval: null, target: tm })).toThrow();
+    expect(() => applyApproval({ type: 'submit', approverId: 'vu' }, { actor: vm, inspection: insp('pending_vu'), approval: null, target: vu })).toThrow();
   });
 });
 
-describe('full two-level flow + rejection', () => {
-  const sub = applyApproval({ type: 'submit', approverId: 'tm' }, { actor: vm, inspection: insp('in_progress'), approval: null, target: tm });
-  it('only the assigned TM (or Admin) approves level 1, picking a Director', () => {
-    expect(() => applyApproval({ type: 'approve', nextApproverId: 'dir' }, { actor: tmOther, inspection: insp(sub.status), approval: sub.approval, target: dir })).toThrow();
-    const l1 = applyApproval({ type: 'approve', nextApproverId: 'dir' }, { actor: tm, inspection: insp(sub.status), approval: sub.approval, target: dir });
-    expect(l1.status).toBe('pending_director');
+describe('full three-level flow + rejection', () => {
+  const sub = applyApproval({ type: 'submit', approverId: 'vu' }, { actor: vm, inspection: insp('in_progress'), approval: null, target: vu });
+  it('only the assigned VU (or Admin) approves level 1, picking a Tech Manager', () => {
+    expect(() => applyApproval({ type: 'approve', nextApproverId: 'tm' }, { actor: vuOther, inspection: insp(sub.status), approval: sub.approval, target: tm })).toThrow();
+    const l1 = applyApproval({ type: 'approve', nextApproverId: 'tm' }, { actor: vu, inspection: insp(sub.status), approval: sub.approval, target: tm });
+    expect(l1.status).toBe('pending_tm');
     expect(l1.notify).toContain('vm');
-    expect(() => applyApproval({ type: 'approve' }, { actor: dir2, inspection: insp(l1.status), approval: l1.approval })).toThrow();
-    const fin = applyApproval({ type: 'approve' }, { actor: dir, inspection: insp(l1.status), approval: l1.approval });
+
+    expect(() => applyApproval({ type: 'approve', nextApproverId: 'dir' }, { actor: tmOther, inspection: insp(l1.status), approval: l1.approval, target: dir })).toThrow();
+    const l2 = applyApproval({ type: 'approve', nextApproverId: 'dir' }, { actor: tm, inspection: insp(l1.status), approval: l1.approval, target: dir });
+    expect(l2.status).toBe('pending_director');
+    expect(l2.notify).toContain('vm');
+
+    expect(() => applyApproval({ type: 'approve' }, { actor: dir2, inspection: insp(l2.status), approval: l2.approval })).toThrow();
+    const fin = applyApproval({ type: 'approve' }, { actor: dir, inspection: insp(l2.status), approval: l2.approval });
     expect(fin.status).toBe('approved');
     expect(fin.approval.approvedAt).toBeTruthy();
     const reopened = applyApproval({ type: 'reopen' }, { actor: admin, inspection: insp(fin.status), approval: fin.approval });
     expect(reopened.status).toBe('in_progress');
     expect(() => applyApproval({ type: 'reopen' }, { actor: dir, inspection: insp(fin.status), approval: fin.approval })).toThrow();
   });
-  it('TM rejection goes back to the Vessel Manager and needs a reason', () => {
-    expect(() => applyApproval({ type: 'reject', comment: ' ' }, { actor: tm, inspection: insp(sub.status), approval: sub.approval })).toThrow(/reason/);
-    const rej = applyApproval({ type: 'reject', comment: 'Photos missing' }, { actor: tm, inspection: insp(sub.status), approval: sub.approval });
+  it('VU rejection goes back to the Vessel Manager and needs a reason', () => {
+    expect(() => applyApproval({ type: 'reject', comment: ' ' }, { actor: vu, inspection: insp(sub.status), approval: sub.approval })).toThrow(/reason/);
+    const rej = applyApproval({ type: 'reject', comment: 'Photos missing' }, { actor: vu, inspection: insp(sub.status), approval: sub.approval });
     expect(rej.status).toBe('returned');
     expect(rej.notify).toEqual(['vm']);
     expect(isEditable(rej.status)).toBe(true);
   });
   it('Admin can act at any level', () => {
-    const l1 = applyApproval({ type: 'approve', nextApproverId: 'dir' }, { actor: admin, inspection: insp(sub.status), approval: sub.approval, target: dir });
-    expect(applyApproval({ type: 'approve' }, { actor: admin, inspection: insp(l1.status), approval: l1.approval }).status).toBe('approved');
+    const l1 = applyApproval({ type: 'approve', nextApproverId: 'tm' }, { actor: admin, inspection: insp(sub.status), approval: sub.approval, target: tm });
+    const l2 = applyApproval({ type: 'approve', nextApproverId: 'dir' }, { actor: admin, inspection: insp(l1.status), approval: l1.approval, target: dir });
+    expect(applyApproval({ type: 'approve' }, { actor: admin, inspection: insp(l2.status), approval: l2.approval }).status).toBe('approved');
   });
   it('inbox rule', () => {
-    expect(canActOnApproval(tm, 'pending_tm', sub.approval as Approval)).toBe(true);
-    expect(canActOnApproval(tmOther, 'pending_tm', sub.approval as Approval)).toBe(false);
-    expect(canActOnApproval(vm, 'pending_tm', sub.approval as Approval)).toBe(false);
+    expect(canActOnApproval(vu, 'pending_vu', sub.approval as Approval)).toBe(true);
+    expect(canActOnApproval(vuOther, 'pending_vu', sub.approval as Approval)).toBe(false);
+    expect(canActOnApproval(vm, 'pending_vu', sub.approval as Approval)).toBe(false);
   });
 });
 

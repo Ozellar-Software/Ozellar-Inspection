@@ -61,12 +61,11 @@ export function hasFindingDetails(
   sectionName?: string,
   reportCategory?: ReportCategory
 ): boolean {
-  // If corrective action or preventive action was entered, the user definitely entered custom remarks (for vessel inspection)
+  // If corrective action was entered, the user definitely entered custom remarks (for vessel inspection)
   const isVesselInspection = !reportCategory || reportCategory === 'inspection';
   if (isVesselInspection) {
     const hasCa = !!finding.correctiveAction && stripHtmlToPlainText(finding.correctiveAction).length > 0;
-    const hasPa = !!finding.preventiveAction && stripHtmlToPlainText(finding.preventiveAction).length > 0;
-    if (hasCa || hasPa) return true;
+    if (hasCa) return true;
   }
 
   const rawFindingText = (finding.text || '').trim();

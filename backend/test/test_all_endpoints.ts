@@ -4,7 +4,7 @@ import pg from 'pg';
 
 process.env.PG_HOST = 'localhost';
 process.env.PG_PORT = '5432';
-process.env.PG_DB = 'vir';
+process.env.PG_DB = process.env.PG_DB || 'inspection';
 process.env.PG_USER = 'postgres';
 process.env.PG_PASSWORD = 'sujil123';
 process.env.PG_SSL = 'false';
@@ -69,6 +69,7 @@ async function run() {
   const adminId = randomUUID();
   const dirId = randomUUID();
   const tmId = randomUUID();
+  const vuId = randomUUID();
   const vmId = randomUUID();
   const vesselId = randomUUID();
 
@@ -78,17 +79,20 @@ async function run() {
     values ($1, $2, 'Test Admin', 'admin', true),
            ($3, $4, 'Test Dir', 'director', true),
            ($5, $6, 'Test TM', 'techManager', true),
-           ($7, $8, 'Test VM', 'vesselManager', true)
+           ($7, $8, 'Test VU', 'vesselUser', true),
+           ($9, $10, 'Test VM', 'vesselManager', true)
   `, [
     adminId, `test-admin-${runStamp}@ozellar.com`,
     dirId, `test-dir-${runStamp}@ozellar.com`,
     tmId, `test-tm-${runStamp}@ozellar.com`,
+    vuId, `test-vu-${runStamp}@ozellar.com`,
     vmId, `test-vm-${runStamp}@ozellar.com`
   ]);
 
   const adminToken = await signAccessToken(adminId);
   const dirToken = await signAccessToken(dirId);
   const tmToken = await signAccessToken(tmId);
+  const vuToken = await signAccessToken(vuId);
   const vmToken = await signAccessToken(vmId);
 
   // 1. Test /me
@@ -152,7 +156,7 @@ async function run() {
     },
   });
   testAssert('POST /vessels creates vessel', vesselUpsertRes.status === 200 && vesselUpsertRes.body?.imo === '9988776');
-  await pool.query(`insert into user_vessels (user_id, vessel_id) values ($1, $2), ($3, $2)`, [tmId, vesselId, vmId]);
+  await pool.query(`insert into user_vessels (user_id, vessel_id) values ($1, $2), ($3, $2), ($4, $2)`, [tmId, vesselId, vmId, vuId]);
 
   const vesselsListRes = await callHandler(vessels.vesselsListHandler, adminToken);
   testAssert('GET /vessels returns list containing new vessel', vesselsListRes.status === 200 && Array.isArray(vesselsListRes.body));
@@ -246,14 +250,27 @@ async function run() {
 
   // 6. Test Approvals Workflow
   console.log('\n--- Testing Approvals ---');
-  // Submit inspection by VM to TM
+  // Submit inspection by VM to Vessel User
   const submitRes = await callHandler(approvals.approvalSubmitHandler, vmToken, {
     method: 'POST',
     params: { id: testInspId },
-    body: { approverId: tmId, comment: 'Ready for review' },
+    body: { approverId: vuId, comment: 'Ready for review' },
   });
   if (submitRes.status !== 200) console.log('submitRes error:', submitRes);
-  testAssert('POST /approvals/{id}/submit by VM moves to pending_tm', submitRes.status === 200 && submitRes.body?.status === 'pending_tm');
+  testAssert('POST /approvals/{id}/submit by VM moves to pending_vu', submitRes.status === 200 && submitRes.body?.status === 'pending_vu');
+
+  // Approval inbox for VU
+  const vuInboxRes = await callHandler(approvals.approvalInboxHandler, vuToken);
+  testAssert('GET /approvals/inbox for VU shows submitted inspection',
+    vuInboxRes.status === 200 && vuInboxRes.body?.waiting?.some((i: any) => i.id === testInspId));
+
+  // VU Approves to Tech Manager
+  const approveVuRes = await callHandler(approvals.approvalApproveHandler, vuToken, {
+    method: 'POST',
+    params: { id: testInspId },
+    body: { nextApproverId: tmId, comment: 'VU approved' },
+  });
+  testAssert('POST /approvals/{id}/approve by VU moves to pending_tm', approveVuRes.status === 200 && approveVuRes.body?.status === 'pending_tm');
 
   // Approval inbox for TM
   const inboxRes = await callHandler(approvals.approvalInboxHandler, tmToken);

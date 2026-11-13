@@ -46,7 +46,7 @@ export interface Observation {
   text: string;
   remarks: string;
   correctiveAction: string;
-  preventiveAction: string;
+  preventiveAction?: string;
   photoIds: string[];
 }
 
@@ -54,6 +54,7 @@ export interface ReportData {
   inspection: Inspection;
   vessel?: Vessel;
   sections: SectionReport[];
+  notApplicableSections?: InspectionSection[];
   stats: ReportStats;
   observations: Observation[];
   approvalHistory?: ApprovalEvent[];
@@ -64,8 +65,11 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
   const inspection = await db.inspections.get(inspectionId);
   if (!inspection) return null;
   const vessel = inspection.vesselId ? await db.vessels.get(inspection.vesselId) : undefined;
-  const allSections = (await db.inspectionSections.where('inspectionId').equals(inspectionId).sortBy('position'))
-    .filter((s) => !(s as any).deletedAt)
+  const rawSections = await db.inspectionSections.where('inspectionId').equals(inspectionId).sortBy('position');
+  const nonDeleted = rawSections.filter((s) => !(s as any).deletedAt);
+  const notApplicableSections = nonDeleted.filter((s) => (s as any).applicable === false);
+  const allSections = nonDeleted
+    .filter((s) => (s as any).applicable !== false)
     .sort((a, b) => Number(Boolean(a.photoOnly)) - Number(Boolean(b.photoOnly)) || a.position - b.position);
   const questions = await db.inspectionQuestions.toArray();
   const responses = await db.responses.where('inspectionId').equals(inspectionId).toArray();
@@ -132,7 +136,7 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
           observations.push({
             id: response?.id,
             kind: 'question', sectionId: section.id, sectionName: section.name, ref: question.ref, text: question.text,
-            remarks: response?.remarks ?? '', correctiveAction: response?.correctiveAction ?? '', preventiveAction: response?.preventiveAction ?? '',
+            remarks: response?.remarks ?? '', correctiveAction: response?.correctiveAction ?? '',
             photoIds: qPhotoIds,
           });
         }
@@ -147,7 +151,7 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
         observations.push({
           id: finding.id,
           kind: 'finding', sectionId: section.id, sectionName: section.name, ref: `Observation ${fIdx + 1}`, text: finding.text,
-          remarks: '', correctiveAction: finding.correctiveAction, preventiveAction: finding.preventiveAction,
+          remarks: '', correctiveAction: finding.correctiveAction,
           photoIds: fPhotoIds,
         });
       }
@@ -161,5 +165,5 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
   stats.extraFindings = findings.filter((f) => f.answer !== 'yes').length;
   stats.photoSectionExtraFindings = observations.filter((o) => photoSectionIdSet.has(o.sectionId)).length;
 
-  return { inspection, vessel, sections, stats, observations, photos };
+  return { inspection, vessel, sections, notApplicableSections, stats, observations, photos };
 }

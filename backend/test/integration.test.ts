@@ -43,9 +43,14 @@ const V = randomUUID(), V2 = randomUUID();
 await pool.query(`truncate users, vessels restart identity cascade`);
 await pool.query(`insert into vessels (id, name) values ($1,'MV Alpha'), ($2,'MV Beta')`, [V, V2]);
 const U: Record<string, string> = {};
-for (const [oid, role, vessels] of [['adm', 'admin', []], ['dir', 'director', []], ['tm', 'techManager', [V]], ['tm2', 'techManager', [V2]], ['vm', 'vesselManager', [V]]] as const) {
+for (const [oid, role, vessels] of [
+  ['adm', 'admin', []], ['dir', 'director', []],
+  ['tm', 'techManager', [V]], ['tm2', 'techManager', [V2]],
+  ['vu', 'vesselUser', [V]], ['vu2', 'vesselUser', [V2]],
+  ['vm', 'vesselManager', [V]],
+] as const) {
   const id = (await pool.query(`insert into users (entra_oid, email, name, designation, role) values ($1,$2,$3,$4,$5) returning id`,
-    [oid, `${oid}@x.com`, oid.toUpperCase(), oid === 'tm' ? 'Technical Superintendent' : '', role])).rows[0].id;
+    [oid, `${oid}@x.com`, oid.toUpperCase(), oid === 'tm' ? 'Technical Superintendent' : oid === 'vu' ? 'Fleet Manager' : '', role])).rows[0].id;
   U[oid] = id;
   for (const v of vessels) await pool.query(`insert into user_vessels values ($1,$2)`, [id, v]);
 }
@@ -93,31 +98,35 @@ ok(!r.body.results[0].ok, 'Director cannot edit');
 r = await call(sync.syncPushHandler, 'vm', { body: { deviceId: 'x', mutations: [m('inspectionSections', randomUUID(), { inspectionId: I, name: 'Custom', position: 9, isCustom: true })] } });
 ok(!r.body.results[0].ok, 'only Admin adds custom sections');
 
-// ---- approvals ----
-let a = await call(appr.approvalSubmitHandler, 'vm', { params: { id: I }, body: { approverId: U.tm } });
+// ---- approvals (VM → Vessel User → Tech Manager → Director) ----
+let a = await call(appr.approvalSubmitHandler, 'vm', { params: { id: I }, body: { approverId: U.vu } });
 ok(a.status === 400 && /Summary/.test(a.body.error.message), 'submit needs summary + conclusion');
 await call(sync.syncPushHandler, 'vm', { body: { deviceId: 'x', mutations: [m('inspections', I, { summary: 'ok', conclusion: 'fit' })] } });
-a = await call(appr.approvalSubmitHandler, 'vm', { params: { id: I }, body: { approverId: U.tm2 } });
-ok(a.status === 400, 'cannot submit to a Tech Manager without the vessel');
-a = await call(appr.approvalSubmitHandler, 'vm', { params: { id: I }, body: { approverId: U.tm, comment: 'please review' } });
-ok(a.status === 200 && a.body.status === 'pending_tm', 'VM submits to TM');
+a = await call(appr.approvalSubmitHandler, 'vm', { params: { id: I }, body: { approverId: U.vu2 } });
+ok(a.status === 400, 'cannot submit to a Vessel User without the vessel');
+a = await call(appr.approvalSubmitHandler, 'vm', { params: { id: I }, body: { approverId: U.vu, comment: 'please review' } });
+ok(a.status === 200 && a.body.status === 'pending_vu', 'VM submits to Vessel User');
 r = await call(sync.syncPushHandler, 'vm', { body: { deviceId: 'x', mutations: [m('responses', R, { remarks: 'late edit' })] } });
 ok(!r.body.results[0].ok && r.body.results[0].code === 'LOCKED' && r.body.results[0].serverRow.remarks === 'heavy rust', 'edits after submit are LOCKED and server copy returned');
-const inbox = await call(appr.approvalInboxHandler, 'tm');
-ok(inbox.body.waiting.length === 1, 'TM inbox shows it');
-ok((await call(appr.approvalInboxHandler, 'tm2')).body.waiting.length === 0, 'other TM inbox empty');
-a = await call(appr.approvalApproveHandler, 'tm2', { params: { id: I }, body: { nextApproverId: U.dir } });
-ok(a.status === 403, 'unassigned TM cannot approve');
-a = await call(appr.approvalRejectHandler, 'tm', { params: { id: I }, body: { comment: '' } });
+const inbox = await call(appr.approvalInboxHandler, 'vu');
+ok(inbox.body.waiting.length === 1, 'VU inbox shows it');
+ok((await call(appr.approvalInboxHandler, 'vu2')).body.waiting.length === 0, 'other VU inbox empty');
+a = await call(appr.approvalApproveHandler, 'vu2', { params: { id: I }, body: { nextApproverId: U.tm } });
+ok(a.status === 403, 'unassigned VU cannot approve');
+a = await call(appr.approvalRejectHandler, 'vu', { params: { id: I }, body: { comment: '' } });
 ok(a.status === 400, 'reject needs a reason');
-a = await call(appr.approvalRejectHandler, 'tm', { params: { id: I }, body: { comment: 'Photos missing' } });
-ok(a.body.status === 'returned', 'TM rejects back to VM');
+a = await call(appr.approvalRejectHandler, 'vu', { params: { id: I }, body: { comment: 'Photos missing' } });
+ok(a.body.status === 'returned', 'VU rejects back to VM');
 ok((await call(appr.approvalInboxHandler, 'vm')).body.returned.length === 1, 'VM sees it returned');
 r = await call(sync.syncPushHandler, 'vm', { body: { deviceId: 'x', mutations: [m('responses', R, { remarks: 'fixed' })] } });
 ok(r.body.results[0].ok, 'returned inspection is editable again');
-a = await call(appr.approvalSubmitHandler, 'vm', { params: { id: I }, body: { approverId: U.tm } });
+a = await call(appr.approvalSubmitHandler, 'vm', { params: { id: I }, body: { approverId: U.vu } });
+a = await call(appr.approvalApproveHandler, 'vu', { params: { id: I }, body: { nextApproverId: U.tm } });
+ok(a.body.status === 'pending_tm', 'VU approves level 1 → Tech Manager');
+a = await call(appr.approvalApproveHandler, 'tm2', { params: { id: I }, body: { nextApproverId: U.dir } });
+ok(a.status === 403, 'unassigned TM cannot approve');
 a = await call(appr.approvalApproveHandler, 'tm', { params: { id: I }, body: { nextApproverId: U.dir } });
-ok(a.body.status === 'pending_director', 'TM approves level 1 → Director');
+ok(a.body.status === 'pending_director', 'TM approves level 2 → Director');
 a = await call(appr.approvalApproveHandler, 'dir', { params: { id: I }, body: {} });
 ok(a.body.status === 'approved', 'Director gives final approval');
 r = await call(sync.syncPushHandler, 'adm', { body: { deviceId: 'x', mutations: [m('responses', R, { remarks: 'admin edit' })] } });
@@ -125,8 +134,8 @@ ok(!r.body.results[0].ok, 'approved inspection is locked even for Admin');
 a = await call(appr.approvalReopenHandler, 'dir', { params: { id: I } });
 ok(a.status === 403, 'only Admin can reopen');
 const hist = await call(appr.approvalHistoryHandler, 'vm', { params: { id: I } });
-ok(hist.body.history.map((e: any) => e.action).join(',') === 'submitted,rejected,submitted,approved,approved', 'history recorded in order');
-ok(hist.body.history[1].actorDesignation === 'Technical Superintendent', 'history keeps designation snapshot');
+ok(hist.body.history.map((e: any) => e.action).join(',') === 'submitted,rejected,submitted,approved,approved,approved', 'history recorded in order');
+ok(hist.body.history[1].actorDesignation === 'Fleet Manager', 'history keeps designation snapshot');
 
 // ---- users, approvers, fleet status ----
 let u = await call(users.usersUpsertHandler, 'vm', { body: { email: 'new@x.com', role: 'director' } });

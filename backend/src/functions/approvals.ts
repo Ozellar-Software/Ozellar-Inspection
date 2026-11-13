@@ -12,6 +12,7 @@ import {
   getDirectors,
   getTechManagers,
   getVesselManagers,
+  getVesselUsers,
 } from '../lib/notifications.js';
 
 async function loadUser(c: Tx, id: string | null | undefined): Promise<User | null> {
@@ -107,12 +108,12 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
     await c.query(`update inspections set status = $2 where id = $1`, [inspectionId, r.status]);
     const a = r.approval;
     await c.query(
-      `insert into approvals (inspection_id, stage, submitted_by, submitted_at, tm_user_id, director_user_id, approved_at, returned_by, return_comment)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `insert into approvals (inspection_id, stage, submitted_by, submitted_at, vu_user_id, tm_user_id, director_user_id, approved_at, returned_by, return_comment)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        on conflict (inspection_id) do update set stage = excluded.stage, submitted_by = excluded.submitted_by,
-         submitted_at = excluded.submitted_at, tm_user_id = excluded.tm_user_id, director_user_id = excluded.director_user_id,
+         submitted_at = excluded.submitted_at, vu_user_id = excluded.vu_user_id, tm_user_id = excluded.tm_user_id, director_user_id = excluded.director_user_id,
          approved_at = excluded.approved_at, returned_by = excluded.returned_by, return_comment = excluded.return_comment`,
-      [inspectionId, a.stage, a.submittedBy, a.submittedAt, a.tmUserId, a.directorUserId, a.approvedAt ?? null, a.returnedBy ?? null, a.returnComment ?? null]);
+      [inspectionId, a.stage, a.submittedBy, a.submittedAt, a.vuUserId, a.tmUserId, a.directorUserId, a.approvedAt ?? null, a.returnedBy ?? null, a.returnComment ?? null]);
     await c.query(
       `insert into approval_events (inspection_id, action, level, actor_user_id, actor_name, actor_designation, actor_role, target_user_id, comment)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -122,14 +123,17 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
     if (r.event.action === 'submitted') {
       const dirs = await getDirectors(c);
       const tms = await getTechManagers(c, insp.vessel_id);
-      targetNotifyUserIds = [...targetNotifyUserIds, ...dirs, ...tms];
+      const vus = await getVesselUsers(c, insp.vessel_id);
+      targetNotifyUserIds = [...targetNotifyUserIds, ...dirs, ...tms, ...vus];
     } else if (r.event.action === 'approved') {
       const dirs = await getDirectors(c);
       const vms = await getVesselManagers(c, insp.vessel_id);
       const tms = await getTechManagers(c, insp.vessel_id);
+      const vus = await getVesselUsers(c, insp.vessel_id);
       if (a.directorUserId) targetNotifyUserIds.push(a.directorUserId);
+      if (a.vuUserId) targetNotifyUserIds.push(a.vuUserId);
       if (a.submittedBy) targetNotifyUserIds.push(a.submittedBy);
-      targetNotifyUserIds = [...targetNotifyUserIds, ...dirs, ...tms, ...vms];
+      targetNotifyUserIds = [...targetNotifyUserIds, ...dirs, ...tms, ...vms, ...vus];
     } else if (r.event.action === 'rejected') {
       const vms = await getVesselManagers(c, insp.vessel_id);
       if (a.submittedBy) targetNotifyUserIds.push(a.submittedBy);
@@ -174,7 +178,12 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
     rejected: `Rejected: ${what}`,
     reopened: `Reopened: ${what}`,
   } as Record<string, string>)[r.event.action] ?? 'Inspection update';
-  void sendMail(recipients, subject, `${subject}\nBy: ${by}${r.event.comment ? `\nComment: ${r.event.comment}` : ''}`);
+  void sendMail(
+    recipients,
+    subject,
+    `${subject}\nBy: ${by}${r.event.comment ? `\nComment: ${r.event.comment}` : ''}`,
+    { link: `/inspections/${inspectionId}/report` }
+  );
   return { status: r.status, approval: r.approval };
 }
 
@@ -218,7 +227,7 @@ export const approvalInboxHandler = handler(async (req) => {
     const r = await pool.query(
       `select i.id, i.vessel_id, i.vessel_name, i.start_date, i.status, a.*
          from inspections i join approvals a on a.inspection_id = i.id
-        where i.deleted_at is null and i.status in ('pending_tm','pending_director','returned')
+        where i.deleted_at is null and i.status in ('pending_vu','pending_tm','pending_director','returned')
           and (i.report_category is null or i.report_category = 'inspection')`);
     const waiting = [], returned = [];
     for (const row of r.rows) {

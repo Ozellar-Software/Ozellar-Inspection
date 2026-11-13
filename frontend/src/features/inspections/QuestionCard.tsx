@@ -102,7 +102,6 @@ export function QuestionCard({
 
   const [remarks, setRemarks] = useState(response?.remarks ?? '');
   const [correctiveAction, setCorrectiveAction] = useState(response?.correctiveAction ?? '');
-  const [preventiveAction, setPreventiveAction] = useState(response?.preventiveAction ?? '');
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSameQuestionDrag, setIsSameQuestionDrag] = useState(false);
   const [dragFeedback, setDragFeedback] = useState<string | null>(null);
@@ -116,10 +115,6 @@ export function QuestionCard({
   useEffect(() => {
     setCorrectiveAction(response?.correctiveAction ?? '');
   }, [response?.correctiveAction]);
-
-  useEffect(() => {
-    setPreventiveAction(response?.preventiveAction ?? '');
-  }, [response?.preventiveAction]);
 
   // Clean up dragover overlay whenever any drag ends in window
   useEffect(() => {
@@ -409,7 +404,7 @@ export function QuestionCard({
         </PillBtn>
       </div>
 
-      {/* ── Corrective / Preventive actions (shown when "no" and for vessel inspections) ── */}
+      {/* ── Corrective action (shown when "no" and for vessel inspections) ── */}
       {answer === 'no' && showActions && (
         <div className="corrective-preventive-block">
           <div className="seg-label">Corrective Action</div>
@@ -419,16 +414,6 @@ export function QuestionCard({
             value={correctiveAction}
             onChange={setCorrectiveAction}
             onBlur={() => void saveResponse(inspectionId, question.id, { correctiveAction })}
-            minHeight={65}
-            style={{ marginBottom: 10 }}
-          />
-          <div className="seg-label">Preventive Action</div>
-          <RichTextEditor
-            placeholder="Describe the preventive action to avoid recurrence..."
-            disabled={locked}
-            value={preventiveAction}
-            onChange={setPreventiveAction}
-            onBlur={() => void saveResponse(inspectionId, question.id, { preventiveAction })}
             minHeight={65}
           />
         </div>

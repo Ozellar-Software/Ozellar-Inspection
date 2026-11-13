@@ -604,7 +604,8 @@ export async function generateInspectionPdf(data: ReportData & {
     x0: number,
     gapX: number,
     centerSingle: boolean,
-    maxImgH = ROW_MAX_IMG_H
+    maxImgH = ROW_MAX_IMG_H,
+    forceEqualColumns = false
   ) => {
     const [img1, img2, photoDoc1, photoDoc2] = await Promise.all([
       loadImage(idA),
@@ -620,17 +621,33 @@ export async function generateInspectionPdf(data: ReportData & {
     let w2 = 0;
     let x1 = x0;
     if (idB) {
-      // Same height for both; widths follow each photo's shape and together fill the row (or are centred if capped).
-      imgH = Math.min(maxImgH, (availW - gapX - 2 * ROW_FRAME) / (a1 + a2));
-      w1 = imgH * a1 + ROW_FRAME;
-      w2 = imgH * a2 + ROW_FRAME;
-      x1 = x0 + (availW - (w1 + gapX + w2)) / 2;
+      if (forceEqualColumns) {
+        // Symmetrical 50/50 columns for sections with mixed orientations
+        const colW = (availW - gapX) / 2;
+        w1 = colW;
+        w2 = colW;
+        x1 = x0;
+        imgH = Math.min(maxImgH, Math.max(56, (colW - ROW_FRAME) / 1.33));
+      } else {
+        // Same height for both; widths follow each photo's shape and together fill the row (or are centred if capped).
+        imgH = Math.min(maxImgH, (availW - gapX - 2 * ROW_FRAME) / (a1 + a2));
+        w1 = imgH * a1 + ROW_FRAME;
+        w2 = imgH * a2 + ROW_FRAME;
+        x1 = x0 + (availW - (w1 + gapX + w2)) / 2;
+      }
     } else {
-      // A lone photo: frame hugs the photo (at most half the row wide), so there are no grey bands either.
-      const maxW = (availW - gapX) / 2;
-      imgH = Math.min(maxImgH, (maxW - ROW_FRAME) / a1);
-      w1 = imgH * a1 + ROW_FRAME;
-      if (centerSingle) x1 = x0 + (availW - w1) / 2;
+      if (forceEqualColumns) {
+        const colW = (availW - gapX) / 2;
+        w1 = colW;
+        imgH = Math.min(maxImgH, Math.max(56, (colW - ROW_FRAME) / 1.33));
+        x1 = centerSingle ? x0 + (availW - colW) / 2 : x0;
+      } else {
+        // A lone photo: frame hugs the photo (at most half the row wide), so there are no grey bands either.
+        const maxW = (availW - gapX) / 2;
+        imgH = Math.min(maxImgH, (maxW - ROW_FRAME) / a1);
+        w1 = imgH * a1 + ROW_FRAME;
+        if (centerSingle) x1 = x0 + (availW - w1) / 2;
+      }
     }
     const banner = Math.max(bannerFor(photoDoc1, w1), idB ? bannerFor(photoDoc2, w2) : 0);
     return { idB, img1, img2, photoDoc1, photoDoc2, w1, w2, x1, gapX, pH: imgH + 0.8 + banner + ROW_PAD };
@@ -649,7 +666,16 @@ export async function generateInspectionPdf(data: ReportData & {
     const gapX = 8;
     const gapY = 6;
     const pageLimit = PAGE_H - BOTTOM_MARGIN;
-    const rowAt = (pIdx: number) => buildPhotoRow(photoIds[pIdx], photoIds[pIdx + 1], CONTENT_W, MARGIN_LEFT, gapX, false);
+
+    // Check if this section contains mixed orientations (both landscape and portrait)
+    const sectionImgs = await Promise.all(photoIds.map((id) => loadImage(id)));
+    const sectionAspects = sectionImgs.map(aspectOf);
+    const hasLandscape = sectionAspects.some((a) => a >= 1.05);
+    const hasPortrait = sectionAspects.some((a) => a < 0.95);
+    const isMixedSection = hasLandscape && hasPortrait;
+
+    const rowAt = (pIdx: number) =>
+      buildPhotoRow(photoIds[pIdx], photoIds[pIdx + 1], CONTENT_W, MARGIN_LEFT, gapX, false, ROW_MAX_IMG_H, isMixedSection);
 
     const continuedHeader = () => {
       doc.newPage();
@@ -687,7 +713,7 @@ export async function generateInspectionPdf(data: ReportData & {
   const renderPhotoGrid8 = renderPhotoGrid4; // Backwards-compatible alias
 
   // ─── Observation card ───
-  // One soft-red card: tag, text, corrective/preventive actions, then the observation's photos in justified rows.
+  // One soft-red card: tag, text, corrective action, then the observation's photos in justified rows.
   // Height is measured from the real content. The card splits across pages only between photo rows, and the
   // "OBSERVATIONS & FINDINGS" heading always stays with the first card.
   // An observation's text only counts when the user typed it. Auto-generated text (empty, the section name,
@@ -724,21 +750,25 @@ export async function generateInspectionPdf(data: ReportData & {
     const pageLimit = PAGE_H - BOTTOM_MARGIN;
 
     const photoIds = (fRow.photoIds || []).filter(Boolean);
+    const obsImgs = await Promise.all(photoIds.map((id) => loadImage(id)));
+    const obsAspects = obsImgs.map(aspectOf);
+    const hasObsLandscape = obsAspects.some((a) => a >= 1.05);
+    const hasObsPortrait = obsAspects.some((a) => a < 0.95);
+    const isMixedObs = hasObsLandscape && hasObsPortrait;
+
     const rows: Awaited<ReturnType<typeof buildPhotoRow>>[] = [];
     for (let i = 0; i < photoIds.length; i += 2) {
-      rows.push(await buildPhotoRow(photoIds[i], photoIds[i + 1], innerW, innerX, 6, true, OBS_MAX_IMG_H));
+      rows.push(await buildPhotoRow(photoIds[i], photoIds[i + 1], innerW, innerX, 6, true, OBS_MAX_IMG_H, isMixedObs));
     }
 
     // Only what the user actually entered is printed: no placeholder text when nothing was typed.
     const photoDescs = photoIds.map((pid) => String(photoMap.get(pid)?.description ?? ''));
     const textContent = isDefaultObservationText(fRow.finding.text, s.section.name, photoDescs) ? '' : (fRow.finding.text || '');
     const caContent = (ordinary && stripHtmlToPlainText(fRow.finding.correctiveAction || '')) ? `**Corrective Action:** ${fRow.finding.correctiveAction}` : '';
-    const paContent = (ordinary && stripHtmlToPlainText(fRow.finding.preventiveAction || '')) ? `*Preventive Action:* ${fRow.finding.preventiveAction}` : '';
 
     const blocks: { content: string; size: number; lineGap: number; color: [number, number, number]; h: number }[] = [];
     if (textContent) blocks.push({ content: textContent, size: 8.5, lineGap: 4.2, color: TEXT_DARK, h: measureRichText(doc.pdf, textContent, innerW, { size: 8.5, lineGap: 4.2 }) });
     if (caContent) blocks.push({ content: caContent, size: 7.8, lineGap: 4.0, color: RED, h: measureRichText(doc.pdf, caContent, innerW, { size: 7.8, lineGap: 4.0 }) });
-    if (paContent) blocks.push({ content: paContent, size: 7.8, lineGap: 4.0, color: TEXT_MUTED, h: measureRichText(doc.pdf, paContent, innerW, { size: 7.8, lineGap: 4.0 }) });
     const bodyH = blocks.reduce((sum, b, i) => sum + b.h + (i > 0 ? 2 : 0), 0);
 
     // Tag row; when there is text, a divider and a clear gap below it before the text starts.
@@ -1006,7 +1036,6 @@ export async function generateInspectionPdf(data: ReportData & {
               ? [`**${o.ref}** ${plain(o.text)}`, remarks ? `Remarks: ${remarks}` : ''].filter(Boolean).join('\n')
               : o.text,
             correctiveAction: o.correctiveAction,
-            preventiveAction: o.preventiveAction,
           },
           state: 'bad',
           photoIds: o.photoIds || [],
@@ -1790,15 +1819,11 @@ export async function generateInspectionPdf(data: ReportData & {
       // Deficiency Callout Box (if bad and ordinary vessel inspection)
       let defBoxH = 0;
       let caText = '';
-      let paText = '';
       let caH = 0;
-      let paH = 0;
       if (state === 'bad' && isOrdinaryInspection) {
         caText = response?.correctiveAction ? `**Corrective:** ${response.correctiveAction}` : '**Corrective:** Immediate rectification required';
-        paText = response?.preventiveAction ? `*Preventive:* ${response.preventiveAction}` : '*Preventive:* Review preventive maintenance routine';
         caH = measureRichText(doc.pdf, caText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
-        paH = measureRichText(doc.pdf, paText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
-        defBoxH = Math.max(caH + paH + 13, 22);
+        defBoxH = Math.max(caH + 13, 18);
       }
 
       // Maximum 4 photos per page inside question card; remainder paginated onto continuation pages
@@ -1876,10 +1901,8 @@ export async function generateInspectionPdf(data: ReportData & {
         doc.setTextColor([185, 28, 28]);
         doc.pdf.text('!  DEFICIENCY / ACTION REQUIRED', MARGIN_LEFT + 10, innerY + 5.5);
 
-        let subY = innerY + 10.5;
+        const subY = innerY + 10.5;
         renderRichText(doc.pdf, caText, MARGIN_LEFT + 10, subY, CONTENT_W - 20, { size: 7.8, lineGap: 4, color: TEXT_DARK });
-        subY += caH + 2;
-        renderRichText(doc.pdf, paText, MARGIN_LEFT + 10, subY, CONTENT_W - 20, { size: 7.8, lineGap: 4, color: TEXT_MUTED });
 
         innerY += defBoxH + 4;
       }

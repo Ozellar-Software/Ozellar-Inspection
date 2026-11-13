@@ -51,7 +51,11 @@ export function HomePage() {
 
       for (const i of activeInsp) {
         const a = apprMap.get(i.id);
-        if (i.status === 'pending_tm') {
+        if (i.status === 'pending_vu') {
+          if (user.role === 'admin' || (user.role === 'vesselUser' && (!a?.vuUserId || a.vuUserId === user.id))) {
+            waiting.push({ id: i.id, vesselName: i.vesselName });
+          }
+        } else if (i.status === 'pending_tm') {
           if (user.role === 'admin' || (user.role === 'techManager' && (!a?.tmUserId || a.tmUserId === user.id))) {
             waiting.push({ id: i.id, vesselName: i.vesselName });
           }
@@ -60,7 +64,7 @@ export function HomePage() {
             waiting.push({ id: i.id, vesselName: i.vesselName });
           }
         } else if (i.status === 'returned') {
-          if (user.role === 'admin' || a?.submittedBy === user.id || user.role === 'vesselManager') {
+          if (user.role === 'admin' || a?.submittedBy === user.id || user.role === 'vesselManager' || user.role === 'vesselUser') {
             returned.push({ id: i.id, vesselName: i.vesselName, returnComment: a?.returnComment || '' });
           }
         }
@@ -134,6 +138,7 @@ export function HomePage() {
   // Only roles that can create inspections: admin, techManager, vesselManager
   const canCreateInspection = me.data?.role === 'admin'
     || me.data?.role === 'techManager'
+    || me.data?.role === 'vesselUser'
     || me.data?.role === 'vesselManager';
 
   return (
@@ -246,7 +251,7 @@ export function HomePage() {
               onClick={() => { setFilterOpen(!filterOpen); setVesselFilterOpen(false); }}
             >
               <span className="dropdown-val">
-                {statusFilter === 'all' ? 'All Status' : statusFilter === 'in_progress' ? 'In Progress' : statusFilter === 'pending_tm' ? 'Pending TM' : statusFilter === 'pending_director' ? 'Pending Director' : statusFilter === 'approved' ? 'Approved' : statusFilter === 'returned' ? 'Returned' : 'All Status'}
+                {statusFilter === 'all' ? 'All Status' : statusFilter === 'in_progress' ? 'In Progress' : statusFilter === 'pending_vu' ? 'Pending Vessel' : statusFilter === 'pending_tm' ? 'Pending TM' : statusFilter === 'pending_director' ? 'Pending Director' : statusFilter === 'approved' ? 'Approved' : statusFilter === 'returned' ? 'Returned' : 'All Status'}
               </span>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </button>
@@ -257,6 +262,7 @@ export function HomePage() {
                   {[
                     { val: 'all', label: 'All Status' },
                     { val: 'in_progress', label: 'In Progress' },
+                    { val: 'pending_vu', label: 'Pending Vessel' },
                     { val: 'pending_tm', label: 'Pending TM' },
                     { val: 'pending_director', label: 'Pending Director' },
                     { val: 'approved', label: 'Approved' },
@@ -366,7 +372,7 @@ export function HomePage() {
           <p className="empty-sub">
             {me.data?.role === 'director'
               ? 'Nothing has been submitted for approval yet.'
-              : me.data?.role === 'techManager' || me.data?.role === 'vesselManager'
+              : me.data?.role === 'techManager' || me.data?.role === 'vesselManager' || me.data?.role === 'vesselUser'
               ? 'No inspections for your assigned vessels yet.'
               : 'Start your first vessel inspection.'}
           </p>
@@ -471,6 +477,7 @@ export function HomePage() {
 
 const CARD_ACCENT: Record<InspectionStatus, string> = {
   in_progress: 'accent-warn',
+  pending_vu: 'accent-info',
   pending_tm: 'accent-info',
   pending_director: 'accent-info',
   returned: 'accent-bad',
@@ -479,6 +486,7 @@ const CARD_ACCENT: Record<InspectionStatus, string> = {
 
 const CHIP_CLASS: Record<InspectionStatus, string> = {
   in_progress: 'progress',
+  pending_vu: 'appr-wait',
   pending_tm: 'appr-wait',
   pending_director: 'appr-wait',
   returned: 'appr-returned',

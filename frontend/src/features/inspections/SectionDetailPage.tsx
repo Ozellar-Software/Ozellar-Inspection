@@ -5,9 +5,10 @@ import { useQuery } from '@tanstack/react-query';
 import { can, isEditable, type Photo, type User, type Finding } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
-import { localWrite } from '../../offline/outbox';
+import { localDelete, localWrite } from '../../offline/outbox';
 import { addPhoto, prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon, EditIcon, XIcon, WarningIcon } from '../../icons';
+import { BackIcon, PlusIcon, LockIcon, CameraIcon, CheckIcon, EditIcon, XIcon, WarningIcon, TrashIcon, SlashIcon } from '../../icons';
+import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
 import { QuestionCard } from './QuestionCard';
 import { FindingCard } from './FindingCard';
 import { PhotoStrip } from './PhotoStrip';
@@ -28,6 +29,7 @@ export function SectionDetailPage() {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [remarksValue, setRemarksValue] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   useEffect(() => {
     if (inspectionId) {
@@ -66,7 +68,7 @@ export function SectionDetailPage() {
   // MOCK FALLBACK
   const isMock = !inspection && inspectionId?.startsWith('mock');
   const dispInspection = isMock ? { status: 'in_progress', id: inspectionId } : inspection;
-  const dispSection = isMock ? { id: sectionId, name: 'Sample Section (Demo)', zone: 'Demo Zone', photoOnly: false } : section;
+  const dispSection = isMock ? { id: sectionId, name: sectionId?.includes('photo') ? 'Deck Overview Photos (Demo)' : 'Sample Section (Demo)', zone: sectionId?.includes('photo') ? 'Exterior' : 'Demo Zone', photoOnly: Boolean(sectionId?.includes('photo')), applicable: true } : section;
   const dispAllSections = isMock
     ? [
         dispSection as any,
@@ -146,6 +148,11 @@ export function SectionDetailPage() {
   async function saveRemarks(value: string) {
     if (!sectionId) return;
     await localWrite('inspectionSections', sectionId, { remarks: value });
+  }
+
+  async function handleToggleApplicable(applicable: boolean) {
+    if (!sectionId) return;
+    await localWrite('inspectionSections', sectionId, { applicable });
   }
 
   async function addFinding() {
@@ -242,21 +249,55 @@ export function SectionDetailPage() {
               </button>
             </div>
           ) : (
-            <h1>
-              {dispSection.name}
-              {dispSection.photoOnly && !locked && (
-                <button
-                  type="button"
-                  className="section-rename-btn"
-                  aria-label="Rename this section"
-                  onClick={startRename}
-                >
-                  <EditIcon width={14} height={14} />
-                </button>
-              )}
-            </h1>
+            <h1>{dispSection.name}</h1>
           )}
           <div className="sub">{canonicalZone(dispSection.zone)}</div>
+        </div>
+
+        {/* Right side header actions */}
+        <div className="sec-header-actions">
+          {dispSection.photoOnly && !locked && (
+            <>
+              <button
+                type="button"
+                className="section-rename-btn"
+                aria-label="Rename this section"
+                title="Rename photo section"
+                onClick={startRename}
+              >
+                <EditIcon width={14} height={14} />
+              </button>
+              <button
+                type="button"
+                className="section-delete-btn"
+                aria-label="Delete this photo section"
+                title="Delete photo section"
+                onClick={() => setShowDeleteModal(true)}
+              >
+                <TrashIcon width={14} height={14} />
+              </button>
+            </>
+          )}
+          {!dispSection.photoOnly && !locked && (
+            <button
+              type="button"
+              className={`section-header-na-btn ${dispSection.applicable === false ? 'is-na' : ''}`}
+              title={dispSection.applicable === false ? 'Mark as Applicable' : 'Mark as Not Applicable'}
+              onClick={() => void handleToggleApplicable(dispSection.applicable === false)}
+            >
+              {dispSection.applicable === false ? (
+                <>
+                  <CheckIcon width={13} height={13} />
+                  <span>Mark Applicable</span>
+                </>
+              ) : (
+                <>
+                  <SlashIcon width={12} height={12} />
+                  <span>Mark N/A</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -272,6 +313,35 @@ export function SectionDetailPage() {
           </div>
         )}
 
+        {/* Not Applicable banner for standard checklist sections */}
+        {!dispSection.photoOnly && dispSection.applicable === false && (
+          <div className="na-sec-banner">
+            <span style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: '#f1f5f9', color: '#64748b',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <SlashIcon width={18} height={18} />
+            </span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 13.5, color: '#334155' }}>Section Marked as Not Applicable</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                This section is excluded from the inspection report and completion progress calculations.
+              </div>
+            </div>
+            {!locked && (
+              <button
+                type="button"
+                className="na-sec-restore-btn"
+                onClick={() => void handleToggleApplicable(true)}
+              >
+                <CheckIcon width={13} height={13} />
+                <span>Mark Applicable</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Photo Section banner */}
         {dispSection.photoOnly && (
           <div className="photo-sec-banner">
@@ -282,12 +352,23 @@ export function SectionDetailPage() {
             }}>
               <CameraIcon width={18} height={18} />
             </span>
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 13.5, color: '#0f766e' }}>Photo Section</div>
               <div style={{ fontSize: 12, color: '#115e59' }}>
                 This section is dedicated to photo evidence and observations. No checklist questions apply.
               </div>
             </div>
+            {!locked && (
+              <button
+                type="button"
+                className="photo-sec-delete-banner-btn"
+                onClick={() => setShowDeleteModal(true)}
+                title="Delete this photo section"
+              >
+                <TrashIcon width={13} height={13} />
+                <span>Delete Section</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -504,6 +585,25 @@ export function SectionDetailPage() {
 
         <div style={{ height: 24 }} />
       </div>
+
+      <ConfirmDeleteModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={async () => {
+          if (!sectionId) return;
+          await localDelete('inspectionSections', sectionId);
+          setShowDeleteModal(false);
+          nav(`/inspections/${inspectionId}`);
+        }}
+        title="Delete Photo Section"
+        description={<>Are you sure you want to delete <strong>{dispSection.name}</strong>?</>}
+        subdesc={
+          sectionPhotos.length > 0 || findings.length > 0
+            ? `This will permanently remove ${sectionPhotos.length} photo(s) and ${findings.length} observation(s) in this section.`
+            : 'This section will be removed from this inspection.'
+        }
+        confirmText="Yes, Delete Section"
+      />
     </>
   );
 }

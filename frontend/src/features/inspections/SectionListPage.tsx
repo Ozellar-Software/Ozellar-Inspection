@@ -5,9 +5,10 @@ import { useQuery } from '@tanstack/react-query';
 import { can, isEditable, STATUS_LABELS, type InspectionStatus, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
-import { localWrite } from '../../offline/outbox';
+import { localDelete, localWrite } from '../../offline/outbox';
 import { prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, CameraIcon, PlusIcon, XIcon, EyeIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon, FileIcon, SearchIcon } from '../../icons';
+import { BackIcon, CameraIcon, PlusIcon, XIcon, EyeIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon, FileIcon, SearchIcon, SlashIcon } from '../../icons';
+import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
 import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
 import { DeleteInspectionModal } from './DeleteInspectionModal';
@@ -83,12 +84,14 @@ export function SectionListPage() {
   const [isReportPreviewModalOpen, setIsReportPreviewModalOpen] = useState(false);
   const [previewObservationReport, setPreviewObservationReport] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [sectionToDelete, setSectionToDelete] = useState<{ id: string; name: string; count: number; findingCount: number } | null>(null);
+  const [sectionToToggleNA, setSectionToToggleNA] = useState<{ id: string; name: string; targetApplicable: boolean; doneCount: number; photoCount: number } | null>(null);
   const [recheckedAccess, setRecheckedAccess] = useState(false);
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [zoneFilter, setZoneFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'incomplete' | 'completed'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'incomplete' | 'completed' | 'na'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'normal' | 'photo'>('all');
   const [zoneDropdownOpen, setZoneDropdownOpen] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
@@ -178,6 +181,20 @@ export function SectionListPage() {
   const activePhotos = useMemo(() => photos.filter((p) => !p.deletedAt), [photos]);
   const defectPhotos = useMemo(() => activePhotos.filter((p) => !!p.isDefect), [activePhotos]);
 
+  const findings = useLiveQuery(
+    () => (inspectionId ? db.findings.where('inspectionId').equals(inspectionId).toArray() : []), [inspectionId]) ?? [];
+
+  const findingsBySection = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const f of findings) {
+      if (f.deletedAt) continue;
+      if (f.inspectionSectionId) {
+        map.set(f.inspectionSectionId, (map.get(f.inspectionSectionId) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [findings]);
+
   const photosBySection = useMemo(() => {
     const map = new Map<string, number>();
     for (const p of photos) {
@@ -201,9 +218,31 @@ export function SectionListPage() {
     return map;
   }, [questions, responses]);
 
+  const isMock = !inspection && inspectionId?.startsWith('mock');
+  const mockSections = useMemo(() => isMock ? [
+    { id: 'sec-photo-1', inspectionId, name: 'Deck Overview Photos', zone: 'Exterior', position: 0, photoOnly: true, isCustom: true, applicable: true },
+    { id: 'sec-photo-2', inspectionId, name: 'Cargo Hold 1 & 2 Photos', zone: 'Cargo', position: 1, photoOnly: true, isCustom: true, applicable: true },
+    { id: 'sec-1', inspectionId, name: 'Hull & Deck Structure', zone: 'Exterior', position: 2, photoOnly: false, isCustom: false, applicable: true },
+    { id: 'sec-2', inspectionId, name: 'Main Engine & Generators', zone: 'Machinery', position: 3, photoOnly: false, isCustom: false, applicable: true },
+    { id: 'sec-3', inspectionId, name: 'Bow Thruster & Tunnel', zone: 'Machinery', position: 4, photoOnly: false, isCustom: false, applicable: false },
+    { id: 'sec-4', inspectionId, name: 'Life Saving Appliances', zone: 'Safety', position: 5, photoOnly: false, isCustom: false, applicable: true },
+  ] as any[] : [], [isMock, inspectionId]);
+
+  const displayInspection = isMock
+    ? ({
+        id: inspectionId,
+        vesselName: 'M/V Ozellar Pioneer',
+        status: 'in_progress',
+        vesselType: 'Bulk Carrier',
+        vesselId: 'vessel-mock',
+      } as any)
+    : inspection;
+
+  const effectiveSections = isMock ? mockSections : sections;
+
   const availableZones = useMemo(() => {
     const map = new Map<string, string>(); // lowerKey -> canonical display name
-    for (const s of sections) {
+    for (const s of effectiveSections) {
       if (s.zone && s.zone.trim()) {
         const lower = normalizeZone(s.zone);
         if (!map.has(lower)) {
@@ -212,9 +251,8 @@ export function SectionListPage() {
       }
     }
     return Array.from(map.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [sections]);
+  }, [effectiveSections]);
 
-  const displayInspection = inspection;
   if (!displayInspection) return null;
 
   if (displayInspection.deletedAt) {
@@ -229,7 +267,7 @@ export function SectionListPage() {
     );
   }
 
-  if (me.data && !can(me.data, 'inspection.view', { inspection: displayInspection })) {
+  if (!isMock && me.data && !can(me.data, 'inspection.view', { inspection: displayInspection })) {
     if (!recheckedAccess) return null; // briefly confirming the permission cache isn't just stale
     return (
       <div className="page-wrap" style={{ padding: 32, textAlign: 'center' }}>
@@ -243,17 +281,18 @@ export function SectionListPage() {
   }
 
   // Filter sections: In Light mode, show ONLY photo-only sections
-  const activeSections = light ? sections.filter((s) => s.photoOnly) : sections;
+  const activeSections = light ? effectiveSections.filter((s) => s.photoOnly) : effectiveSections;
 
   let normalBadgeIdx = 0;
   const displaySections = activeSections.map((s) => {
     const p = progressBySection.get(s.id) ?? { done: 0, total: 0 };
     const pCount = photosBySection.get(s.id) ?? 0;
-    const badgeNumber = s.photoOnly ? 0 : ++normalBadgeIdx;
+    const isApplicable = (s as any).applicable !== false;
+    const badgeNumber = s.photoOnly ? 0 : (isApplicable ? ++normalBadgeIdx : 0);
     return {
       id: s.id, name: s.name, zone: s.zone, inspectionId: s.inspectionId,
       position: s.position, done: p.done, total: p.total, photoOnly: s.photoOnly, photoCount: pCount,
-      badgeNumber,
+      badgeNumber, applicable: isApplicable,
     };
   });
 
@@ -274,14 +313,16 @@ export function SectionListPage() {
   const zoneAndStatusNormalSections = normalDisplaySections.filter((s) => {
     if (typeFilter === 'photo') return false;
     if (zoneFilter !== 'all' && normalizeZone(s.zone) !== normalizeZone(zoneFilter)) return false;
-    if (statusFilter === 'incomplete' && s.total > 0 && s.done >= s.total) return false;
-    if (statusFilter === 'completed' && (s.total === 0 || s.done < s.total)) return false;
+    if (statusFilter === 'na') return !s.applicable;
+    if (statusFilter === 'incomplete') return s.applicable && s.total > 0 && s.done < s.total;
+    if (statusFilter === 'completed') return s.applicable && (s.total === 0 || s.done >= s.total);
     return true;
   });
 
   const zoneAndStatusPhotoSections = photoDisplaySections.filter((s) => {
     if (typeFilter === 'normal') return false;
     if (zoneFilter !== 'all' && normalizeZone(s.zone) !== normalizeZone(zoneFilter)) return false;
+    if (statusFilter === 'na') return false;
     if (statusFilter === 'incomplete' && s.photoCount > 0) return false;
     if (statusFilter === 'completed' && s.photoCount === 0) return false;
     return true;
@@ -293,9 +334,10 @@ export function SectionListPage() {
 
   const totalFilteredSections = filteredNormalSections.length + filteredPhotoSections.length;
 
-  // Overall progress (checklist questions)
-  const totalDone  = displaySections.reduce((a, s) => a + s.done, 0);
-  const totalItems = displaySections.reduce((a, s) => a + s.total, 0);
+  // Overall progress (checklist questions - only applicable normal sections count)
+  const applicableNormalSections = normalDisplaySections.filter((s) => s.applicable);
+  const totalDone  = applicableNormalSections.reduce((a, s) => a + s.done, 0);
+  const totalItems = applicableNormalSections.reduce((a, s) => a + s.total, 0);
   const overallPct = totalItems ? Math.round((totalDone / totalItems) * 100) : 0;
 
   // Photo-mode overall progress
@@ -305,6 +347,26 @@ export function SectionListPage() {
   const canAddSection = Boolean(me.data && can(me.data, 'inspection.addSection', { inspection: displayInspection }) && isEditable(displayInspection.status));
   const canDelete = Boolean(me.data && can(me.data, 'inspection.delete', { inspection: displayInspection }));
   const sectionsLocked = !isEditable(displayInspection.status);
+
+  async function handleToggleApplicable(
+    sectionId: string,
+    name: string,
+    targetApplicable: boolean,
+    doneCount: number,
+    photoCount: number,
+  ) {
+    if (!targetApplicable && (doneCount > 0 || photoCount > 0)) {
+      setSectionToToggleNA({
+        id: sectionId,
+        name,
+        targetApplicable: false,
+        doneCount,
+        photoCount,
+      });
+      return;
+    }
+    await localWrite('inspectionSections', sectionId, { applicable: targetApplicable });
+  }
 
   async function handleDownloadInspectionPhotos(filter: 'all' | 'defect') {
     try {
@@ -392,19 +454,22 @@ export function SectionListPage() {
 
   function renderSectionCard(s: (typeof displaySections)[number], badgeNumber: number) {
     const isPhoto = s.photoOnly;
+    const isNA = !isPhoto && !s.applicable;
     const pCount = s.photoCount;
     const hasPhotos = pCount > 0;
     const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
     const fillColor = isPhoto
       ? (hasPhotos ? '#10b981' : '#f59e0b')
-      : progressColor(pct);
+      : isNA
+        ? '#94a3b8'
+        : progressColor(pct);
     const zone = zoneColor(s.zone);
 
     return (
       <div
         key={s.id}
         id={`sec-row-${s.id}`}
-        className="section-card-row"
+        className={`section-card-row ${isNA ? 'is-na' : ''}`}
         onClick={() => {
           if (inspectionId) {
             sessionStorage.setItem(`oz_last_sec_${inspectionId}`, `sec-row-${s.id}`);
@@ -412,16 +477,16 @@ export function SectionListPage() {
           nav(`/inspections/${inspectionId}/sections/${s.id}`);
         }}
       >
-        {/* Section number or camera badge */}
+        {/* Section number or camera badge or N/A badge */}
         <div
           className="sec-card-badge"
           style={{
-            background: isPhoto ? '#f0fdfa' : fillColor + '15',
-            border: `1.5px solid ${isPhoto ? '#2dd4bf' : fillColor + '40'}`,
-            color: isPhoto ? '#0d9488' : fillColor,
+            background: isPhoto ? '#f0fdfa' : isNA ? '#f1f5f9' : fillColor + '15',
+            border: `1.5px solid ${isPhoto ? '#2dd4bf' : isNA ? '#cbd5e1' : fillColor + '40'}`,
+            color: isPhoto ? '#0d9488' : isNA ? '#64748b' : fillColor,
           }}
         >
-          {isPhoto ? <CameraIcon width={18} height={18} /> : badgeNumber}
+          {isPhoto ? <CameraIcon width={18} height={18} /> : isNA ? <SlashIcon width={16} height={16} /> : badgeNumber}
         </div>
 
         <div className="sec-card-content">
@@ -456,7 +521,7 @@ export function SectionListPage() {
                 </button>
               </div>
             ) : (
-              <span className="sec-card-name">{s.name}</span>
+              <span className="sec-card-name" style={{ color: isNA ? '#64748b' : undefined }}>{s.name}</span>
             )}
             {s.zone && (
               <span className="sec-card-zone" style={{ background: zone.bg, color: zone.text }}>
@@ -468,15 +533,10 @@ export function SectionListPage() {
                 PHOTO SECTION
               </span>
             )}
-            {isPhoto && !sectionsLocked && renamingSectionId !== s.id && (
-              <button
-                type="button"
-                className="sec-card-rename-btn"
-                aria-label="Rename this photo section"
-                onClick={(e) => startRenameSection(e, s.id, s.name)}
-              >
-                <EditIcon width={13} height={13} />
-              </button>
+            {isNA && (
+              <span className="sec-card-na-pill">
+                <SlashIcon width={10} height={10} /> NOT APPLICABLE
+              </span>
             )}
           </div>
 
@@ -497,6 +557,15 @@ export function SectionListPage() {
                 {pCount} photo{pCount !== 1 ? 's' : ''}
               </span>
             </div>
+          ) : isNA ? (
+            <div className="sec-card-progress-row">
+              <div className="sec-card-progress-track" style={{ background: '#e2e8f0' }}>
+                <div style={{ height: '100%', width: '100%', background: '#94a3b8', borderRadius: 99, opacity: 0.35 }} />
+              </div>
+              <span className="sec-card-progress-stat" style={{ color: '#64748b', minWidth: 'auto', fontWeight: 600 }}>
+                Not Applicable · Excluded from report
+              </span>
+            </div>
           ) : (
             <div className="sec-card-progress-row">
               <div className="sec-card-progress-track">
@@ -509,10 +578,79 @@ export function SectionListPage() {
           )}
         </div>
 
-        {/* Chevron */}
-        <svg viewBox="0 0 24 24" className="sec-card-arrow" fill="none" stroke="#cbd5e1" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 18l6-6-6-6" />
-        </svg>
+        {/* ── Right-Side Action Controls & Navigation Indicator ── */}
+        <div className="sec-card-right-group" onClick={(e) => e.stopPropagation()}>
+          {isPhoto && !sectionsLocked && renamingSectionId !== s.id && (
+            <div className="sec-card-actions-cluster">
+              <button
+                type="button"
+                className="sec-card-icon-btn rename"
+                aria-label="Rename this photo section"
+                title="Rename photo section"
+                onClick={(e) => startRenameSection(e, s.id, s.name)}
+              >
+                <EditIcon width={13} height={13} />
+              </button>
+              <button
+                type="button"
+                className="sec-card-icon-btn delete"
+                aria-label="Delete this photo section"
+                title="Delete photo section"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSectionToDelete({
+                    id: s.id,
+                    name: s.name,
+                    count: s.photoCount,
+                    findingCount: findingsBySection.get(s.id) || 0,
+                  });
+                }}
+              >
+                <TrashIcon width={13} height={13} />
+              </button>
+            </div>
+          )}
+
+          {!isPhoto && !sectionsLocked && (
+            <button
+              type="button"
+              className={`sec-card-na-btn ${isNA ? 'restore' : ''}`}
+              title={isNA ? 'Mark as applicable for this inspection' : 'Mark as Not Applicable for this inspection'}
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleToggleApplicable(s.id, s.name, isNA, s.done, s.photoCount);
+              }}
+            >
+              {isNA ? (
+                <>
+                  <CheckIcon width={11} height={11} />
+                  <span>Mark Applicable</span>
+                </>
+              ) : (
+                <>
+                  <SlashIcon width={11} height={11} />
+                  <span>Mark N/A</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Chevron */}
+          <div
+            className="sec-card-arrow-wrap"
+            title="Open section"
+            onClick={() => {
+              if (inspectionId) {
+                sessionStorage.setItem(`oz_last_sec_${inspectionId}`, `sec-row-${s.id}`);
+              }
+              nav(`/inspections/${inspectionId}/sections/${s.id}`);
+            }}
+          >
+            <svg viewBox="0 0 24 24" className="sec-card-arrow" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </div>
+        </div>
       </div>
     );
   }
@@ -526,7 +664,7 @@ export function SectionListPage() {
         </button>
         <div className="title-wrap">
           <h1>{displayInspection.vesselName || 'Inspection'}</h1>
-          <div className="sub">{STATUS_LABELS[displayInspection.status]}</div>
+          <div className="sub">{STATUS_LABELS[displayInspection.status as InspectionStatus] || displayInspection.status}</div>
         </div>
         {canDelete && (
           <button
@@ -919,7 +1057,7 @@ export function SectionListPage() {
                   >
                     <span className="sec-dropdown-label">Status:</span>
                     <span className="sec-dropdown-val">
-                      {statusFilter === 'all' ? 'All' : statusFilter === 'incomplete' ? 'Incomplete' : 'Completed'}
+                      {statusFilter === 'all' ? 'All' : statusFilter === 'incomplete' ? 'Incomplete' : statusFilter === 'completed' ? 'Completed' : 'Not Applicable'}
                     </span>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="sec-dropdown-chevron">
                       <polyline points="6 9 12 15 18 9" />
@@ -948,7 +1086,7 @@ export function SectionListPage() {
                       >
                         <span>Incomplete</span>
                         <span className="sec-item-count">
-                          {activeSections.filter((s) => s.photoOnly ? (photosBySection.get(s.id) ?? 0) === 0 : ((progressBySection.get(s.id)?.total ?? 0) === 0 || (progressBySection.get(s.id)?.done ?? 0) < (progressBySection.get(s.id)?.total ?? 0))).length}
+                          {activeSections.filter((s) => s.photoOnly ? (photosBySection.get(s.id) ?? 0) === 0 : ((s as any).applicable !== false && ((progressBySection.get(s.id)?.total ?? 0) === 0 || (progressBySection.get(s.id)?.done ?? 0) < (progressBySection.get(s.id)?.total ?? 0)))).length}
                         </span>
                       </button>
                       <button
@@ -961,7 +1099,20 @@ export function SectionListPage() {
                       >
                         <span>Completed</span>
                         <span className="sec-item-count">
-                          {activeSections.filter((s) => s.photoOnly ? (photosBySection.get(s.id) ?? 0) > 0 : ((progressBySection.get(s.id)?.total ?? 0) > 0 && (progressBySection.get(s.id)?.done ?? 0) >= (progressBySection.get(s.id)?.total ?? 0))).length}
+                          {activeSections.filter((s) => s.photoOnly ? (photosBySection.get(s.id) ?? 0) > 0 : ((s as any).applicable !== false && (progressBySection.get(s.id)?.total ?? 0) > 0 && (progressBySection.get(s.id)?.done ?? 0) >= (progressBySection.get(s.id)?.total ?? 0))).length}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`sec-dropdown-item ${statusFilter === 'na' ? 'active' : ''}`}
+                        onClick={() => {
+                          setStatusFilter('na');
+                          setStatusDropdownOpen(false);
+                        }}
+                      >
+                        <span>Not Applicable</span>
+                        <span className="sec-item-count">
+                          {activeSections.filter((s) => !s.photoOnly && (s as any).applicable === false).length}
                         </span>
                       </button>
                     </div>
@@ -1296,6 +1447,43 @@ export function SectionListPage() {
           onDeleted={() => {
             nav('/');
           }}
+        />
+      )}
+
+      {/* ── Delete Photo Section Confirmation Modal ── */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(sectionToDelete)}
+        onClose={() => setSectionToDelete(null)}
+        onConfirm={async () => {
+          if (!sectionToDelete) return;
+          await localDelete('inspectionSections', sectionToDelete.id);
+          setSectionToDelete(null);
+        }}
+        title="Delete Photo Section"
+        description={<>Are you sure you want to delete <strong>{sectionToDelete?.name}</strong>?</>}
+        subdesc={
+          sectionToDelete && (sectionToDelete.count > 0 || sectionToDelete.findingCount > 0)
+            ? `This will permanently remove ${sectionToDelete.count} photo(s) and ${sectionToDelete.findingCount} observation(s) in this section.`
+            : 'This section will be removed from this inspection.'
+        }
+        confirmText="Yes, Delete Section"
+      />
+
+      {/* ── Mark Section as Not Applicable Confirmation Modal ── */}
+      {sectionToToggleNA && (
+        <ConfirmDeleteModal
+          isOpen={Boolean(sectionToToggleNA)}
+          onClose={() => setSectionToToggleNA(null)}
+          onConfirm={async () => {
+            if (!sectionToToggleNA) return;
+            await localWrite('inspectionSections', sectionToToggleNA.id, { applicable: false });
+            setSectionToToggleNA(null);
+          }}
+          title="Mark Section as Not Applicable"
+          description={<>Mark <strong>{sectionToToggleNA.name}</strong> as Not Applicable for this inspection?</>}
+          subdesc={`This section currently has ${sectionToToggleNA.doneCount} answered question(s) and ${sectionToToggleNA.photoCount} photo(s). Marking it as Not Applicable will exclude this section from the report and completion progress calculations.`}
+          confirmText="Yes, Mark as N/A"
+          cancelText="Cancel"
         />
       )}
     </>

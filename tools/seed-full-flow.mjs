@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const pool = new pg.Pool({
   host: process.env.PG_HOST || 'localhost',
-  database: process.env.PG_DB || 'vir',
+  database: process.env.PG_DB || 'inspection',
   user: process.env.PG_USER || 'postgres',
   password: process.env.PG_PASSWORD || 'sujil123',
   port: Number(process.env.PG_PORT || 5432),
@@ -48,6 +48,12 @@ async function seed() {
         name: 'Sajin Peter',
         designation: 'Marine Superintendent',
         role: 'vesselManager',
+      },
+      {
+        email: 'vesseluser@ozellar.com',
+        name: 'Priya Nair',
+        designation: 'Fleet Manager',
+        role: 'vesselUser',
       },
     ];
 
@@ -104,9 +110,10 @@ async function seed() {
       console.log(`Seeded vessel: ${v.name} -> ${vid}`);
     }
 
-    // 3. Assign vessels to tech@ozellar.com and vessel@ozellar.com
+    // 3. Assign vessels to tech@ozellar.com, vessel@ozellar.com and vesseluser@ozellar.com
     const techUser = userMap.get('tech@ozellar.com');
-    const vesselUser = userMap.get('vessel@ozellar.com');
+    const vesselManagerUser = userMap.get('vessel@ozellar.com');
+    const vesselUserUser = userMap.get('vesseluser@ozellar.com');
     for (const vid of vesselIds) {
       if (techUser) {
         await client.query(
@@ -114,14 +121,20 @@ async function seed() {
           [techUser.id, vid]
         );
       }
-      if (vesselUser) {
+      if (vesselManagerUser) {
         await client.query(
           `insert into user_vessels (user_id, vessel_id) values ($1, $2) on conflict do nothing`,
-          [vesselUser.id, vid]
+          [vesselManagerUser.id, vid]
+        );
+      }
+      if (vesselUserUser) {
+        await client.query(
+          `insert into user_vessels (user_id, vessel_id) values ($1, $2) on conflict do nothing`,
+          [vesselUserUser.id, vid]
         );
       }
     }
-    console.log(`Assigned vessels to Tech Manager and Vessel Manager.`);
+    console.log(`Assigned vessels to Tech Manager, Vessel Manager and Vessel User.`);
 
     // 4. Seed Template Sections & Questions from default-checklist.json
     const checklistPath = join(__dirname, '..', 'db', 'seed', 'default-checklist.json');
@@ -152,11 +165,12 @@ async function seed() {
 
     await client.query('commit');
     console.log('\n--- Full Flow Seeding Complete! ---');
-    console.log('Credentials for all 4 test accounts: password is "password123"');
+    console.log('Credentials for all 5 test accounts: password is "password123"');
     console.log('1. Admin:           admin@ozellar.com');
     console.log('2. Tech Manager:    tech@ozellar.com');
     console.log('3. Director:        director@ozellar.com');
     console.log('4. Vessel Manager:  vessel@ozellar.com');
+    console.log('5. Vessel User:     vesseluser@ozellar.com');
   } catch (err) {
     await client.query('rollback');
     console.error('Seeding error:', err);
@@ -168,3 +182,4 @@ async function seed() {
 }
 
 seed();
+

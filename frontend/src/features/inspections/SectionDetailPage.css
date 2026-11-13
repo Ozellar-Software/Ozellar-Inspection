@@ -74,6 +74,42 @@
   gap: 10px;
 }
 
+.sec-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.sec-header-actions .section-rename-btn,
+.sec-header-actions .section-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sec-header-actions .section-rename-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.sec-header-actions .section-delete-btn:hover {
+  color: #dc2626;
+  border-color: #fca5a5;
+  background: #fee2e2;
+}
+
 .section-rename-btn {
   display: inline-flex;
   align-items: center;
@@ -93,6 +129,115 @@
 .section-rename-btn:hover {
   color: var(--accent);
   background: var(--accent-tint);
+}
+
+.section-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: middle;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.section-delete-btn:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
+.photo-sec-delete-banner-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #ffffff;
+  border: 1px solid #fca5a5;
+  color: #dc2626;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.photo-sec-delete-banner-btn:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+
+.section-header-na-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.section-header-na-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.section-header-na-btn.is-na {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.section-header-na-btn.is-na:hover {
+  background: #fee2e2;
+}
+
+.na-sec-banner {
+  margin: 0 16px 14px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+}
+
+.na-sec-restore-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #0d9488;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.na-sec-restore-btn:hover {
+  background: #0f766e;
 }
 
 .section-rename-group {
@@ -256,8 +401,41 @@
 
   .photo-sec-banner {
     margin: 0 0 10px !important;
-    padding: 10px 14px;
+    padding: 12px 14px;
     border-radius: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .photo-sec-delete-banner-btn {
+    width: 100%;
+    justify-content: center;
+    margin-top: 4px;
+    margin-left: 0;
+  }
+
+  .na-sec-banner {
+    margin: 0 0 10px !important;
+    padding: 12px 14px;
+    border-radius: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .na-sec-restore-btn {
+    width: 100%;
+    justify-content: center;
+    margin-top: 4px;
+    margin-left: 0;
+  }
+
+  .sec-header-actions {
+    gap: 6px;
+  }
+
+  .section-header-na-btn {
+    padding: 4px 8px;
+    font-size: 11px;
   }
 
   .section-photos-card {

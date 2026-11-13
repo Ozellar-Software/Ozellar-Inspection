@@ -270,7 +270,7 @@ export function NewInspectionPage() {
               {displayVessels.length === 0 ? (
                 <div className="empty-state" style={{ margin: 0 }}>
                   <p>
-                    {me.data?.role === 'techManager' || me.data?.role === 'vesselManager'
+                    {me.data?.role === 'techManager' || me.data?.role === 'vesselManager' || me.data?.role === 'vesselUser'
                       ? 'No vessels assigned to you. Ask an Admin to assign vessels to your account.'
                       : 'No vessels yet. Ask an Admin to add one under Vessels.'}
                   </p>

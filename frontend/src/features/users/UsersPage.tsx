@@ -10,10 +10,11 @@ import { BackIcon, PlusIcon, SearchIcon, UsersIcon, CheckIcon, KeyIcon, ShipIcon
 import './UsersPage.css'; // Use exactly the same theme file
 
 interface UserRow extends User { hasPassword: boolean }
-const ROLES: Role[] = ['admin', 'director', 'techManager', 'vesselManager'];
+const ROLES: Role[] = ['admin', 'director', 'techManager', 'vesselUser', 'vesselManager'];
 
 const ROLE_THEMES: Record<Role, { key: string; avatarClass: string; tagClass: string }> = {
   vesselManager: { key: 'general', avatarClass: 'avatar-teal', tagClass: 'tag-teal' },
+  vesselUser:    { key: 'general', avatarClass: 'avatar-teal', tagClass: 'tag-teal' },
   techManager:   { key: 'container', avatarClass: 'avatar-indigo', tagClass: 'tag-indigo' },
   director:      { key: 'bulk', avatarClass: 'avatar-amber', tagClass: 'tag-amber' },
   admin:         { key: 'tanker', avatarClass: 'avatar-rose', tagClass: 'tag-rose' },
@@ -257,7 +258,7 @@ export function UsersPage() {
                           <span className="user-sub-item">{u.designation}</span>
                         </>
                       )}
-                      {(u.role === 'techManager' || u.role === 'vesselManager') && (() => {
+                      {(u.role === 'techManager' || u.role === 'vesselManager' || u.role === 'vesselUser') && (() => {
                         const assignedCount = (u.vesselIds ?? []).filter((id) =>
                           validVesselIds.has(id.toLowerCase().trim())
                         ).length;

@@ -105,7 +105,7 @@ export function UserMenu({ me }: { me: User }) {
                 </>
               )}
 
-              {(me.role === 'techManager' || me.role === 'vesselManager') && (
+              {(me.role === 'techManager' || me.role === 'vesselManager' || me.role === 'vesselUser') && (
                 <>
                   <div className="dropdown-section-title">My Fleet</div>
                   <button className="premium-dropdown-item" onClick={() => { setOpen(false); nav('/vessels'); }}>

@@ -1,6 +1,6 @@
 /** Core types shared by the web app and the API. Mirrors db/schema.sql (camelCase). */
 
-export type Role = 'admin' | 'director' | 'techManager' | 'vesselManager';
+export type Role = 'admin' | 'director' | 'techManager' | 'vesselUser' | 'vesselManager';
 
 export interface User {
   id: string;
@@ -21,12 +21,13 @@ export type ReportCategory = 'inspection' | 'pre_purchase' | 'take_over';
 
 export type InspectionStatus =
   | 'in_progress'
+  | 'pending_vu'
   | 'pending_tm'
   | 'pending_director'
   | 'approved'
   | 'returned';
 
-export type ApprovalStage = 'tm' | 'director' | 'approved' | 'returned';
+export type ApprovalStage = 'vu' | 'tm' | 'director' | 'approved' | 'returned';
 
 export interface Vessel {
   id: string;
@@ -97,6 +98,8 @@ export interface InspectionSection {
   isCustom: boolean;
   vesselTypes?: string[];
   remarks?: string;
+  applicable?: boolean;
+  deletedAt?: string | null;
 }
 
 export interface InspectionQuestion {
@@ -141,7 +144,7 @@ export interface Response {
   answer: 'yes' | 'no' | null;
   remarks: string;
   correctiveAction: string;
-  preventiveAction: string;
+  preventiveAction?: string;
   updatedAt: string;
 }
 
@@ -152,7 +155,7 @@ export interface Finding {
   text: string;
   answer: 'yes' | 'no' | null;
   correctiveAction: string;
-  preventiveAction: string;
+  preventiveAction?: string;
   position: number;
 }
 
@@ -178,6 +181,7 @@ export interface Approval {
   stage: ApprovalStage;
   submittedBy: string;         // user id
   submittedAt: string;
+  vuUserId: string | null;
   tmUserId: string | null;
   directorUserId: string | null;
   approvedAt?: string | null;
