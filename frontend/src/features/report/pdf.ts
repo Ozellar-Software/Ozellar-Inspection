@@ -636,14 +636,14 @@ export async function generateInspectionPdf(data: ReportData & {
         x1 = x0 + (availW - (w1 + gapX + w2)) / 2;
       }
     } else {
-      if (forceEqualColumns) {
-        const colW = (availW - gapX) / 2;
-        w1 = colW;
-        imgH = Math.min(maxImgH, Math.max(56, (colW - ROW_FRAME) / 1.33));
-        x1 = centerSingle ? x0 + (availW - colW) / 2 : x0;
+      if (a1 < 1.0) {
+        // Portrait photo: taller card, minimum 68mm width, so it doesn't look like a skinny strip
+        imgH = Math.min(maxImgH, 82);
+        w1 = Math.max(68, Math.min(availW * 0.5, imgH * a1 + ROW_FRAME));
+        x1 = centerSingle ? x0 + (availW - w1) / 2 : x0;
       } else {
-        // A lone photo: frame hugs the photo (at most half the row wide), so there are no grey bands either.
-        const maxW = (availW - gapX) / 2;
+        // Landscape photo: prominent half-width card
+        const maxW = Math.min((availW - gapX) / 2, 105);
         imgH = Math.min(maxImgH, (maxW - ROW_FRAME) / a1);
         w1 = imgH * a1 + ROW_FRAME;
         if (centerSingle) x1 = x0 + (availW - w1) / 2;
@@ -667,15 +667,26 @@ export async function generateInspectionPdf(data: ReportData & {
     const gapY = 6;
     const pageLimit = PAGE_H - BOTTOM_MARGIN;
 
-    // Check if this section contains mixed orientations (both landscape and portrait)
-    const sectionImgs = await Promise.all(photoIds.map((id) => loadImage(id)));
-    const sectionAspects = sectionImgs.map(aspectOf);
-    const hasLandscape = sectionAspects.some((a) => a >= 1.05);
-    const hasPortrait = sectionAspects.some((a) => a < 0.95);
-    const isMixedSection = hasLandscape && hasPortrait;
+    interface GridItem {
+      id: string;
+      originalIndex: number;
+      img: LoadedImage | null;
+      photoDoc: any;
+      aspect: number;
+    }
 
-    const rowAt = (pIdx: number) =>
-      buildPhotoRow(photoIds[pIdx], photoIds[pIdx + 1], CONTENT_W, MARGIN_LEFT, gapX, false, ROW_MAX_IMG_H, isMixedSection);
+    const items: GridItem[] = await Promise.all(
+      photoIds.map(async (id, idx) => {
+        const [img, photoDoc] = await Promise.all([loadImage(id), getPhotoDoc(id)]);
+        return {
+          id,
+          originalIndex: idx,
+          img,
+          photoDoc,
+          aspect: aspectOf(img),
+        };
+      })
+    );
 
     const continuedHeader = () => {
       doc.newPage();
@@ -686,10 +697,13 @@ export async function generateInspectionPdf(data: ReportData & {
       doc.y += 7;
     };
 
-    let row = await rowAt(0);
+    const hasLandscape = items.some((it) => it.aspect >= 1.0);
+    const hasPortrait = items.some((it) => it.aspect < 1.0);
+    const isMixedSection = hasLandscape && hasPortrait;
 
-    // Grid title travels with the first row: if they don't fit together, both move to the next page.
-    if (doc.y + 7 + row.pH > pageLimit) {
+    // Check if initial content fits on the page
+    const estFirstRowH = 75;
+    if (doc.y + 7 + estFirstRowH > pageLimit) {
       doc.newPage();
       doc.sectionHeader(sectionName, zone || 'Visual Evidence', `${photoIds.length} Photographs`);
     }
@@ -698,16 +712,75 @@ export async function generateInspectionPdf(data: ReportData & {
     doc.pdf.text(gridTitle, MARGIN_LEFT, doc.y + 4);
     doc.y += 7;
 
-    for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
-      if (pIdx > 0) row = await rowAt(pIdx);
-      if (doc.y + row.pH > pageLimit) continuedHeader();
-
-      const curRowY = doc.y;
-      drawPhotoCard(row.x1, curRowY, row.w1, row.pH, row.img1, row.photoDoc1, `PHOTO #${pIdx + 1}`);
-      if (row.idB) {
-        drawPhotoCard(row.x1 + row.w1 + gapX, curRowY, row.w2, row.pH, row.img2, row.photoDoc2, `PHOTO #${pIdx + 2}`);
+    if (!isMixedSection) {
+      // Uniform section (e.g. all landscape): render sequentially in standard 2-column layout
+      for (let pIdx = 0; pIdx < photoIds.length; pIdx += 2) {
+        const row = await buildPhotoRow(photoIds[pIdx], photoIds[pIdx + 1], CONTENT_W, MARGIN_LEFT, gapX, false, ROW_MAX_IMG_H, false);
+        if (doc.y + row.pH > pageLimit) continuedHeader();
+        const curRowY = doc.y;
+        drawPhotoCard(row.x1, curRowY, row.w1, row.pH, row.img1, row.photoDoc1, `PHOTO #${pIdx + 1}`);
+        if (row.idB) {
+          drawPhotoCard(row.x1 + row.w1 + gapX, curRowY, row.w2, row.pH, row.img2, row.photoDoc2, `PHOTO #${pIdx + 2}`);
+        }
+        doc.y += row.pH + gapY;
       }
-      doc.y += row.pH + gapY;
+      return;
+    }
+
+    // Mixed section: Group by orientation (Landscapes together, Portraits together)
+    // Every landscape photo is paired with a landscape photo (fills 4:3 box 100%)
+    // Every portrait photo is paired in fitted portrait cards (fills tall card 100%, zero empty sidebars)
+    const landscapes = items.filter((it) => it.aspect >= 1.0);
+    const portraits = items.filter((it) => it.aspect < 1.0);
+
+    // 1. Render Landscapes (2 per row across full width)
+    const colW = (CONTENT_W - gapX) / 2;
+    const lImgH = Math.min(ROW_MAX_IMG_H, Math.max(56, (colW - ROW_FRAME) / 1.33));
+    for (let i = 0; i < landscapes.length; i += 2) {
+      const itA = landscapes[i];
+      const itB = i + 1 < landscapes.length ? landscapes[i + 1] : undefined;
+      const b1 = bannerFor(itA.photoDoc, colW);
+      const b2 = itB ? bannerFor(itB.photoDoc, colW) : 0;
+      const rowPH = lImgH + 0.8 + Math.max(b1, b2) + ROW_PAD;
+
+      if (doc.y + rowPH > pageLimit) continuedHeader();
+      const curY = doc.y;
+
+      if (itB) {
+        drawPhotoCard(MARGIN_LEFT, curY, colW, rowPH, itA.img, itA.photoDoc, `PHOTO #${itA.originalIndex + 1}`);
+        drawPhotoCard(MARGIN_LEFT + colW + gapX, curY, colW, rowPH, itB.img, itB.photoDoc, `PHOTO #${itB.originalIndex + 1}`);
+      } else {
+        // Single landscape in last row
+        drawPhotoCard(MARGIN_LEFT, curY, colW, rowPH, itA.img, itA.photoDoc, `PHOTO #${itA.originalIndex + 1}`);
+      }
+      doc.y += rowPH + gapY;
+    }
+
+    // 2. Render Portraits (fitted portrait cards, tall framing, zero blank sides)
+    const pCardW = 75; // handsome width for portrait cards
+    const pImgH = 88; // tall height so vertical subjects are large and detailed
+    for (let i = 0; i < portraits.length; i += 2) {
+      const itA = portraits[i];
+      const itB = i + 1 < portraits.length ? portraits[i + 1] : undefined;
+      const b1 = bannerFor(itA.photoDoc, pCardW);
+      const b2 = itB ? bannerFor(itB.photoDoc, pCardW) : 0;
+      const rowPH = pImgH + 0.8 + Math.max(b1, b2) + ROW_PAD;
+
+      if (doc.y + rowPH > pageLimit) continuedHeader();
+      const curY = doc.y;
+
+      if (itB) {
+        // Two portrait cards centered on the page
+        const totalW = 2 * pCardW + gapX;
+        const startX = MARGIN_LEFT + (CONTENT_W - totalW) / 2;
+        drawPhotoCard(startX, curY, pCardW, rowPH, itA.img, itA.photoDoc, `PHOTO #${itA.originalIndex + 1}`);
+        drawPhotoCard(startX + pCardW + gapX, curY, pCardW, rowPH, itB.img, itB.photoDoc, `PHOTO #${itB.originalIndex + 1}`);
+      } else {
+        // Single portrait card centered
+        const startX = MARGIN_LEFT + (CONTENT_W - pCardW) / 2;
+        drawPhotoCard(startX, curY, pCardW, rowPH, itA.img, itA.photoDoc, `PHOTO #${itA.originalIndex + 1}`);
+      }
+      doc.y += rowPH + gapY;
     }
   };
   const renderPhotoGrid8 = renderPhotoGrid4; // Backwards-compatible alias
