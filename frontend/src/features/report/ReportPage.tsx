@@ -571,10 +571,6 @@ export function ReportPage() {
       setError('Please add at least one photo in photo sections before submitting.');
       return;
     }
-    if (!summary.trim() || !conclusion.trim()) {
-      setError('Please provide both Summary and Conclusion before submitting.');
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
@@ -749,10 +745,6 @@ export function ReportPage() {
     const photoCountInSecs = stats.photoSectionPhotosCount ?? stats.photoCount;
     if (reportMode === 'photo' && photoCountInSecs === 0) {
       setError('Please add at least one photo in photo sections before submitting a Photo Section Report.');
-      return;
-    }
-    if (!summary.trim() || !conclusion.trim()) {
-      setError('Please add both a Summary and Conclusion before submitting.');
       return;
     }
     if (!approverId) {
@@ -1200,17 +1192,6 @@ export function ReportPage() {
                 : 'As Administrator, you have direct approval authority over Pre Purchase surveys. Approving will permanently lock and finalize this report.'}
             </div>
 
-            {(!summary.trim() || !conclusion.trim()) && (
-              <div style={{
-                background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
-                padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#b45309',
-                display: 'flex', alignItems: 'center', gap: 8
-              }}>
-                <WarningIcon width={16} height={16} style={{ flexShrink: 0 }} />
-                <span>Summary and Conclusion should be completed before approval.</span>
-              </div>
-            )}
-
             <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
               Approval note / comment (optional)
             </div>
@@ -1304,16 +1285,6 @@ export function ReportPage() {
                 : 'Once your photo sections, summary, and conclusion are ready, submit this Pre Purchase survey directly to the Administrator for review.'}
             </div>
 
-            {(!summary.trim() || !conclusion.trim()) && (
-              <div style={{
-                background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
-                padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#b45309',
-                display: 'flex', alignItems: 'center', gap: 8
-              }}>
-                <WarningIcon width={16} height={16} style={{ flexShrink: 0 }} />
-                <span>Summary and Conclusion must be completed before submitting.</span>
-              </div>
-            )}
             {(stats.photoSectionPhotosCount ?? stats.photoCount) === 0 && (
               <div style={{
                 background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
@@ -1343,7 +1314,7 @@ export function ReportPage() {
 
             {(() => {
               const photoSecCount = stats.photoSectionPhotosCount ?? stats.photoCount;
-              const canClick = !busy && summary.trim() && conclusion.trim() && photoSecCount > 0;
+              const canClick = !busy && photoSecCount > 0;
               return (
                 <button
                   disabled={!canClick}
@@ -1405,16 +1376,6 @@ export function ReportPage() {
             </div>
 
             {/* Validation alerts */}
-            {(!summary.trim() || !conclusion.trim()) && (
-              <div style={{
-                background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
-                padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#b45309',
-                display: 'flex', alignItems: 'center', gap: 8
-              }}>
-                <WarningIcon width={16} height={16} style={{ flexShrink: 0 }} />
-                <span>Summary and Conclusion must be filled before submitting.</span>
-              </div>
-            )}
             {reportMode === 'photo' && (stats.photoSectionPhotosCount ?? stats.photoCount) === 0 && (
               <div style={{
                 background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 10,
@@ -1485,7 +1446,7 @@ export function ReportPage() {
             />
             {(() => {
               const photoSecCount = stats.photoSectionPhotosCount ?? stats.photoCount;
-              const canClickSubmit = !busy && summary.trim() && conclusion.trim() && approverId && (reportMode === 'photo' ? photoSecCount > 0 : stats.pending === 0);
+              const canClickSubmit = !busy && approverId && (reportMode === 'photo' ? photoSecCount > 0 : stats.pending === 0);
               return (
                 <button
                   disabled={!canClickSubmit}
