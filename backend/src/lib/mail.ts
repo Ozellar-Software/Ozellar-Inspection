@@ -91,6 +91,10 @@ ${text}
             Open Inspection Report
           </a>
         </div>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px; font-size: 12.5px; color: #334155; line-height: 1.5;">
+          <strong style="color: #0f172a;">Portal URL:</strong> <a href="${appUrl}" style="color: #0f766e; text-decoration: underline;">${appUrl}</a><br/>
+          <strong style="color: #0f172a;">How to Log In:</strong> Sign in with your registered corporate email and password. Use <em>"Forgot Password"</em> on the login screen if you need to reset your credentials.
+        </div>
         <div style="border-top: 1px solid #e2e8f0; padding-top: 14px; font-size: 12px; color: #94a3b8;">
           This is an automated notification from the Ozellar Marine Inspection Platform.<br/>
           Direct link: <a href="${reportLink}" style="color: #0f766e;">${reportLink}</a>

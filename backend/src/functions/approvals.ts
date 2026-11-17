@@ -244,10 +244,53 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
               </p>
             </div>
           ` : ''}
-          <div style="text-align: center; margin: 28px 0 16px;">
-            <a href="${fullReportUrl}" style="display: inline-block; background-color: #105935; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 14px; font-weight: 700; border-radius: 6px;">
+
+          <!-- Action Button -->
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${fullReportUrl}" style="display: inline-block; background-color: #105935; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 14px; font-weight: 700; border-radius: 6px; box-shadow: 0 2px 4px rgba(16, 89, 53, 0.2);">
               Open Inspection Report &rarr;
             </a>
+          </div>
+
+          <!-- Portal URL, Login & Action Flow Guide -->
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 18px 20px; margin-top: 24px;">
+            <p style="margin: 0 0 12px; color: #0f172a; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;">
+              Portal Login &amp; Action Flow Guide
+            </p>
+            <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size: 13px; color: #334155; line-height: 1.5;">
+              <tr>
+                <td width="26" valign="top" style="padding-bottom: 10px;">
+                  <span style="display: inline-block; width: 18px; height: 18px; line-height: 18px; background-color: #105935; color: #ffffff; text-align: center; border-radius: 50%; font-size: 10px; font-weight: 700;">1</span>
+                </td>
+                <td style="padding-bottom: 10px;">
+                  <strong>Portal URL:</strong> <a href="${appUrl}" style="color: #105935; font-weight: 600; text-decoration: underline;">${appUrl}</a> (or click the button above).
+                </td>
+              </tr>
+              <tr>
+                <td width="26" valign="top" style="padding-bottom: 10px;">
+                  <span style="display: inline-block; width: 18px; height: 18px; line-height: 18px; background-color: #105935; color: #ffffff; text-align: center; border-radius: 50%; font-size: 10px; font-weight: 700;">2</span>
+                </td>
+                <td style="padding-bottom: 10px;">
+                  <strong>How to Log In:</strong> Sign in with your registered email and password. If you forgot your password, click <em>"Forgot Password"</em> on the login screen.
+                </td>
+              </tr>
+              <tr>
+                <td width="26" valign="top" style="padding-bottom: 10px;">
+                  <span style="display: inline-block; width: 18px; height: 18px; line-height: 18px; background-color: #105935; color: #ffffff; text-align: center; border-radius: 50%; font-size: 10px; font-weight: 700;">3</span>
+                </td>
+                <td style="padding-bottom: 10px;">
+                  <strong>Review Inspection:</strong> Review the vessel particulars, checklist questions, visual evidence photographs, and observations.
+                </td>
+              </tr>
+              <tr>
+                <td width="26" valign="top">
+                  <span style="display: inline-block; width: 18px; height: 18px; line-height: 18px; background-color: #105935; color: #ffffff; text-align: center; border-radius: 50%; font-size: 10px; font-weight: 700;">4</span>
+                </td>
+                <td>
+                  <strong>Action &amp; Sign-Off:</strong> Click <strong>Approve</strong> to forward to the next role / finalize, or <strong>Reject</strong> with feedback for necessary revisions.
+                </td>
+              </tr>
+            </table>
           </div>
         </td>
       </tr>
