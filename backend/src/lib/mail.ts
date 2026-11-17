@@ -18,9 +18,9 @@ let cachedCredential: TokenCredential | null = null;
 function getCredential(): TokenCredential {
   if (cachedCredential) return cachedCredential;
 
-  const tenantId = process.env.AZURE_TENANT_ID || process.env.ENTRA_TENANT_ID;
-  const clientId = process.env.AZURE_CLIENT_ID;
-  const clientSecret = process.env.AZURE_CLIENT_SECRET;
+  const tenantId = (process.env.AZURE_TENANT_ID || process.env.ENTRA_TENANT_ID || '').replace(/^["']|["']$/g, '').trim();
+  const clientId = (process.env.AZURE_CLIENT_ID || '').replace(/^["']|["']$/g, '').trim();
+  const clientSecret = (process.env.AZURE_CLIENT_SECRET || '').replace(/^["']|["']$/g, '').trim();
 
   if (tenantId && clientId && clientSecret) {
     cachedCredential = new ClientSecretCredential(tenantId, clientId, clientSecret);
@@ -45,15 +45,15 @@ export async function sendMail(
   options?: { html?: string; link?: string }
 ): Promise<boolean> {
   const recipients = Array.from(new Set(to.map((e) => (e || '').trim()).filter(Boolean)));
-  const sender = (process.env.MAIL_SENDER || process.env.GRAPH_MAIL_SENDER || 'techdevops@ozellar.com').trim();
-  const appUrl = process.env.APP_URL ?? 'https://inspection.ozellar.com';
+  const sender = (process.env.MAIL_SENDER || process.env.GRAPH_MAIL_SENDER || 'techdevops@ozellar.com').replace(/^["']|["']$/g, '').trim();
+  const appUrl = (process.env.APP_URL ?? 'https://inspection.ozellar.com').replace(/^["']|["']$/g, '').trim();
 
   if (!sender || recipients.length === 0) {
     console.log('[GraphMail] Skipped: no sender or recipients specified.');
     return false;
   }
 
-  const isGraphActive = (process.env.GRAPH_MAIL_ACTIVE ?? 'false').toLowerCase() === 'true';
+  const isGraphActive = (process.env.GRAPH_MAIL_ACTIVE ?? 'false').replace(/^["']|["']$/g, '').trim().toLowerCase() === 'true';
 
   if (!isGraphActive) {
     console.log(
