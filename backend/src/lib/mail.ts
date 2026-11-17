@@ -77,7 +77,7 @@ export async function sendMail(
     const formattedHtml = options?.html || `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1e293b; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
         <div style="border-bottom: 2px solid #0f766e; padding-bottom: 12px; margin-bottom: 20px;">
-          <h2 style="margin: 0; color: #0f766e; font-size: 20px; font-weight: 700;">Ozellar Fleet Systems</h2>
+          <h2 style="margin: 0; color: #0f766e; font-size: 20px; font-weight: 700;">Ozellar Vessel Inspection</h2>
           <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">Official Statutory & Technical Inspection Notification</p>
         </div>
         <div style="font-size: 15px; font-weight: 600; color: #0f172a; margin-bottom: 16px;">

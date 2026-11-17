@@ -191,7 +191,7 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
           <table width="100%" border="0" cellpadding="0" cellspacing="0">
             <tr>
               <td>
-                <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 700;">OZELLAR FLEET SYSTEMS</h1>
+                <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 700;">Ozellar Vessel Inspection</h1>
                 <p style="margin: 4px 0 0; color: #a7f3d0; font-size: 13px;">Official Statutory & Technical Inspection Notification</p>
               </td>
               <td align="right">
