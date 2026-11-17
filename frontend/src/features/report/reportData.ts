@@ -80,6 +80,9 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
   const photosByResponse = new Map<string, string[]>();
   const photosByFinding = new Map<string, string[]>();
   const photosBySection = new Map<string, string[]>();
+  const defectPhotosBySection = new Map<string, string[]>();
+  const allPhotosBySection = new Map<string, string[]>();
+
   for (const p of photos) {
     if (p.findingId) {
       (photosByFinding.get(p.findingId) ?? photosByFinding.set(p.findingId, []).get(p.findingId)!).push(p.id);
@@ -87,9 +90,15 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
     if (p.responseId) {
       (photosByResponse.get(p.responseId) ?? photosByResponse.set(p.responseId, []).get(p.responseId)!).push(p.id);
     }
-    // Defect / observation photos appear ONLY in observations, removed from section overview photos
-    if (p.inspectionSectionId && !p.responseId && !p.findingId && !p.isDefect) {
-      (photosBySection.get(p.inspectionSectionId) ?? photosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
+    if (p.inspectionSectionId) {
+      (allPhotosBySection.get(p.inspectionSectionId) ?? allPhotosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
+      if (p.isDefect) {
+        (defectPhotosBySection.get(p.inspectionSectionId) ?? defectPhotosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
+      }
+      // Section overview photos: include if not explicitly bound to a finding or response
+      if (!p.responseId && !p.findingId) {
+        (photosBySection.get(p.inspectionSectionId) ?? photosBySection.set(p.inspectionSectionId, []).get(p.inspectionSectionId)!).push(p.id);
+      }
     }
   }
 
@@ -117,6 +126,7 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
   };
   const observations: Observation[] = [];
   const sections: SectionReport[] = [];
+  const usedObservationPhotoIds = new Set<string>();
 
   for (const section of allSections) {
     const sectionQuestions = questions.filter((q) => q.inspectionSectionId === section.id).sort((a, b) => a.position - b.position);
@@ -131,8 +141,28 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
         else if (state === 'bad') stats.observations++;
         else if (state === 'na') stats.na++;
         else stats.pending++;
-        const qPhotoIds = photosByResponse.get(response?.id ?? '') ?? [];
+
+        let qPhotoIds = [...(photosByResponse.get(response?.id ?? '') ?? [])];
         if (state === 'bad') {
+          // If question observation has no photos, link unassigned defect photo from section
+          if (qPhotoIds.length === 0 && section.id) {
+            const secDefects = (defectPhotosBySection.get(section.id) ?? []).filter((pid) => !usedObservationPhotoIds.has(pid));
+            if (secDefects.length > 0) {
+              const picked = secDefects.shift()!;
+              qPhotoIds.push(picked);
+              usedObservationPhotoIds.add(picked);
+            } else {
+              const secAll = (allPhotosBySection.get(section.id) ?? []).filter((pid) => !usedObservationPhotoIds.has(pid));
+              if (secAll.length > 0) {
+                const picked = secAll.shift()!;
+                qPhotoIds.push(picked);
+                usedObservationPhotoIds.add(picked);
+              }
+            }
+          } else {
+            qPhotoIds.forEach((pid) => usedObservationPhotoIds.add(pid));
+          }
+
           observations.push({
             id: response?.id,
             kind: 'question', sectionId: section.id, sectionName: section.name, ref: question.ref, text: question.text,
@@ -146,8 +176,26 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
 
     const fRows = sectionFindings.map((finding, fIdx) => {
       const state = findingState(finding);
-      const fPhotoIds = photosByFinding.get(finding.id) ?? [];
+      let fPhotoIds = [...(photosByFinding.get(finding.id) ?? [])];
       if (state === 'bad') {
+        if (fPhotoIds.length === 0 && section.id) {
+          const secDefects = (defectPhotosBySection.get(section.id) ?? []).filter((pid) => !usedObservationPhotoIds.has(pid));
+          if (secDefects.length > 0) {
+            const picked = secDefects.shift()!;
+            fPhotoIds.push(picked);
+            usedObservationPhotoIds.add(picked);
+          } else {
+            const secAll = (allPhotosBySection.get(section.id) ?? []).filter((pid) => !usedObservationPhotoIds.has(pid));
+            if (secAll.length > 0) {
+              const picked = secAll.shift()!;
+              fPhotoIds.push(picked);
+              usedObservationPhotoIds.add(picked);
+            }
+          }
+        } else {
+          fPhotoIds.forEach((pid) => usedObservationPhotoIds.add(pid));
+        }
+
         observations.push({
           id: finding.id,
           kind: 'finding', sectionId: section.id, sectionName: section.name, ref: `Observation ${fIdx + 1}`, text: finding.text,
@@ -159,6 +207,27 @@ export async function loadReportData(inspectionId: string): Promise<ReportData |
     });
 
     sections.push({ section, questions: qRows, findings: fRows, sectionPhotoIds: photosBySection.get(section.id) ?? [] });
+  }
+
+  // Include any unassigned defect photos in the inspection as extra observations
+  for (const p of photos) {
+    if (p.isDefect && !usedObservationPhotoIds.has(p.id) && p.inspectionSectionId) {
+      const sec = allSections.find((s) => s.id === p.inspectionSectionId);
+      const secName = sec?.name || 'Vessel Section';
+      const desc = p.description?.trim() || `Observation documented in ${secName}`;
+      observations.push({
+        id: p.id,
+        kind: 'finding',
+        sectionId: p.inspectionSectionId,
+        sectionName: secName,
+        ref: 'Observation',
+        text: desc,
+        remarks: '',
+        correctiveAction: '',
+        photoIds: [p.id],
+      });
+      usedObservationPhotoIds.add(p.id);
+    }
   }
 
   stats.observations = observations.length;

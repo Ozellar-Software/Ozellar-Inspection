@@ -687,11 +687,11 @@ export function PhotoStrip({
       const isDef = target === 'finding' ? true : item.isDefect;
       const id = await addPhoto({
         file: item.file,
-        target: isDef ? 'finding' : target,
+        target: target,
         inspectionId,
         inspectionSectionId,
-        responseId: isDef ? undefined : responseId,
-        findingId: findingId || undefined,
+        responseId: target === 'question' ? responseId : undefined,
+        findingId: target === 'finding' ? (findingId || undefined) : undefined,
         position: position++,
         isDefect: isDef,
         description: item.description ?? '',

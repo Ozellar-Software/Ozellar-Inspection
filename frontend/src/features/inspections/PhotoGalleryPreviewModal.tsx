@@ -267,6 +267,7 @@ export function PhotoGalleryPreviewModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [viewerPhotoIndex, setViewerPhotoIndex] = useState<number | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   // Confirmation popup state for changing defect photo with observation details
   const [confirmReq, setConfirmReq] = useState<DefectConfirmRequest | null>(null);
@@ -336,6 +337,89 @@ export function PhotoGalleryPreviewModal({
       return true;
     });
   }, [activePhotos, activeFilter, selectedSection, searchQuery, sectionMap, remarksMap]);
+
+  interface PhotoSectionGroup {
+    sectionId: string;
+    sectionName: string;
+    zone?: string;
+    photos: SyncedPhoto[];
+  }
+
+  const groupedSections = useMemo<PhotoSectionGroup[]>(() => {
+    if (filteredPhotos.length === 0) return [];
+
+    const map = new Map<string, SyncedPhoto[]>();
+    for (const p of filteredPhotos) {
+      const secId = p.inspectionSectionId || 'unassigned';
+      let list = map.get(secId);
+      if (!list) {
+        list = [];
+        map.set(secId, list);
+      }
+      list.push(p);
+    }
+
+    const groups: PhotoSectionGroup[] = [];
+    const seenSectionIds = new Set<string>();
+
+    // 1. Maintain section order from allSections
+    for (const sec of allSections) {
+      const secPhotos = map.get(sec.id);
+      if (secPhotos && secPhotos.length > 0) {
+        groups.push({
+          sectionId: sec.id,
+          sectionName: sec.name,
+          zone: sec.zone,
+          photos: secPhotos,
+        });
+        seenSectionIds.add(sec.id);
+      }
+    }
+
+    // 2. Additional sections present on photos not in allSections
+    for (const [secId, secPhotos] of map.entries()) {
+      if (secId !== 'unassigned' && !seenSectionIds.has(secId) && secPhotos.length > 0) {
+        groups.push({
+          sectionId: secId,
+          sectionName: sectionMap.get(secId) || 'Additional Section',
+          photos: secPhotos,
+        });
+        seenSectionIds.add(secId);
+      }
+    }
+
+    // 3. Unassigned photos at the end
+    const unassignedPhotos = map.get('unassigned');
+    if (unassignedPhotos && unassignedPhotos.length > 0) {
+      groups.push({
+        sectionId: 'unassigned',
+        sectionName: 'General / Unassigned Photos',
+        photos: unassignedPhotos,
+      });
+    }
+
+    return groups;
+  }, [filteredPhotos, allSections, sectionMap]);
+
+  const toggleSectionCollapse = (secId: string) => {
+    setCollapsedSections((prev) => ({ ...prev, [secId]: !prev[secId] }));
+  };
+
+  const allCollapsed =
+    groupedSections.length > 0 &&
+    groupedSections.every((g) => !!collapsedSections[g.sectionId]);
+
+  const handleToggleAllSections = () => {
+    if (allCollapsed) {
+      setCollapsedSections({});
+    } else {
+      const next: Record<string, boolean> = {};
+      for (const g of groupedSections) {
+        next[g.sectionId] = true;
+      }
+      setCollapsedSections(next);
+    }
+  };
 
   // Load photo URLs
   useEffect(() => {
@@ -578,117 +662,224 @@ export function PhotoGalleryPreviewModal({
               )}
             </div>
           ) : (
-            <div className="pgpm-grid">
-              {filteredPhotos.map((photo, pIdx) => {
-                const url = urls[photo.id];
-                const isDef = !!photo.isDefect;
-                const secName = photo.inspectionSectionId
-                  ? sectionMap.get(photo.inspectionSectionId) || 'Section Survey'
-                  : 'Survey Photo';
-                const curRemark = remarksMap[photo.id] ?? (photo.description ? String(photo.description) : '');
+            <div className="pgpm-groups-container">
+              {/* Overview Bar with Section Count & Collapse/Expand All */}
+              <div className="pgpm-overview-bar">
+                <div className="pgpm-overview-left">
+                  <span className="pgpm-overview-text">
+                    Grouped across <strong>{groupedSections.length}</strong> {groupedSections.length === 1 ? 'section' : 'sections'}
+                    {' • '}
+                    <strong>{filteredPhotos.length}</strong> total evidence photo{filteredPhotos.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                {groupedSections.length > 1 && (
+                  <div className="pgpm-overview-right">
+                    <button
+                      type="button"
+                      className="pgpm-toggle-all-btn"
+                      onClick={handleToggleAllSections}
+                    >
+                      <ChevronDownIcon
+                        className={`pgpm-sec-chevron ${allCollapsed ? 'collapsed' : ''}`}
+                        style={{ width: 13, height: 13 }}
+                      />
+                      <span>{allCollapsed ? 'Expand All Sections' : 'Collapse All Sections'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {groupedSections.map((group, sIdx) => {
+                const groupDefectCount = group.photos.filter((p) => !!p.isDefect).length;
+                const isCollapsed = !!collapsedSections[group.sectionId];
 
                 return (
-                  <div
-                    key={photo.id}
-                    className={`pgpm-card ${isDef ? 'is-defect' : ''}`}
-                    onClick={() => {
-                      const fullIdx = activePhotos.findIndex((p) => p.id === photo.id);
-                      setViewerPhotoIndex(fullIdx >= 0 ? fullIdx : pIdx);
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        const fullIdx = activePhotos.findIndex((p) => p.id === photo.id);
-                        setViewerPhotoIndex(fullIdx >= 0 ? fullIdx : pIdx);
-                      }
-                    }}
-                  >
-                    <div className="pgpm-thumb-wrap">
-                      {url ? (
-                        <img
-                          src={url}
-                          alt={curRemark || `Inspection photo ${pIdx + 1}`}
-                          className="pgpm-img"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="pgpm-img-placeholder">
-                          <span className="pgpm-placeholder-spinner" />
-                          <span>Loading photo…</span>
+                  <div key={group.sectionId} className="pgpm-section-card">
+                    {/* Integrated Section Card Header Bar */}
+                    <div
+                      className={`pgpm-section-card-header ${isCollapsed ? 'is-collapsed' : ''}`}
+                      onClick={() => toggleSectionCollapse(group.sectionId)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          toggleSectionCollapse(group.sectionId);
+                        }
+                      }}
+                      aria-expanded={!isCollapsed}
+                    >
+                      <div className="pgpm-section-header-left">
+                        <span className="pgpm-sec-num-badge">
+                          {String(sIdx + 1).padStart(2, '0')}
+                        </span>
+                        <div className="pgpm-sec-title-wrap">
+                          <h3 className="pgpm-sec-title">{group.sectionName}</h3>
+                          {group.zone && (
+                            <span className="pgpm-sec-zone-pill">{group.zone}</span>
+                          )}
                         </div>
-                      )}
+                      </div>
 
-                      {/* Top Badges */}
-                      <div className="pgpm-card-top">
-                        <span className="pgpm-seq-badge">#{pIdx + 1}</span>
+                      <div className="pgpm-section-header-right">
+                        <div className="pgpm-section-badges">
+                          {groupDefectCount > 0 && (
+                            <span
+                              className="pgpm-sec-defect-badge"
+                              title={`${groupDefectCount} defect photo${groupDefectCount > 1 ? 's' : ''} in this section`}
+                            >
+                              <WarningIcon style={{ width: 12, height: 12 }} />
+                              <span>
+                                {groupDefectCount} {groupDefectCount === 1 ? 'Defect' : 'Defects'}
+                              </span>
+                            </span>
+                          )}
+                          <span className="pgpm-sec-photo-badge">
+                            <CameraIcon style={{ width: 12, height: 12 }} />
+                            <span>
+                              {group.photos.length} {group.photos.length === 1 ? 'Photo' : 'Photos'}
+                            </span>
+                          </span>
+                        </div>
 
-                        {/* Interactive Defect/Normal Toggle Button */}
                         <button
                           type="button"
-                          className={`pgpm-status-pill-btn ${isDef ? 'defect' : 'normal'}`}
+                          className="pgpm-sec-collapse-btn"
+                          aria-label={isCollapsed ? `Expand ${group.sectionName}` : `Collapse ${group.sectionName}`}
                           onClick={(e) => {
-                            e.preventDefault();
                             e.stopPropagation();
-                            void handleToggleDefect(photo);
+                            toggleSectionCollapse(group.sectionId);
                           }}
-                          disabled={locked}
-                          title={
-                            isDef
-                              ? 'Defect flagged • Click to change to Normal/Satisfactory'
-                              : 'Satisfactory • Click to flag as Defect Observation'
-                          }
+                          title={isCollapsed ? 'Expand section' : 'Collapse section'}
                         >
-                          {isDef ? (
-                            <>
-                              <WarningIcon style={{ width: 10, height: 10 }} />
-                              <span>DEFECT</span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckIcon style={{ width: 10, height: 10 }} />
-                              <span>NORMAL</span>
-                            </>
-                          )}
+                          <ChevronDownIcon
+                            className={`pgpm-sec-chevron ${isCollapsed ? 'collapsed' : ''}`}
+                            style={{ width: 15, height: 15 }}
+                          />
                         </button>
                       </div>
-
-                      {/* Hover Overlay */}
-                      <div className="pgpm-card-overlay">
-                        <span className="pgpm-inspect-pill">
-                          <EyeIcon width={14} height={14} />
-                          Inspect Photo
-                        </span>
-                      </div>
                     </div>
 
-                    {/* Bottom Caption, Section & Inline Remark Input */}
-                    <div className="pgpm-card-caption">
-                      <div className="pgpm-card-caption-header">
-                        <span className="pgpm-card-section">{secName}</span>
-                      </div>
+                    {!isCollapsed && (
+                      <div className="pgpm-section-card-body">
+                        <div className="pgpm-grid">
+                          {group.photos.map((photo, pIdx) => {
+                            const url = urls[photo.id];
+                            const isDef = !!photo.isDefect;
+                            const curRemark = remarksMap[photo.id] ?? (photo.description ? String(photo.description) : '');
 
-                      {/* Inline Editable Remark Input */}
-                      <div
-                        className="pgpm-inline-remark-wrap"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="text"
-                          className={`pgpm-inline-remark-input ${isDef ? 'defect' : ''}`}
-                          placeholder={isDef ? 'Add defect remarks…' : 'Add survey remarks…'}
-                          defaultValue={curRemark}
-                          disabled={locked}
-                          onBlur={(e) => void handleSaveRemark(photo.id, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.currentTarget.blur();
-                            }
-                          }}
-                        />
+                            return (
+                              <div
+                                key={photo.id}
+                                className={`pgpm-card ${isDef ? 'is-defect' : ''}`}
+                                onClick={() => {
+                                  const fullIdx = activePhotos.findIndex((p) => p.id === photo.id);
+                                  setViewerPhotoIndex(fullIdx >= 0 ? fullIdx : 0);
+                                }}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    const fullIdx = activePhotos.findIndex((p) => p.id === photo.id);
+                                    setViewerPhotoIndex(fullIdx >= 0 ? fullIdx : 0);
+                                  }
+                                }}
+                              >
+                                <div className="pgpm-thumb-wrap">
+                                  {url ? (
+                                    <img
+                                      src={url}
+                                      alt={curRemark || `Evidence photo ${pIdx + 1}`}
+                                      className="pgpm-img"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <div className="pgpm-img-placeholder">
+                                      <span className="pgpm-placeholder-spinner" />
+                                      <span>Loading photo…</span>
+                                    </div>
+                                  )}
+
+                                  {/* Top Badges */}
+                                  <div className="pgpm-card-top">
+                                    <span className="pgpm-seq-badge">#{pIdx + 1}</span>
+
+                                    {/* Interactive Defect/Normal Toggle Button */}
+                                    <button
+                                      type="button"
+                                      className={`pgpm-status-pill-btn ${isDef ? 'defect' : 'normal'}`}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        void handleToggleDefect(photo);
+                                      }}
+                                      disabled={locked}
+                                      title={
+                                        isDef
+                                          ? 'Defect flagged • Click to change to Normal/Satisfactory'
+                                          : 'Satisfactory • Click to flag as Defect Observation'
+                                      }
+                                    >
+                                      {isDef ? (
+                                        <>
+                                          <WarningIcon style={{ width: 10, height: 10 }} />
+                                          <span>DEFECT</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <CheckIcon style={{ width: 10, height: 10 }} />
+                                          <span>NORMAL</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+
+                                  {/* Hover Overlay */}
+                                  <div className="pgpm-card-overlay">
+                                    <span className="pgpm-inspect-pill">
+                                      <EyeIcon width={14} height={14} />
+                                      Inspect Photo
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Bottom Caption, Evidence Tag & Inline Remark Input */}
+                                <div className="pgpm-card-caption">
+                                  <div className="pgpm-card-caption-header">
+                                    <span className="pgpm-card-evidence-tag">Evidence #{pIdx + 1}</span>
+                                    {isDef ? (
+                                      <span className="pgpm-card-defect-label">Observation Evidence</span>
+                                    ) : (
+                                      <span className="pgpm-card-normal-label">Satisfactory</span>
+                                    )}
+                                  </div>
+
+                                  {/* Inline Editable Remark Input */}
+                                  <div
+                                    className="pgpm-inline-remark-wrap"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => e.stopPropagation()}
+                                  >
+                                    <input
+                                      type="text"
+                                      className={`pgpm-inline-remark-input ${isDef ? 'defect' : ''}`}
+                                      placeholder={isDef ? 'Add defect remarks…' : 'Add survey remarks…'}
+                                      defaultValue={curRemark}
+                                      disabled={locked}
+                                      onBlur={(e) => void handleSaveRemark(photo.id, e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.currentTarget.blur();
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 );
               })}

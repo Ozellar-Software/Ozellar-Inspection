@@ -350,20 +350,20 @@ class Doc {
   }
 
   statusBadge(state: 'ok' | 'bad' | 'na' | 'pending', x: number, y: number): { w: number; h: number } {
-    const config = state === 'ok' ? { ...STATUS_OK, label: 'SATISFACTORY', icon: '[+]' }
-      : state === 'bad' ? { ...STATUS_BAD, label: 'OBSERVATION', icon: '!' }
-      : state === 'na' ? { ...STATUS_NA, label: 'N / A', icon: '-' }
-      : { ...STATUS_PENDING, label: 'PENDING', icon: '[?]' };
+    const config = state === 'ok' ? { ...STATUS_OK, label: 'SATISFACTORY' }
+      : state === 'bad' ? { ...STATUS_BAD, label: 'OBSERVATION' }
+      : state === 'na' ? { ...STATUS_NA, label: 'NOT APPLICABLE' }
+      : { ...STATUS_PENDING, label: 'PENDING' };
 
-    const text = `${config.icon}  ${config.label}`;
-    this.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+    const text = config.label;
+    this.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
     const textW = this.pdf.getTextWidth(text);
     const w = textW + 8;
-    const h = 5.8;
+    const h = 5.6;
 
-    this.roundedBox(x, y, w, h, config.bg, config.border, 1.5);
+    this.roundedBox(x, y, w, h, config.bg, config.border, 1.2);
     this.setTextColor(config.text);
-    this.pdf.text(text, x + 4, y + 4.1);
+    this.pdf.text(text, x + 4, y + 3.9);
 
     return { w, h };
   }
@@ -743,7 +743,7 @@ export async function generateInspectionPdf(data: ReportData & {
     const BODY_TOP = 17;
     const textBlockH = blocks.length ? BODY_TOP + bodyH + (rows.length ? 2 : 0) : 12;
 
-    const statusStr = fRow.state === 'ok' ? '[+]  SATISFACTORY' : fRow.state === 'bad' ? '!  OBSERVATION' : fRow.state === 'na' ? '-  N / A' : '[?]  PENDING';
+    const statusStr = fRow.state === 'ok' ? 'SATISFACTORY' : fRow.state === 'bad' ? 'OBSERVATION' : fRow.state === 'na' ? 'NOT APPLICABLE' : 'PENDING';
     const drawTag = (y: number, text: string) => {
       doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
       const tagW = doc.pdf.getTextWidth(text) + 8;
@@ -851,10 +851,21 @@ export async function generateInspectionPdf(data: ReportData & {
     ? 'PRE PURCHASE PHOTOGRAPHIC CONDITION SURVEY'
     : (isPhotoOnly ? 'PHOTOGRAPHIC SURVEY & CONDITION AUDIT RECORD' : 'OFFICIAL STATUTORY & TECHNICAL AUDIT RECORD');
 
-  // ─── Observation list table (Appendix of the full report; the opening list of the Observation Report) ───
-  const renderAppendix = (startNewPage: boolean, title: string) => {
+  // ─── Observation list table (Appendix with Photos, Section, and Remarks) ───
+  const renderAppendix = async (startNewPage: boolean, title: string) => {
     const plain = (v?: string | null) => stripHtmlToPlainText(v ?? '');
-    const appendixItems = neededObservations.map((o) => {
+
+    const seenIds = new Set<string>();
+    const appendixItems: Array<{
+      section: string;
+      desc: string;
+      correctiveAction?: string;
+      photoId?: string;
+      photoCount: number;
+    }> = [];
+
+    for (const o of neededObservations) {
+      if (o.id) seenIds.add(o.id);
       let desc: string;
       if (o.kind === 'finding') {
         const descs = (o.photoIds || []).map((pid) => plain(photoMap.get(pid)?.description));
@@ -862,18 +873,44 @@ export async function generateInspectionPdf(data: ReportData & {
         if (!desc) desc = descs.find(Boolean) ?? '';
       } else {
         const remarks = plain(o.remarks);
-        desc = [plain(o.text), remarks ? `Remarks: ${remarks}` : ''].filter(Boolean).join(' — ');
+        desc = [plain(o.text), remarks ? `Remarks: ${remarks}` : ''].filter(Boolean).join(' - ');
       }
-      return { section: o.sectionName, ref: o.ref, desc };
-    });
+      appendixItems.push({
+        section: o.sectionName,
+        desc,
+        correctiveAction: plain(o.correctiveAction),
+        photoId: o.photoIds && o.photoIds.length > 0 ? o.photoIds[0] : undefined,
+        photoCount: o.photoIds?.length || 0,
+      });
+    }
+
+    for (const s of neededSections) {
+      for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
+        const f = s.findings[fIdx];
+        if (f.finding.id && seenIds.has(f.finding.id)) continue;
+        const fPhotoIds = f.photoIds || [];
+        const descs = fPhotoIds.map((pid) => plain(photoMap.get(pid)?.description));
+        let desc = isDefaultObservationText(f.finding.text, s.section.name, descs) ? '' : plain(f.finding.text);
+        if (!desc) desc = descs.find(Boolean) ?? '';
+        if (!desc && fPhotoIds.length === 0) continue;
+        if (f.finding.id) seenIds.add(f.finding.id);
+        appendixItems.push({
+          section: s.section.name,
+          desc,
+          correctiveAction: plain(f.finding.correctiveAction),
+          photoId: fPhotoIds.length > 0 ? fPhotoIds[0] : undefined,
+          photoCount: fPhotoIds.length,
+        });
+      }
+    }
 
     if (startNewPage) doc.newPage();
     doc.sectionHeader(title, 'List of Observations', `${appendixItems.length} Observation${appendixItems.length === 1 ? '' : 's'}`);
 
     const colNo = 10;
-    const colSection = 48;
-    const colRef = 28;
-    const colDesc = CONTENT_W - colNo - colSection - colRef;
+    const colSection = 38;
+    const colPhoto = 32;
+    const colDesc = CONTENT_W - colNo - colSection - colPhoto; // 102mm
 
     const drawTableHead = () => {
       doc.setFill(NAVY);
@@ -882,8 +919,8 @@ export async function generateInspectionPdf(data: ReportData & {
       doc.setTextColor(WHITE);
       doc.pdf.text('NO.', MARGIN_LEFT + 3, doc.y + 5.3);
       doc.pdf.text('SECTION', MARGIN_LEFT + colNo + 2, doc.y + 5.3);
-      doc.pdf.text('REFERENCE', MARGIN_LEFT + colNo + colSection + 2, doc.y + 5.3);
-      doc.pdf.text('OBSERVATION / REMARKS', MARGIN_LEFT + colNo + colSection + colRef + 2, doc.y + 5.3);
+      doc.pdf.text('PHOTO', MARGIN_LEFT + colNo + colSection + 2, doc.y + 5.3);
+      doc.pdf.text('OBSERVATION / REMARKS', MARGIN_LEFT + colNo + colSection + colPhoto + 2, doc.y + 5.3);
       doc.y += 9;
     };
 
@@ -896,13 +933,20 @@ export async function generateInspectionPdf(data: ReportData & {
     }
 
     drawTableHead();
-    appendixItems.forEach((it, i) => {
+
+    const usedThumbnailIds = new Set<string>();
+
+    for (let i = 0; i < appendixItems.length; i++) {
+      const it = appendixItems[i];
       doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
       const secLines = doc.pdf.splitTextToSize(it.section || '-', colSection - 4) as string[];
-      const refLines = doc.pdf.splitTextToSize(it.ref || '-', colRef - 4) as string[];
-      const descLines = doc.pdf.splitTextToSize(it.desc || '-', colDesc - 4) as string[];
-      const lineCount = Math.max(secLines.length, refLines.length, descLines.length);
-      const rowH = lineCount * 4 + 4;
+      const descLines = doc.pdf.splitTextToSize(it.desc || 'No remarks logged.', colDesc - 6) as string[];
+      const caLines = it.correctiveAction ? (doc.pdf.splitTextToSize(`Action: ${it.correctiveAction}`, colDesc - 6) as string[]) : [];
+
+      const secH = secLines.length * 4.0 + 4;
+      const textH = descLines.length * 4.0 + (caLines.length ? caLines.length * 3.8 + 2 : 0) + 4;
+      const photoBoxH = 20;
+      const rowH = Math.max(photoBoxH + 4, secH, textH, 24);
 
       if (doc.y + rowH > PAGE_H - BOTTOM_MARGIN) {
         doc.newPage();
@@ -910,25 +954,91 @@ export async function generateInspectionPdf(data: ReportData & {
       }
 
       if (i % 2 === 0) {
-        doc.setFill(SLATE_BG);
+        doc.setFill([248, 250, 252]);
         doc.pdf.rect(MARGIN_LEFT, doc.y, CONTENT_W, rowH, 'F');
       }
-      const ty = doc.y + 5;
+
+      const rowTopY = doc.y;
+      const textBaselineY = rowTopY + 5.0;
+
+      // Col 1: NO.
       doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
       doc.setTextColor(NAVY);
-      doc.pdf.text(String(i + 1), MARGIN_LEFT + 3, ty);
+      doc.pdf.text(String(i + 1), MARGIN_LEFT + 3, textBaselineY);
+
+      // Col 2: SECTION
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
+      doc.setTextColor(NAVY);
+      doc.pdf.text(secLines, MARGIN_LEFT + colNo + 2, textBaselineY);
+
+      // Col 3: PHOTO (Visible, crisp thumbnail)
+      const photoColX = MARGIN_LEFT + colNo + colSection;
+      const photoW = 28;
+      const photoH = 20;
+      const photoX = photoColX + (colPhoto - photoW) / 2;
+      const photoY = rowTopY + (rowH - photoH) / 2;
+
+      let targetPhotoId = it.photoId;
+      if (!targetPhotoId && it.section) {
+        const normSec = it.section.trim().toLowerCase();
+        const matchedSec = neededSections.find((s) => s.section.name.trim().toLowerCase() === normSec);
+        const secId = matchedSec?.section.id;
+        if (secId) {
+          const secDefect = (data.photos || []).find((p) => p.inspectionSectionId === secId && p.isDefect && !usedThumbnailIds.has(p.id));
+          if (secDefect) {
+            targetPhotoId = secDefect.id;
+          } else {
+            const anySecPhoto = (data.photos || []).find((p) => p.inspectionSectionId === secId && !usedThumbnailIds.has(p.id));
+            if (anySecPhoto) {
+              targetPhotoId = anySecPhoto.id;
+            }
+          }
+        }
+      }
+      if (targetPhotoId) usedThumbnailIds.add(targetPhotoId);
+
+      const img = targetPhotoId ? await loadImage(targetPhotoId) : null;
+      if (img) {
+        const croppedUrl = await cropToCover(img, photoW, photoH);
+        doc.pdf.addImage(croppedUrl, 'JPEG', photoX, photoY, photoW, photoH);
+        doc.setDraw([203, 213, 225], 0.25);
+        doc.pdf.roundedRect(photoX, photoY, photoW, photoH, 1.0, 1.0, 'S');
+
+        if (it.photoCount > 1) {
+          const pillText = `+${it.photoCount - 1}`;
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(6.0);
+          const badgeW = doc.pdf.getTextWidth(pillText) + 3;
+          doc.setFill([15, 23, 42]);
+          doc.pdf.roundedRect(photoX + photoW - badgeW - 1, photoY + photoH - 4.5, badgeW, 3.5, 0.8, 0.8, 'F');
+          doc.setTextColor(WHITE);
+          doc.pdf.text(pillText, photoX + photoW - badgeW + 0.5, photoY + photoH - 1.8);
+        }
+      } else {
+        doc.roundedBox(photoX, photoY, photoW, photoH, [241, 245, 249], [226, 232, 240], 1.0);
+        doc.pdf.setFont('helvetica', 'italic').setFontSize(6.5);
+        doc.setTextColor(TEXT_MUTED);
+        doc.pdf.text('No Photo', photoX + photoW / 2, photoY + photoH / 2 + 1, { align: 'center' });
+      }
+
+      // Col 4: OBSERVATION / REMARKS & CORRECTIVE ACTION
+      const descColX = MARGIN_LEFT + colNo + colSection + colPhoto + 2;
       doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
       doc.setTextColor(TEXT_DARK);
-      doc.pdf.text(secLines, MARGIN_LEFT + colNo + 2, ty);
-      doc.setTextColor(TEXT_MUTED);
-      doc.pdf.text(refLines, MARGIN_LEFT + colNo + colSection + 2, ty);
-      doc.setTextColor(it.desc ? TEXT_BODY : TEXT_FAINT);
-      doc.pdf.text(descLines, MARGIN_LEFT + colNo + colSection + colRef + 2, ty);
+      doc.pdf.text(descLines, descColX, textBaselineY);
 
-      doc.setDraw(BORDER, 0.2);
-      doc.pdf.line(MARGIN_LEFT, doc.y + rowH, MARGIN_LEFT + CONTENT_W, doc.y + rowH);
-      doc.y += rowH;
-    });
+      if (caLines.length > 0) {
+        const caStartY = textBaselineY + descLines.length * 4.0 + 1.0;
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
+        doc.setTextColor([185, 28, 28]);
+        doc.pdf.text(caLines, descColX, caStartY);
+      }
+
+      // Hairline row separator
+      doc.setDraw([226, 232, 240], 0.25);
+      doc.pdf.line(MARGIN_LEFT, rowTopY + rowH, MARGIN_LEFT + CONTENT_W, rowTopY + rowH);
+
+      doc.y = rowTopY + rowH;
+    }
   };
 
   // ─── Observation Report: title block, the observation list, then every observation with its remarks and photos ───
@@ -983,7 +1093,7 @@ export async function generateInspectionPdf(data: ReportData & {
     });
     doc.y = stripY + stripH + 8;
 
-    renderAppendix(false, 'Observation Summary');
+    await renderAppendix(false, 'Observation Summary');
 
     // Every observation, grouped by section, with its remarks and photos
     const plain = (v?: string | null) => stripHtmlToPlainText(v ?? '');
@@ -1095,7 +1205,7 @@ export async function generateInspectionPdf(data: ReportData & {
     doc.pdf.text(vMetaStr || `IMO: ${inspection.imo || 'NOT SPECIFIED'}`, heroX + 8, heroY + 44);
   }
 
-  // ── AUDIT & SURVEY PARTICULARS (Executive Maritime Table) ──────────────────
+  // ── Inspection Details (Executive Maritime Table) ──────────────────
   const detailsY = heroY + heroH + 8;
   const detailsH = 52.5;
   doc.roundedBox(MARGIN_LEFT, detailsY, CONTENT_W, detailsH, WHITE, BORDER, 2.5);
@@ -1106,7 +1216,7 @@ export async function generateInspectionPdf(data: ReportData & {
   doc.pdf.rect(MARGIN_LEFT, detailsY, CONTENT_W, hdrH, 'F');
   doc.pdf.setFont('helvetica', 'bold').setFontSize(8);
   doc.setTextColor(WHITE);
-  doc.pdf.text('AUDIT & SURVEY PARTICULARS', MARGIN_LEFT + 6, detailsY + 5.8);
+  doc.pdf.text('Inspection Details', MARGIN_LEFT + 6, detailsY + 5.8);
 
 
   // 4 Rows of Data Grid
@@ -1554,23 +1664,19 @@ export async function generateInspectionPdf(data: ReportData & {
   // ═══════════════════════════════════════════════════════════════════════════
   doc.newPage();
 
-  // 1. Bespoke Architectural Executive Summary Header
-  const execHdrY = doc.y;
+  // 1. Bespoke Architectural Executive Summary Header (starts right at top of page)
+  const execHdrY = 16;
+  doc.y = execHdrY;
 
-  // Top category kicker
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-  doc.setTextColor(TEAL); // Accent Orange #F26B24
-  doc.pdf.text('SURVEY AUDIT SYNTHESIS & EXECUTIVE APPRAISAL', MARGIN_LEFT, execHdrY + 3.5);
-
-  // Main Title
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(13.5);
+  // Main Title (kicker SURVEY AUDIT SYNTHESIS & EXECUTIVE APPRAISAL removed as requested)
+  doc.pdf.setFont('helvetica', 'bold').setFontSize(13);
   doc.setTextColor(NAVY);
-  doc.pdf.text('2. Executive Summary', MARGIN_LEFT, execHdrY + 8.5);
+  doc.pdf.text('2. Executive Summary', MARGIN_LEFT, execHdrY + 4.5);
 
   // Subtitle
   doc.pdf.setFont('helvetica', 'normal').setFontSize(7.0);
   doc.setTextColor(TEXT_MUTED);
-  doc.pdf.text('Key Condition Findings, Operational Status & Attending Surveyor Appraisal', MARGIN_LEFT, execHdrY + 12.2);
+  doc.pdf.text('Key Condition Findings, Operational Status & Attending Surveyor Appraisal', MARGIN_LEFT, execHdrY + 8.5);
 
   // Audit Reference Pill
   const refStr = `VIR-${inspection.id.slice(0, 8).toUpperCase()}`;
@@ -1579,17 +1685,17 @@ export async function generateInspectionPdf(data: ReportData & {
   const refX = PAGE_W - MARGIN_RIGHT - refPillW;
   doc.setFill(SLATE_BG);
   doc.setDraw(BORDER);
-  doc.pdf.roundedRect(refX, execHdrY + 1.5, refPillW, 6.2, 1.2, 1.2, 'FD');
+  doc.pdf.roundedRect(refX, execHdrY + 1.2, refPillW, 5.8, 1.2, 1.2, 'FD');
   doc.setTextColor(NAVY);
-  doc.pdf.text(refStr, refX + refPillW / 2, execHdrY + 5.7, { align: 'center' });
+  doc.pdf.text(refStr, refX + refPillW / 2, execHdrY + 5.2, { align: 'center' });
 
   // Dual-tone Accent Hairline Divider
   doc.setFill(TEAL);
-  doc.pdf.rect(MARGIN_LEFT, execHdrY + 14.5, 26, 1.2, 'F');
+  doc.pdf.rect(MARGIN_LEFT, execHdrY + 10.8, 26, 1.2, 'F');
   doc.setDraw(BORDER_DARK, 0.25);
-  doc.pdf.line(MARGIN_LEFT + 26, execHdrY + 15.1, PAGE_W - MARGIN_RIGHT, execHdrY + 15.1);
+  doc.pdf.line(MARGIN_LEFT + 26, execHdrY + 11.4, PAGE_W - MARGIN_RIGHT, execHdrY + 11.4);
 
-  doc.y = execHdrY + 18.5;
+  doc.y = execHdrY + 14.5;
 
   // 2. Executive Survey Dispatch Metadata Ribbon
   const metaY = doc.y;
@@ -1694,7 +1800,19 @@ export async function generateInspectionPdf(data: ReportData & {
     const isPhotoSection = !!s.section.photoOnly;
 
     if (isPhotoSection) {
-      doc.newPage();
+      if (sIdx === 0) {
+        if (doc.y + 35 > PAGE_H - BOTTOM_MARGIN) {
+          doc.newPage();
+        } else {
+          doc.y += 3;
+        }
+      } else {
+        if (doc.y + 40 > PAGE_H - BOTTOM_MARGIN) {
+          doc.newPage();
+        } else {
+          doc.y += 5;
+        }
+      }
       doc.sectionHeader(
         `Section ${sIdx + 1}: ${s.section.name}`,
         s.section.zone || 'General',
@@ -1740,17 +1858,23 @@ export async function generateInspectionPdf(data: ReportData & {
         doc.y += 18;
       }
 
-      // Section Findings if any
-      if (s.findings.length > 0) {
-        for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
-          await renderObservationCard(s.findings[fIdx], fIdx, s, sIdx, false);
-        }
-      }
 
       continue;
     }
 
-    doc.newPage();
+    if (sIdx === 0) {
+      if (doc.y + 35 > PAGE_H - BOTTOM_MARGIN) {
+        doc.newPage();
+      } else {
+        doc.y += 3;
+      }
+    } else {
+      if (doc.y + 40 > PAGE_H - BOTTOM_MARGIN) {
+        doc.newPage();
+      } else {
+        doc.y += 5;
+      }
+    }
     doc.sectionHeader(
       `Section ${sIdx + 1}: ${s.section.name}`,
       s.section.zone,
@@ -1763,25 +1887,177 @@ export async function generateInspectionPdf(data: ReportData & {
     for (const qRow of s.questions) {
       const { question, response, state, photoIds } = qRow;
 
-      // Top Header Dimensions
+      // 1. Question Title & Description Split
+      // Line 1: [ H-1 ] pill badge + Question Title / Category (e.g. "HULL SHELL PLATING:" or "INSPECTION REQUIREMENT:")
+      // Line 2+: Full criteria/instructions inside the Premium Scope Container Box!
+      let rawText = question.text.trim();
+      // Strip leading ref if accidentally duplicated in question text (e.g. "EN-5: Review..." or "[EN-5] Review...")
+      const leadingRefRegex = new RegExp(`^\\[?\\s*${question.ref.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*\\]?[:\\-\\s]+`, 'i');
+      rawText = rawText.replace(leadingRefRegex, '').trim();
+
+      let titleText = '';
+      let descText = '';
+
+      const colonPos = rawText.indexOf(':');
+      const dashPos = rawText.indexOf(' - ');
+      const emDashPos = rawText.indexOf(' – ');
+      const longDashPos = rawText.indexOf(' — ');
+
+      if (
+        colonPos > 2 &&
+        colonPos < 80 &&
+        !rawText.slice(0, colonPos + 3).includes('://') &&
+        (colonPos === rawText.length - 1 ||
+          rawText[colonPos + 1] === ' ' ||
+          rawText[colonPos + 1] === '\n' ||
+          rawText[colonPos + 1] === '\r' ||
+          /[A-Za-z0-9]/.test(rawText[colonPos + 1]))
+      ) {
+        titleText = rawText.slice(0, colonPos + 1).trim();
+        descText = rawText.slice(colonPos + 1).trim();
+      } else if (dashPos > 2 && dashPos < 60) {
+        titleText = rawText.slice(0, dashPos).trim();
+        if (!titleText.endsWith(':')) titleText += ':';
+        descText = rawText.slice(dashPos + 3).trim();
+      } else if (emDashPos > 2 && emDashPos < 60) {
+        titleText = rawText.slice(0, emDashPos).trim();
+        if (!titleText.endsWith(':')) titleText += ':';
+        descText = rawText.slice(emDashPos + 3).trim();
+      } else if (longDashPos > 2 && longDashPos < 60) {
+        titleText = rawText.slice(0, longDashPos).trim();
+        if (!titleText.endsWith(':')) titleText += ':';
+        descText = rawText.slice(longDashPos + 3).trim();
+      } else {
+        const nlPos = rawText.indexOf('\n');
+        if (nlPos !== -1) {
+          titleText = rawText.slice(0, nlPos).trim();
+          if (!titleText.endsWith(':')) titleText += ':';
+          descText = rawText.slice(nlPos + 1).trim();
+        } else {
+          // Check for uppercase heading prefix (e.g. "PILOT BOARDING ARRANGEMENT Verify...")
+          const capsMatch = rawText.match(/^([A-Z0-9\s\/\&\-\,\(\)]{3,60})\s+([a-z].*)$/);
+          if (capsMatch && capsMatch[1].trim().length > 3 && capsMatch[1].trim().includes(' ')) {
+            titleText = capsMatch[1].trim() + ':';
+            descText = capsMatch[2].trim();
+          } else {
+            // No sub-heading -> leave titleText empty as requested
+            titleText = '';
+            descText = rawText;
+          }
+        }
+      }
+
+      // Guarantee descText is never empty so the Scope & Criteria Box always renders for all questions
+      if (!descText) {
+        descText = titleText || rawText;
+        titleText = '';
+      }
+
+      // Ref Pill width [ H-1 ]
       doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
-      const statusStr = state === 'ok' ? '[+]  SATISFACTORY' : state === 'bad' ? '!  OBSERVATION' : state === 'na' ? '-  N / A' : '[?]  PENDING';
-      const badgeW = doc.pdf.getTextWidth(statusStr) + 8;
-      const refW = doc.pdf.getTextWidth(question.ref) + 8;
+      const refW = doc.pdf.getTextWidth(question.ref) + 7;
+      const refH = 5.2;
 
-      // Question Title: Full width across the card, identical to modern web UI!
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(9);
-      const qLines = doc.pdf.splitTextToSize(question.text, CONTENT_W - 14) as string[];
-      const qTitleH = qLines.length * 4.4;
-      const qHeaderH = 13 + qTitleH + 3.5;
+      // Question Title placed right beside Ref Pill on Line 1 (if present)
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(9.0);
+      const titleStartX = MARGIN_LEFT + 6 + refW + 3.5;
+      const titleAvailW = CONTENT_W - 12 - refW - 5;
+      const titleLines = titleText ? (doc.pdf.splitTextToSize(titleText, titleAvailW) as string[]) : [];
+      const titleLinesH = titleLines.length > 0 ? Math.max(titleLines.length * 4.2, refH) : refH;
 
-      // Remarks Block (if any)
+      // Remaining line(s) (description/instructions) on 2nd line inside Premium Scope Container
+      const descBoxX = MARGIN_LEFT + 6;
+      const descBoxW = CONTENT_W - 12;
+      const descAccentW = 1.2;
+      const descAccentPadX = 3.2;
+      const descTextGap = 3.2;
+      const descTextStartX = descBoxX + descAccentPadX + descAccentW + descTextGap;
+      const descAvailW = descBoxW - (descTextStartX - descBoxX) - 4.0;
+
+      doc.pdf.setFont('helvetica', 'normal').setFontSize(8.8);
+      const descLines = descText ? (doc.pdf.splitTextToSize(descText, descAvailW) as string[]) : [];
+      const descLineGap = 4.4;
+      const descBoxH = descLines.length > 0 ? Math.max(8.5, descLines.length * descLineGap + 4.5) : 0;
+
+      const qHeaderH = 3.5 + titleLinesH + (descBoxH > 0 ? 2.5 + descBoxH : 0) + 2.5 + 3.0;
+
+      // 2. Remarks / Condition Evaluation Section (Clean Maritime Design System)
+      const condConfig: Record<string, {
+        label: string;
+        badgeBg: [number, number, number];
+        badgeBorder: [number, number, number];
+        badgeText: [number, number, number];
+        dotColor: [number, number, number];
+        defaultSubtext: string;
+      }> = {
+        ok: {
+          label: 'SATISFACTORY',
+          badgeBg: [236, 253, 245],     // emerald-50
+          badgeBorder: [167, 243, 208], // emerald-200
+          badgeText: [6, 95, 70],       // emerald-800
+          dotColor: [16, 185, 129],     // emerald-500
+          defaultSubtext: 'Condition verified satisfactory - No adverse remarks recorded',
+        },
+        bad: {
+          label: 'OBSERVATION',
+          badgeBg: [254, 242, 242],     // red-50
+          badgeBorder: [254, 202, 202], // red-200
+          badgeText: [153, 27, 27],     // red-800
+          dotColor: [239, 68, 68],      // red-500
+          defaultSubtext: 'Deficiency noted - Corrective action required',
+        },
+        na: {
+          label: 'NOT APPLICABLE',
+          badgeBg: [241, 245, 249],     // slate-100
+          badgeBorder: [226, 232, 240], // slate-200
+          badgeText: [71, 85, 105],     // slate-600
+          dotColor: [148, 163, 184],    // slate-400
+          defaultSubtext: 'Item not applicable to vessel arrangement',
+        },
+        pending: {
+          label: 'PENDING',
+          badgeBg: [254, 249, 195],     // amber-50
+          badgeBorder: [253, 230, 138], // amber-200
+          badgeText: [146, 64, 14],     // amber-800
+          dotColor: [245, 158, 11],     // amber-500
+          defaultSubtext: 'Pending surveyor inspection',
+        },
+      };
+
+      const cond = condConfig[state] || condConfig.pending;
+
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
+      const statusLabelW = doc.pdf.getTextWidth(cond.label);
+      const dotRadius = 0.85;
+      const dotPadLeft = 3.2;
+      const dotToTextGap = 2.4;
+      const pillPadRight = 3.5;
+      const statusPillW = dotPadLeft + (dotRadius * 2) + dotToTextGap + statusLabelW + pillPadRight;
+      const statusPillH = 5.2;
+
+      const remText = response?.remarks?.trim() || '';
+      const hasRemark = remText.length > 0;
+
+      const remBoxX = MARGIN_LEFT + 6;
+      const remBoxW = CONTENT_W - 12;
+      const remPillX = remBoxX + 3.0;
+      const remDivX = remPillX + statusPillW + 4.5;
+      const remContentStartX = remDivX + 4.5;
+      const remContentAvailW = remBoxX + remBoxW - remContentStartX - 4;
+
+      const remLabelText = 'REMARKS:';
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
+      const remLabelW = doc.pdf.getTextWidth(remLabelText) + 2.5;
+
       let remBoxH = 0;
       let remRichH = 0;
-      const remText = response?.remarks?.trim() || '';
-      if (remText) {
-        remRichH = measureRichText(doc.pdf, remText, CONTENT_W - 24, { size: 8.2, lineGap: 4.2 });
-        remBoxH = Math.max(remRichH + 11, 17);
+
+      if (hasRemark) {
+        remRichH = measureRichText(doc.pdf, remText, remContentAvailW - remLabelW, { size: 8.0, lineGap: 3.8 });
+        remBoxH = Math.max(statusPillH + 3.6, remRichH + 3.8);
+      } else {
+        // Compact 6.8mm height: sleek single-line certified evaluation strip
+        remBoxH = 6.8;
       }
 
       // Deficiency Callout Box (if bad and ordinary vessel inspection)
@@ -1790,8 +2066,8 @@ export async function generateInspectionPdf(data: ReportData & {
       let caH = 0;
       if (state === 'bad' && isOrdinaryInspection) {
         caText = response?.correctiveAction ? `**Corrective:** ${response.correctiveAction}` : '**Corrective:** Immediate rectification required';
-        caH = measureRichText(doc.pdf, caText, CONTENT_W - 22, { size: 7.8, lineGap: 4 });
-        defBoxH = Math.max(caH + 13, 18);
+        caH = measureRichText(doc.pdf, caText, CONTENT_W - 22, { size: 7.8, lineGap: 3.8 });
+        defBoxH = Math.max(caH + 9, 14);
       }
 
       // Maximum 4 photos per page inside question card; remainder paginated onto continuation pages
@@ -1811,7 +2087,7 @@ export async function generateInspectionPdf(data: ReportData & {
         firstPhotoH = firstPhotoRows * (qGridPH + gapY) + 4;
       }
 
-      const mainCardH = qHeaderH + (remBoxH ? remBoxH + 4 : 0) + (defBoxH ? defBoxH + 4 : 0) + firstPhotoH + 4;
+      const mainCardH = qHeaderH + (remBoxH ? remBoxH + 3.5 : 0) + (defBoxH ? defBoxH + 3.5 : 0) + firstPhotoH + 4;
 
       // Ensure main card fits or start fresh page
       doc.ensure(mainCardH + 4);
@@ -1819,47 +2095,100 @@ export async function generateInspectionPdf(data: ReportData & {
       const cardY = doc.y;
       doc.roundedBox(MARGIN_LEFT, cardY, CONTENT_W, mainCardH, WHITE, BORDER, 2.5);
 
-      // Row 1: Left [ Ref Pill ], Right [ Status Badge ]
+      // Draw Ref Pill [ H-1 ]
       doc.setFill(NAVY);
-      doc.pdf.roundedRect(MARGIN_LEFT + 6, cardY + 4.5, refW, 5.5, 1.2, 1.2, 'F');
+      doc.pdf.roundedRect(MARGIN_LEFT + 6, cardY + 3.5, refW, refH, 1.2, 1.2, 'F');
       doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
       doc.setTextColor(WHITE);
-      doc.pdf.text(question.ref, MARGIN_LEFT + 10, cardY + 8.3);
+      doc.pdf.text(question.ref, MARGIN_LEFT + 9.5, cardY + 7.1);
 
-      const badgeX = PAGE_W - MARGIN_RIGHT - badgeW - 6;
-      doc.statusBadge(state, badgeX, cardY + 4.5);
+      // Draw Question Title [ PILOT BOARDING ARRANGEMENT: ] right next to H-1!
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(9.0);
+      doc.setTextColor(NAVY);
+      let curTitleY = cardY + 7.1;
+      for (let l = 0; l < titleLines.length; l++) {
+        doc.pdf.text(titleLines[l], titleStartX, curTitleY);
+        if (l < titleLines.length - 1) curTitleY += 4.2;
+      }
 
-      // Row 2: Full-width Question Title
-      doc.pdf.setFont('helvetica', 'bold').setFontSize(9);
-      doc.setTextColor(TEXT_DARK);
-      let titleY = cardY + 14.2;
-      for (let l = 0; l < qLines.length; l++) {
-        doc.pdf.text(qLines[l], MARGIN_LEFT + 6, titleY);
-        if (l < qLines.length - 1) titleY += 4.4;
+      // Draw Scope / Criteria Container on 2nd line with Premium UI
+      const descBoxY = cardY + 3.5 + titleLinesH + 2.5;
+      if (descLines.length > 0) {
+        // Container box with soft slate background and fine border
+        doc.roundedBox(descBoxX, descBoxY, descBoxW, descBoxH, [248, 250, 252], [226, 232, 240], 1.5);
+
+        // Marine Teal vertical accent line
+        doc.setFill(TEAL);
+        doc.pdf.roundedRect(descBoxX + descAccentPadX, descBoxY + 2.4, descAccentW, descBoxH - 4.8, 0.5, 0.5, 'F');
+
+        // Description text in crisp, larger 8.8pt slate-800
+        doc.pdf.setFont('helvetica', 'normal').setFontSize(8.8);
+        doc.setTextColor([30, 41, 59]); // slate-800
+        const descTextStartY = descBoxY + 5.3;
+        for (let dl = 0; dl < descLines.length; dl++) {
+          doc.pdf.text(descLines[dl], descTextStartX, descTextStartY + dl * descLineGap);
+        }
       }
 
       // Hairline divider separating header from card content
-      const divY = titleY + 3.2;
+      const divY = (descLines.length > 0 ? descBoxY + descBoxH + 2.5 : cardY + 3.5 + titleLinesH + 2.5);
       doc.setDraw(BORDER, 0.25);
       doc.pdf.line(MARGIN_LEFT + 6, divY, PAGE_W - MARGIN_RIGHT - 6, divY);
 
-      let innerY = divY + 4;
+      let innerY = divY + 3.0;
 
-      // Remarks Block (if any)
-      if (remBoxH > 0) {
-        doc.roundedBox(MARGIN_LEFT + 6, innerY, CONTENT_W - 12, remBoxH, SLATE_BG, BORDER, 1.8);
-        doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
-        doc.setTextColor(TEXT_MUTED);
-        doc.pdf.text('REMARKS', MARGIN_LEFT + 10, innerY + 5);
+      // ── Remarks / Condition Evaluation Section ─────────────────────────────
+      // Outer subtle slate card
+      doc.roundedBox(remBoxX, innerY, remBoxW, remBoxH, [248, 250, 252], [226, 232, 240], 1.5);
 
-        renderRichText(doc.pdf, remText, MARGIN_LEFT + 10, innerY + 9.5, CONTENT_W - 20, {
-          size: 8.2,
-          lineGap: 4.2,
-          color: TEXT_BODY,
-        });
-
-        innerY += remBoxH + 4;
+      // Vertical alignment calculation
+      let pillY = 0;
+      if (hasRemark && remRichH > statusPillH + 1) {
+        pillY = innerY + 2.2;
+      } else {
+        pillY = innerY + (remBoxH - statusPillH) / 2;
       }
+      const baselineY = pillY + 3.65;
+      const dotCenterY = pillY + statusPillH / 2;
+
+      // 1. Draw Status Pill container
+      doc.roundedBox(remPillX, pillY, statusPillW, statusPillH, cond.badgeBg, cond.badgeBorder, 1.0);
+
+      // 2. Draw Vector Status Dot (bullet-proof, cannot corrupt)
+      doc.setFill(cond.dotColor);
+      doc.pdf.circle(remPillX + dotPadLeft + dotRadius, dotCenterY, dotRadius, 'F');
+
+      // 3. Draw Status Text inside Pill
+      doc.setTextColor(cond.badgeText);
+      doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
+      doc.pdf.text(cond.label, remPillX + dotPadLeft + (dotRadius * 2) + dotToTextGap, baselineY);
+
+      // 4. Vertical hairline divider between pill and content
+      doc.setDraw([226, 232, 240], 0.25);
+      doc.pdf.line(remDivX, innerY + 1.2, remDivX, innerY + remBoxH - 1.2);
+
+      // 5. Draw Content
+      if (hasRemark) {
+        // Bold "REMARKS:" micro-label
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(7.2);
+        doc.setTextColor(NAVY);
+        doc.pdf.text(remLabelText, remContentStartX, baselineY);
+
+        // Surveyor remarks rendered with exact baseline alignment!
+        renderRichText(doc.pdf, remText, remContentStartX + remLabelW, baselineY, remContentAvailW - remLabelW, {
+          size: 8.0,
+          lineGap: 3.8,
+          color: [30, 41, 59], // slate-800
+          bulletColor: NAVY,
+        });
+      } else {
+        // Clean condition subtext for items without adverse remarks
+        doc.pdf.setFont('helvetica', 'italic').setFontSize(7.5);
+        doc.setTextColor([100, 116, 139]); // slate-500
+        doc.pdf.text(cond.defaultSubtext, remContentStartX, baselineY);
+      }
+
+      innerY += remBoxH + 3.5;
 
       // Deficiency Callout Box (if bad and ordinary vessel inspection)
       if (defBoxH > 0) {
@@ -1869,10 +2198,10 @@ export async function generateInspectionPdf(data: ReportData & {
         doc.setTextColor([185, 28, 28]);
         doc.pdf.text('!  DEFICIENCY / ACTION REQUIRED', MARGIN_LEFT + 10, innerY + 5.5);
 
-        const subY = innerY + 10.5;
-        renderRichText(doc.pdf, caText, MARGIN_LEFT + 10, subY, CONTENT_W - 20, { size: 7.8, lineGap: 4, color: TEXT_DARK });
+        const subY = innerY + 9.5;
+        renderRichText(doc.pdf, caText, MARGIN_LEFT + 10, subY, CONTENT_W - 20, { size: 7.8, lineGap: 3.8, color: TEXT_DARK });
 
-        innerY += defBoxH + 4;
+        innerY += defBoxH + 3.5;
       }
 
       // First batch of photos (strictly up to 4 photos on main question card)
@@ -1922,7 +2251,7 @@ export async function generateInspectionPdf(data: ReportData & {
           const chunk = remainingPhotos.slice(remIdx, remIdx + 4);
           const chunkRows = Math.ceil(chunk.length / 2);
           const chunkPhotosH = chunkRows * (qGridPH + gapY);
-          const contHeaderH = 18;
+          const contHeaderH = 13;
           const contCardH = contHeaderH + chunkPhotosH + 4;
 
           doc.newPage();
@@ -1935,25 +2264,21 @@ export async function generateInspectionPdf(data: ReportData & {
           const contCardY = doc.y;
           doc.roundedBox(MARGIN_LEFT, contCardY, CONTENT_W, contCardH, WHITE, BORDER, 2.5);
 
-          // Continuation Header: Row 1
+          // Continuation Header: Single Row
           doc.setFill(NAVY);
-          doc.pdf.roundedRect(MARGIN_LEFT + 6, contCardY + 4.5, refW, 5.5, 1.2, 1.2, 'F');
+          doc.pdf.roundedRect(MARGIN_LEFT + 6, contCardY + 3.5, refW, refH, 1.2, 1.2, 'F');
           doc.pdf.setFont('helvetica', 'bold').setFontSize(7.5);
           doc.setTextColor(WHITE);
-          doc.pdf.text(question.ref, MARGIN_LEFT + 10, contCardY + 8.3);
+          doc.pdf.text(question.ref, MARGIN_LEFT + 9.5, contCardY + 7.1);
 
-          doc.statusBadge(state, badgeX, contCardY + 4.5);
-
-          // Continuation Header: Row 2
-          doc.pdf.setFont('helvetica', 'bold').setFontSize(8.5);
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(8.8);
           doc.setTextColor(TEXT_DARK);
-          const contTitle = `${question.text}  (Photographs Cont.)`;
-          const contLines = doc.pdf.splitTextToSize(contTitle, CONTENT_W - 14) as string[];
-          doc.pdf.text(contLines[0], MARGIN_LEFT + 6, contCardY + 14);
+          const contTitle = titleText ? `${titleText}  (Photographs Cont.)` : 'Photographs (Cont.)';
+          doc.pdf.text(contTitle, titleStartX, contCardY + 7.1);
 
           // Hairline divider
           doc.setDraw(BORDER, 0.25);
-          doc.pdf.line(MARGIN_LEFT + 6, contCardY + 16.5, PAGE_W - MARGIN_RIGHT - 6, contCardY + 16.5);
+          doc.pdf.line(MARGIN_LEFT + 6, contCardY + 11.5, PAGE_W - MARGIN_RIGHT - 6, contCardY + 11.5);
 
           let chunkY = contCardY + contHeaderH + 2;
           for (let cIdx = 0; cIdx < chunk.length; cIdx += 2) {
@@ -2005,14 +2330,6 @@ export async function generateInspectionPdf(data: ReportData & {
       );
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // 3. SECTION OBSERVATIONS & FINDINGS (with observation images)
-    // ═════════════════════════════════════════════════════════════════════════
-    if (s.findings.length > 0) {
-      for (let fIdx = 0; fIdx < s.findings.length; fIdx++) {
-        await renderObservationCard(s.findings[fIdx], fIdx, s, sIdx, true);
-      }
-    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2053,7 +2370,7 @@ export async function generateInspectionPdf(data: ReportData & {
   });
   doc.y += conBoxH + 10;
 
-  renderAppendix(true, 'Appendix');
+  await renderAppendix(true, 'Appendix');
   } // end of full / photo report
 
   // ═══════════════════════════════════════════════════════════════════════════
