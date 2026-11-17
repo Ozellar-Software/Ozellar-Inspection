@@ -41,8 +41,8 @@ function loadEnvironment() {
     }
   }
 
-  // Ensure sender is always techdevops@ozellar.com (replacing any stale inspections@ozellar.com)
-  if (!process.env.MAIL_SENDER || process.env.MAIL_SENDER === 'inspections@ozellar.com') {
+  // Default sender fallback if not set in environment or .env file
+  if (!process.env.MAIL_SENDER && !process.env.GRAPH_MAIL_SENDER) {
     process.env.MAIL_SENDER = 'techdevops@ozellar.com';
   }
 }

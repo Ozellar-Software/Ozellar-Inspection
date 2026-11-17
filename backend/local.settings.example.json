@@ -16,7 +16,7 @@
     "PHOTOS_CONNECTION_STRING": "<storage-account-connection-string>",
     "PHOTOS_ACCOUNT": "ozellar-attachments",
     "PHOTOS_CONTAINER": "photos",
-    "MAIL_SENDER": "inspections@ozellar.com",
+    "MAIL_SENDER": "techdevops@ozellar.com",
     "APP_URL": "https://inspection.ozellar.com",
     "ALLOWED_ORIGINS": "http://localhost:5173,capacitor://localhost,https://localhost"
   }

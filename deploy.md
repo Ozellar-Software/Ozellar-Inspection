@@ -74,9 +74,13 @@ sudo cp -r /opt/Ozellar-Inspection/frontend/dist/* /var/www/Ozellar_inspection/
 sudo systemctl status ozellar_inspection
 ```
 
-**Edit Environment Variables:**
+**Edit Environment Variables (including Email Sender & Graph API):**
 ```bash
 sudo nano /opt/Ozellar-Inspection/backend/.env
+# To change the sender email address, update:
+# MAIL_SENDER=techdevops@ozellar.com (or any other mailbox)
+# GRAPH_MAIL_ACTIVE=true
+
 # Always restart the backend service after saving changes!
 sudo systemctl restart ozellar_inspection
 ```
