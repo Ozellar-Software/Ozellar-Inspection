@@ -45,7 +45,7 @@ export async function sendMail(
   options?: { html?: string; link?: string }
 ): Promise<boolean> {
   const recipients = Array.from(new Set(to.map((e) => (e || '').trim()).filter(Boolean)));
-  const sender = process.env.MAIL_SENDER || 'inspections@ozellar.com';
+  const sender = process.env.MAIL_SENDER || process.env.GRAPH_MAIL_SENDER || 'techdevops@ozellar.com';
   const appUrl = process.env.APP_URL ?? 'https://inspection.ozellar.com';
 
   if (!sender || recipients.length === 0) {
