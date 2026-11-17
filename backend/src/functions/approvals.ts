@@ -36,7 +36,7 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
 
   const result = await tx(async (c) => {
     const insp = (await c.query(
-      `select id, vessel_id, vessel_name, start_date, status, summary, conclusion, created_by, report_category from inspections
+      `select id, vessel_id, vessel_name, imo, port, start_date, status, summary, conclusion, created_by, report_category from inspections
         where id = $1 and deleted_at is null for update`, [inspectionId])).rows[0];
     if (!insp) throw fail('NOT_FOUND', 'Inspection not found');
     if (!canSeeVessel(actor, insp.vessel_id) && insp.created_by !== actor.id) throw fail('FORBIDDEN', 'Not your vessel');
@@ -170,7 +170,8 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
   });
 
   const { r, insp, recipients } = result;
-  const what = `${insp.vessel_name} — inspection of ${insp.start_date ?? ''}`;
+  const dateFormatted = insp.start_date ? new Date(insp.start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+  const what = `${insp.vessel_name} — inspection of ${dateFormatted || 'record'}`;
   const by = `${personLabel(actor)}, ${ROLE_LABELS[actor.role]}`;
   const subject = ({
     submitted: `Approval needed: ${what}`,
@@ -178,11 +179,91 @@ async function run(req: HttpRequest, build: (body: Record<string, string>) => Co
     rejected: `Rejected: ${what}`,
     reopened: `Reopened: ${what}`,
   } as Record<string, string>)[r.event.action] ?? 'Inspection update';
+
+  const reportLink = `/inspections/${inspectionId}/report`;
+  const appUrl = process.env.APP_URL ?? 'https://inspection.ozellar.com';
+  const fullReportUrl = `${appUrl}${reportLink}`;
+
+  const html = `
+    <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 620px; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+      <tr>
+        <td style="background-color: #105935; padding: 20px 28px; border-bottom: 3px solid #f26b24;">
+          <table width="100%" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td>
+                <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 700;">OZELLAR FLEET SYSTEMS</h1>
+                <p style="margin: 4px 0 0; color: #a7f3d0; font-size: 13px;">Official Statutory & Technical Inspection Notification</p>
+              </td>
+              <td align="right">
+                <span style="display: inline-block; background-color: rgba(255, 255, 255, 0.2); color: #ffffff; padding: 5px 12px; border-radius: 14px; font-size: 11px; font-weight: 600; text-transform: uppercase;">
+                  ${r.event.action.toUpperCase()}
+                </span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding: 28px;">
+          <h2 style="margin: 0 0 12px; color: #0f172a; font-size: 18px; font-weight: 700;">
+            ${subject}
+          </h2>
+          <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 20px;">
+            <tr>
+              <td style="padding: 16px 20px;">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td width="50%" style="padding-bottom: 10px;">
+                      <span style="color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 600;">Vessel Name</span><br/>
+                      <strong style="color: #0f172a; font-size: 15px;">${insp.vessel_name}</strong>
+                    </td>
+                    <td width="50%" style="padding-bottom: 10px;">
+                      <span style="color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 600;">IMO Number</span><br/>
+                      <strong style="color: #0f172a; font-size: 15px;">${insp.imo ? `IMO ${insp.imo}` : '-'}</strong>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td width="50%">
+                      <span style="color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 600;">Action By</span><br/>
+                      <span style="color: #1e293b; font-size: 14px; font-weight: 500;">${by}</span>
+                    </td>
+                    <td width="50%">
+                      <span style="color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 600;">Workflow Status</span><br/>
+                      <span style="color: #0f766e; font-size: 14px; font-weight: 600;">${r.status.toUpperCase()}</span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+          ${r.event.comment ? `
+            <div style="background-color: #fdfdfd; border-left: 4px solid #105935; padding: 12px 16px; margin-bottom: 24px; border-radius: 0 4px 4px 0;">
+              <p style="margin: 0 0 4px; color: #64748b; font-size: 11px; font-weight: 600; text-transform: uppercase;">Comment</p>
+              <p style="margin: 0; color: #334155; font-size: 13.5px; line-height: 1.5; font-style: italic;">
+                "${r.event.comment}"
+              </p>
+            </div>
+          ` : ''}
+          <div style="text-align: center; margin: 28px 0 16px;">
+            <a href="${fullReportUrl}" style="display: inline-block; background-color: #105935; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 14px; font-weight: 700; border-radius: 6px;">
+              Open Inspection Report &rarr;
+            </a>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 28px; text-align: center; font-size: 11px; color: #94a3b8;">
+          Ozellar Marine Inspection Platform &bull; <a href="${fullReportUrl}" style="color: #105935;">${fullReportUrl}</a>
+        </td>
+      </tr>
+    </table>
+  `;
+
   void sendMail(
     recipients,
     subject,
     `${subject}\nBy: ${by}${r.event.comment ? `\nComment: ${r.event.comment}` : ''}`,
-    { link: `/inspections/${inspectionId}/report` }
+    { link: reportLink, html }
   );
   return { status: r.status, approval: r.approval };
 }
