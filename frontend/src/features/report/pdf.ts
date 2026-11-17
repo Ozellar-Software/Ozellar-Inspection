@@ -389,8 +389,12 @@ export async function generateInspectionPdf(data: ReportData & {
   const { inspection, vessel, sections = [], observations = [], stats, approvalHistory = [] } = data;
   const isPhotoOnly = data.reportType === 'photo_only';
   const isObservationOnly = data.reportType === 'observation';
-  const photoSectionsOnly = sections.filter((s) => !!s.section.photoOnly);
-  const neededSections = isObservationOnly ? [] : isPhotoOnly ? photoSectionsOnly : sections;
+  const photoSectionsOnly = sections.filter((s) => !!s.section.photoOnly && ((s.sectionPhotoIds && s.sectionPhotoIds.length > 0) || (s.findings && s.findings.length > 0)));
+  const neededSections = isObservationOnly
+    ? []
+    : isPhotoOnly
+    ? photoSectionsOnly
+    : sections.filter((s) => !s.section.photoOnly || (s.sectionPhotoIds && s.sectionPhotoIds.length > 0) || (s.findings && s.findings.length > 0));
   const doc = new Doc();
 
   // 1. Gather all needed photo IDs to prefetch concurrently
@@ -1781,9 +1785,13 @@ export async function generateInspectionPdf(data: ReportData & {
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGES 4+: SECTION EVALUATIONS & CHECKLIST DETAILS / PHOTO SECTIONS
   // ═══════════════════════════════════════════════════════════════════════════
-  const displaySections = isPhotoOnly
-    ? photoSectionsOnly
-    : sections;
+  const displaySections = (isPhotoOnly ? photoSectionsOnly : sections).filter((s) => {
+    // Completely remove photo sections from PDF if they do not have any photos
+    if (s.section.photoOnly) {
+      return (s.sectionPhotoIds && s.sectionPhotoIds.length > 0) || (s.findings && s.findings.length > 0);
+    }
+    return true;
+  });
 
   if (isPhotoOnly && displaySections.length === 0) {
     doc.newPage();
@@ -1791,7 +1799,7 @@ export async function generateInspectionPdf(data: ReportData & {
     doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, 14, SLATE_BG, BORDER, 2);
     doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
     doc.setTextColor(TEXT_MUTED);
-    doc.pdf.text('No dedicated photo sections recorded for this inspection.', MARGIN_LEFT + 8, doc.y + 8.5);
+    doc.pdf.text('No dedicated photo sections with photos recorded for this inspection.', MARGIN_LEFT + 8, doc.y + 8.5);
     doc.y += 18;
   }
 
@@ -1800,6 +1808,11 @@ export async function generateInspectionPdf(data: ReportData & {
     const isPhotoSection = !!s.section.photoOnly;
 
     if (isPhotoSection) {
+      // Remove photo section from PDF if it doesn't have any photo
+      if (!s.sectionPhotoIds || s.sectionPhotoIds.length === 0) {
+        continue;
+      }
+
       if (sIdx === 0) {
         if (doc.y + 35 > PAGE_H - BOTTOM_MARGIN) {
           doc.newPage();
@@ -1849,15 +1862,7 @@ export async function generateInspectionPdf(data: ReportData & {
           s.section.zone || 'General',
           'SECTION PHOTOGRAPHS & VISUAL EVIDENCE'
         );
-      } else {
-        doc.ensure(20);
-        doc.roundedBox(MARGIN_LEFT, doc.y, CONTENT_W, 14, SLATE_BG, BORDER, 2);
-        doc.pdf.setFont('helvetica', 'normal').setFontSize(8);
-        doc.setTextColor(TEXT_MUTED);
-        doc.pdf.text('No photographs recorded for this section.', MARGIN_LEFT + 8, doc.y + 8.5);
-        doc.y += 18;
       }
-
 
       continue;
     }

@@ -1069,7 +1069,7 @@ export function SectionListPage() {
                 setSummarySaved(false);
               }}
               onBlur={() => void handleSaveSummary()}
-              rows={3}
+              rows={5}
             />
           </div>
         </div>
