@@ -53,6 +53,55 @@ export function stripHtmlToPlainText(html: string): string {
 }
 
 /**
+ * Converts rich HTML text (e.g. from takeover/WYSIWYG summaries) into clean,
+ * human-readable formatted plain text with proper paragraphs and bullet points.
+ */
+export function cleanHtmlToFormattedText(raw: string): string {
+  if (!raw || (!raw.includes('<') && !raw.includes('>'))) return raw || '';
+
+  let text = raw;
+
+  // Convert ordered lists
+  text = text.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_, listContent) => {
+    let num = 1;
+    return listContent.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_2: string, item: string) => {
+      return `\n${num++}. ${item.trim()}\n`;
+    });
+  });
+
+  // Convert unordered lists
+  text = text.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_, listContent) => {
+    return listContent.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_2: string, item: string) => {
+      return `\n• ${item.trim()}\n`;
+    });
+  });
+
+  // Convert line breaks and paragraph ends
+  text = text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n\n');
+
+  // Strip all other HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+
+  // Decode HTML entities
+  text = text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+
+  // Collapse 3 or more newlines into 2
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  return text.trim();
+}
+
+/**
  * Check whether a finding has user-entered content or observations beyond the photo's caption/section name.
  */
 export function hasFindingDetails(

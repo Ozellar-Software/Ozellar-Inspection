@@ -1152,31 +1152,6 @@ export function ReportPage() {
           </div>
         </div>
 
-        {/* ── Summary (viewable, editable on Section page) ── */}
-        {summary ? (
-          <div className="premium-report-card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Summary
-              </div>
-              {editable && (
-                <button
-                  type="button"
-                  onClick={() => nav(`/inspections/${inspectionId}`)}
-                  style={{
-                    background: 'none', border: 'none', color: '#0d9488', fontSize: 12,
-                    fontWeight: 600, cursor: 'pointer', padding: 0, textDecoration: 'underline'
-                  }}
-                >
-                  Edit on Section Page
-                </button>
-              )}
-            </div>
-            <div style={{ fontSize: 14, color: '#0f172a', lineHeight: 1.55, whiteSpace: 'pre-wrap', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px' }}>
-              {summary}
-            </div>
-          </div>
-        ) : null}
 
         {/* ── Administrator Direct Review & Action Card (Take Over / Pre Purchase) ── */}
         {canAdminSpecialApprove && (

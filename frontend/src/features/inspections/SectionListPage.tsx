@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -15,6 +15,7 @@ import { DeleteInspectionModal } from './DeleteInspectionModal';
 import { PhotoGalleryPreviewModal } from './PhotoGalleryPreviewModal';
 import { ReportPdfPreviewModal } from '../report/ReportPdfPreviewModal';
 import { filterAndSortSectionsByName } from './sectionSearch';
+import { cleanHtmlToFormattedText } from './photoDefectService';
 import './SectionListPage.css';
 
 // ─── Zone colour pills ────────────────────────────────────────────────────
@@ -97,6 +98,7 @@ export function SectionListPage() {
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isCoverViewerOpen, setIsCoverViewerOpen] = useState(false);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const summaryTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [summary, setSummary] = useState('');
   const [summarySaved, setSummarySaved] = useState(false);
 
@@ -270,8 +272,25 @@ export function SectionListPage() {
   }, [displayInspection?.coverPhotoId]);
 
   useEffect(() => {
-    setSummary(displayInspection?.summary ?? '');
+    const raw = displayInspection?.summary ?? '';
+    setSummary(cleanHtmlToFormattedText(raw));
   }, [displayInspection?.summary]);
+
+  const autoResizeSummaryTextarea = useCallback(() => {
+    const el = summaryTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(120, el.scrollHeight + 4)}px`;
+  }, []);
+
+  useEffect(() => {
+    autoResizeSummaryTextarea();
+  }, [summary, autoResizeSummaryTextarea]);
+
+  useEffect(() => {
+    window.addEventListener('resize', autoResizeSummaryTextarea);
+    return () => window.removeEventListener('resize', autoResizeSummaryTextarea);
+  }, [autoResizeSummaryTextarea]);
 
   const editable = Boolean(
     isMock || (
@@ -312,7 +331,9 @@ export function SectionListPage() {
   async function handleSaveSummary() {
     if (!inspectionId || !editable) return;
     try {
-      await localWrite('inspections', inspectionId, { summary });
+      const clean = cleanHtmlToFormattedText(summary);
+      await localWrite('inspections', inspectionId, { summary: clean });
+      setSummary(clean);
       setSummarySaved(true);
       setTimeout(() => setSummarySaved(false), 2500);
     } catch (err) {
@@ -1060,6 +1081,7 @@ export function SectionListPage() {
               {summarySaved && <span className="sec-overview-saved-pill"><CheckIcon width={11} height={11} /> Saved</span>}
             </div>
             <textarea
+              ref={summaryTextareaRef}
               className="sec-overview-summary-input"
               placeholder="Enter overall summary and executive highlights of this inspection..."
               disabled={!editable}
@@ -1068,8 +1090,8 @@ export function SectionListPage() {
                 setSummary(e.target.value);
                 setSummarySaved(false);
               }}
+              onInput={autoResizeSummaryTextarea}
               onBlur={() => void handleSaveSummary()}
-              rows={5}
             />
           </div>
         </div>
