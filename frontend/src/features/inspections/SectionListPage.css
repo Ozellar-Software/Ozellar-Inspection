@@ -1488,6 +1488,312 @@
   }
 }
 
+/* ════════════════════════════════════════════════════
+   INSPECTION OVERVIEW CARD (Cover Photo & Summary)
+   ════════════════════════════════════════════════════ */
+.sec-overview-card {
+  margin: 0 16px 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  position: relative;
+}
+
+.sec-overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sec-overview-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.2px;
+}
+
+.sec-overview-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #0d9488;
+  background: #ccfbf1;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+/* ── Cover Photo Row ── */
+.sec-cover-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid #e8edf2;
+  border-radius: 12px;
+  background: #f8fafc;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.sec-cover-photo-thumb {
+  width: 50px;
+  height: 50px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #eef1f2;
+  border: 1.5px solid #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.sec-cover-photo-thumb.has-photo {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+}
+
+.sec-cover-photo-thumb.clickable {
+  cursor: pointer;
+}
+
+.sec-cover-photo-thumb.clickable:hover {
+  border-color: #0d9488;
+  transform: scale(1.02);
+}
+
+.sec-cover-photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sec-cover-photo-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sec-cover-photo-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.sec-cover-photo-hint {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sec-cover-photo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sec-cover-photo-view-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-weight: 600;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sec-cover-photo-view-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.sec-cover-photo-upload-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(13, 148, 136, 0.3);
+  background: #ecfdf5;
+  color: #0d9488;
+  font-weight: 700;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sec-cover-photo-upload-btn:hover:not(:disabled) {
+  background: #ccfbf1;
+  border-color: #0d9488;
+}
+
+.sec-cover-photo-upload-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sec-cover-photo-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.sec-cover-photo-remove-btn:hover {
+  background: #fee2e2;
+}
+
+/* ── Summary Textarea Section ── */
+.sec-overview-summary-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sec-overview-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sec-overview-summary-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sec-overview-saved-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0d9488;
+  background: #ecfdf5;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.sec-overview-summary-input {
+  width: 100%;
+  min-height: 76px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  line-height: 1.45;
+  outline: none;
+  color: #0f172a;
+  resize: vertical;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sec-overview-summary-input:focus {
+  border-color: #0d9488;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+
+.sec-overview-summary-input:disabled {
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+/* ── Full-screen Cover Photo Viewer Backdrop ── */
+.cover-photo-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 26, 44, 0.88);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.cover-photo-viewer-img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
+}
+
+.cover-photo-viewer-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.cover-photo-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Responsive adjustments for mobile ── */
+@media (max-width: 640px) {
+  .sec-overview-card {
+    margin: 0 0 14px !important;
+    padding: 13px 13px;
+    border-radius: 14px;
+  }
+  .sec-cover-photo-row {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .sec-cover-photo-copy {
+    flex: 1 1 0;
+    min-width: 120px;
+  }
+  .sec-cover-photo-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+}
+
 
 
 

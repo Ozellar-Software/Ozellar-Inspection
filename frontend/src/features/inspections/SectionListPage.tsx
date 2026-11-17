@@ -6,8 +6,8 @@ import { can, isEditable, STATUS_LABELS, type InspectionStatus, type User } from
 import { api } from '../../api/client';
 import { db } from '../../offline/db';
 import { localDelete, localWrite } from '../../offline/outbox';
-import { prefetchInspectionPhotos } from '../../offline/photoQueue';
-import { BackIcon, CameraIcon, PlusIcon, XIcon, EyeIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon, FileIcon, SearchIcon, SlashIcon } from '../../icons';
+import { addPhoto, photoSrc, prefetchInspectionPhotos } from '../../offline/photoQueue';
+import { BackIcon, CameraIcon, PlusIcon, XIcon, EyeIcon, DownloadIcon, WarningIcon, TrashIcon, PdfIcon, EditIcon, CheckIcon, FileIcon, SearchIcon, SlashIcon, UploadIcon } from '../../icons';
 import { ConfirmDeleteModal } from '../../app/ConfirmDeleteModal';
 import { useLightMode } from '../home/useLightMode';
 import { downloadPhotosAsZip } from './photoDownload';
@@ -96,6 +96,12 @@ export function SectionListPage() {
   const [zoneDropdownOpen, setZoneDropdownOpen] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+  const [coverPhotoUrl, setCoverPhotoUrl] = useState<string | null>(null);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isCoverViewerOpen, setIsCoverViewerOpen] = useState(false);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const [summary, setSummary] = useState('');
+  const [summarySaved, setSummarySaved] = useState(false);
 
   function closeAllDropdowns() {
     setZoneDropdownOpen(false);
@@ -252,6 +258,70 @@ export function SectionListPage() {
     }
     return Array.from(map.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [effectiveSections]);
+
+  useEffect(() => {
+    let alive = true;
+    const coverPhotoId = displayInspection?.coverPhotoId;
+    if (!coverPhotoId) {
+      setCoverPhotoUrl(null);
+      return;
+    }
+    void photoSrc(coverPhotoId).then((src) => {
+      if (alive) setCoverPhotoUrl(src);
+    });
+    return () => { alive = false; };
+  }, [displayInspection?.coverPhotoId]);
+
+  useEffect(() => {
+    setSummary(displayInspection?.summary ?? '');
+  }, [displayInspection?.summary]);
+
+  const editable = Boolean(
+    isMock || (
+      isEditable(displayInspection?.status as any) &&
+      (!me.data || can(me.data, 'inspection.edit', { inspection: displayInspection }))
+    )
+  );
+
+  async function handleCoverPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !inspectionId) return;
+    setIsUploadingCover(true);
+    try {
+      const prevCoverPhotoId = displayInspection?.coverPhotoId;
+      const newId = await addPhoto({ file, target: 'cover', inspectionId, position: 0 });
+      await localWrite('inspections', inspectionId, { coverPhotoId: newId });
+      if (prevCoverPhotoId) {
+        await localDelete('photos', prevCoverPhotoId);
+      }
+    } catch (err) {
+      console.error('Failed to upload cover photo', err);
+      alert('Failed to upload cover photo');
+    } finally {
+      setIsUploadingCover(false);
+    }
+  }
+
+  async function handleRemoveCoverPhoto() {
+    if (!inspectionId) return;
+    const prevCoverPhotoId = displayInspection?.coverPhotoId;
+    await localWrite('inspections', inspectionId, { coverPhotoId: null });
+    if (prevCoverPhotoId) {
+      await localDelete('photos', prevCoverPhotoId);
+    }
+  }
+
+  async function handleSaveSummary() {
+    if (!inspectionId || !editable) return;
+    try {
+      await localWrite('inspections', inspectionId, { summary });
+      setSummarySaved(true);
+      setTimeout(() => setSummarySaved(false), 2500);
+    } catch (err) {
+      console.error('Failed to save summary', err);
+    }
+  }
 
   if (!displayInspection) return null;
 
@@ -948,6 +1018,111 @@ export function SectionListPage() {
           );
         })()}
 
+        {/* ── Inspection Overview: Cover Photo & Summary (Before Photo Sections) ── */}
+        <div className="sec-overview-card">
+          <div className="sec-overview-header">
+            <div className="sec-overview-title">
+              <CameraIcon width={16} height={16} color="#0d9488" />
+              <span>Inspection Overview</span>
+            </div>
+            <span className="sec-overview-badge">Cover &amp; Summary</span>
+          </div>
+
+          {/* Cover Photo Row */}
+          <div className="sec-cover-photo-row">
+            <div
+              className={`sec-cover-photo-thumb${coverPhotoUrl ? ' has-photo clickable' : editable ? ' clickable' : ''}`}
+              onClick={() => {
+                if (coverPhotoUrl) setIsCoverViewerOpen(true);
+                else if (editable) coverFileInputRef.current?.click();
+              }}
+              title={coverPhotoUrl ? 'Click to enlarge cover photo' : editable ? 'Click to add cover photo' : undefined}
+            >
+              {isUploadingCover ? (
+                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite', color: '#0d9488' }}>
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/>
+                </svg>
+              ) : coverPhotoUrl ? (
+                <img src={coverPhotoUrl} alt="Inspection cover" />
+              ) : (
+                <CameraIcon color="#94a3b8" width={22} height={22} />
+              )}
+            </div>
+
+            <div className="sec-cover-photo-copy">
+              <span className="sec-cover-photo-label">Cover Photo</span>
+              <span className="sec-cover-photo-hint">
+                {coverPhotoUrl ? 'Featured on the PDF cover page' : 'Add a vessel cover photo for the PDF report'}
+              </span>
+            </div>
+
+            <div className="sec-cover-photo-actions">
+              {coverPhotoUrl && (
+                <button
+                  type="button"
+                  className="sec-cover-photo-view-btn"
+                  onClick={() => setIsCoverViewerOpen(true)}
+                  title="View full-size photo"
+                >
+                  <EyeIcon width={12} height={12} />
+                  <span>View</span>
+                </button>
+              )}
+              {editable && (
+                <>
+                  <input
+                    ref={coverFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => void handleCoverPhotoChange(e)}
+                  />
+                  <button
+                    type="button"
+                    className="sec-cover-photo-upload-btn"
+                    disabled={isUploadingCover}
+                    onClick={() => coverFileInputRef.current?.click()}
+                  >
+                    <UploadIcon width={12} height={12} />
+                    <span>{isUploadingCover ? 'Uploading…' : coverPhotoUrl ? 'Replace' : 'Add Photo'}</span>
+                  </button>
+                  {coverPhotoUrl && !isUploadingCover && (
+                    <button
+                      type="button"
+                      className="sec-cover-photo-remove-btn"
+                      aria-label="Remove cover photo"
+                      title="Remove cover photo"
+                      onClick={() => void handleRemoveCoverPhoto()}
+                    >
+                      <XIcon width={12} height={12} />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Summary Textarea */}
+          <div className="sec-overview-summary-wrap">
+            <div className="sec-overview-summary-header">
+              <span className="sec-overview-summary-label">Executive Summary</span>
+              {summarySaved && <span className="sec-overview-saved-pill"><CheckIcon width={11} height={11} /> Saved</span>}
+            </div>
+            <textarea
+              className="sec-overview-summary-input"
+              placeholder="Enter overall summary and executive highlights of this inspection..."
+              disabled={!editable}
+              value={summary}
+              onChange={(e) => {
+                setSummary(e.target.value);
+                setSummarySaved(false);
+              }}
+              onBlur={() => void handleSaveSummary()}
+              rows={3}
+            />
+          </div>
+        </div>
+
         {/* ── Search & Filter Controls Bar ── */}
         {displaySections.length > 0 && (
           <div ref={controlsRef} className="sec-controls-bar">
@@ -1485,6 +1660,26 @@ export function SectionListPage() {
           confirmText="Yes, Mark as N/A"
           cancelText="Cancel"
         />
+      )}
+
+      {/* ── Cover Photo Modal Viewer ── */}
+      {isCoverViewerOpen && coverPhotoUrl && (
+        <div className="cover-photo-viewer-backdrop" onClick={() => setIsCoverViewerOpen(false)}>
+          <button
+            type="button"
+            className="cover-photo-viewer-close"
+            aria-label="Close"
+            onClick={() => setIsCoverViewerOpen(false)}
+          >
+            <XIcon width={18} height={18} />
+          </button>
+          <img
+            src={coverPhotoUrl}
+            alt="Inspection cover"
+            className="cover-photo-viewer-img"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
     </>
   );
