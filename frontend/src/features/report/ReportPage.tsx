@@ -1672,23 +1672,6 @@ export function ReportPage() {
           );
         })}
 
-        {/* ── Conclusion textarea (shown last) ── */}
-        <div className="premium-report-card">
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-            Conclusion
-          </div>
-          <textarea
-            placeholder="Conclusion / recommendation..."
-            disabled={!editable}
-            value={conclusion}
-            onChange={(e) => setConclusion(e.target.value)}
-            onBlur={saveSummaryConclusion}
-            style={{ width: '100%', minHeight: 80, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 10, padding: 12, fontSize: 14, outline: 'none', color: '#0f172a', resize: 'vertical' }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = '#0d9488'; e.currentTarget.style.background = '#ffffff'; }}
-            onBlurCapture={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
-          />
-        </div>
-
         <div style={{ height: 24 }} />
       </div>
     </>

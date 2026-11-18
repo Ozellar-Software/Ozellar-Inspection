@@ -1732,6 +1732,19 @@
   cursor: not-allowed;
 }
 
+/* ── Conclusion Card (shown at bottom of all sections) ── */
+.sec-conclusion-card {
+  margin-top: 24px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
 /* ── Full-screen Cover Photo Viewer Backdrop ── */
 .cover-photo-viewer-backdrop {
   position: fixed;

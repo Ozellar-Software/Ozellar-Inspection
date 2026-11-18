@@ -101,6 +101,9 @@ export function SectionListPage() {
   const summaryTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [summary, setSummary] = useState('');
   const [summarySaved, setSummarySaved] = useState(false);
+  const conclusionTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [conclusion, setConclusion] = useState('');
+  const [conclusionSaved, setConclusionSaved] = useState(false);
 
   function closeAllDropdowns() {
     setZoneDropdownOpen(false);
@@ -276,21 +279,55 @@ export function SectionListPage() {
     setSummary(cleanHtmlToFormattedText(raw));
   }, [displayInspection?.summary]);
 
+  useEffect(() => {
+    const raw = displayInspection?.conclusion ?? '';
+    setConclusion(cleanHtmlToFormattedText(raw));
+  }, [displayInspection?.conclusion]);
+
   const autoResizeSummaryTextarea = useCallback(() => {
     const el = summaryTextareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
+    el.style.overflowY = 'hidden';
     el.style.height = `${Math.max(120, el.scrollHeight + 4)}px`;
+  }, []);
+
+  const autoResizeConclusionTextarea = useCallback(() => {
+    const el = conclusionTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.overflowY = 'hidden';
+    el.style.height = `${Math.max(100, el.scrollHeight + 4)}px`;
   }, []);
 
   useEffect(() => {
     autoResizeSummaryTextarea();
+    const t1 = setTimeout(autoResizeSummaryTextarea, 50);
+    const t2 = setTimeout(autoResizeSummaryTextarea, 200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [summary, autoResizeSummaryTextarea]);
 
   useEffect(() => {
+    autoResizeConclusionTextarea();
+    const t1 = setTimeout(autoResizeConclusionTextarea, 50);
+    const t2 = setTimeout(autoResizeConclusionTextarea, 200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [conclusion, autoResizeConclusionTextarea]);
+
+  useEffect(() => {
     window.addEventListener('resize', autoResizeSummaryTextarea);
-    return () => window.removeEventListener('resize', autoResizeSummaryTextarea);
-  }, [autoResizeSummaryTextarea]);
+    window.addEventListener('resize', autoResizeConclusionTextarea);
+    return () => {
+      window.removeEventListener('resize', autoResizeSummaryTextarea);
+      window.removeEventListener('resize', autoResizeConclusionTextarea);
+    };
+  }, [autoResizeSummaryTextarea, autoResizeConclusionTextarea]);
 
   const editable = Boolean(
     isMock || (
@@ -338,6 +375,19 @@ export function SectionListPage() {
       setTimeout(() => setSummarySaved(false), 2500);
     } catch (err) {
       console.error('Failed to save summary', err);
+    }
+  }
+
+  async function handleSaveConclusion() {
+    if (!inspectionId || !editable) return;
+    try {
+      const clean = cleanHtmlToFormattedText(conclusion);
+      await localWrite('inspections', inspectionId, { conclusion: clean });
+      setConclusion(clean);
+      setConclusionSaved(true);
+      setTimeout(() => setConclusionSaved(false), 2500);
+    } catch (err) {
+      console.error('Failed to save conclusion', err);
     }
   }
 
@@ -1458,6 +1508,27 @@ export function SectionListPage() {
             )}
           </>
         )}
+
+        {/* ── Conclusion Card (shown at bottom of all sections) ── */}
+        <div className="sec-conclusion-card">
+          <div className="sec-overview-summary-header">
+            <span className="sec-overview-summary-label">Conclusion / Recommendations</span>
+            {conclusionSaved && <span className="sec-overview-saved-pill"><CheckIcon width={11} height={11} /> Saved</span>}
+          </div>
+          <textarea
+            ref={conclusionTextareaRef}
+            className="sec-overview-summary-input"
+            placeholder="Enter overall conclusions, recommendations, and next steps..."
+            disabled={!editable}
+            value={conclusion}
+            onChange={(e) => {
+              setConclusion(e.target.value);
+              setConclusionSaved(false);
+            }}
+            onInput={autoResizeConclusionTextarea}
+            onBlur={() => void handleSaveConclusion()}
+          />
+        </div>
 
         {canDelete && (
           <div className="admin-inspection-danger-card">
