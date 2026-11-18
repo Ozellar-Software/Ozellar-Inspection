@@ -28,6 +28,7 @@ const ZONE_COLORS: Record<string, { bg: string; text: string }> = {
   'Safety':        { bg: '#E7F5EC', text: '#1F8A57' },
   'Living':        { bg: '#FBEAE6', text: '#C1432A' },
   'Accommodation': { bg: '#FBEAE6', text: '#C1432A' },
+  'Inside':        { bg: '#FBEAE6', text: '#C1432A' },
   'Deck':          { bg: '#E4F1F1', text: '#0A5F67' },
   'Structure':     { bg: '#EBF4F5', text: '#276269' },
   'General':       { bg: '#EEF1F2', text: '#5B6B76' },
