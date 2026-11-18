@@ -2234,19 +2234,20 @@ export async function generateInspectionPdf(data: ReportData & {
       let mainCardH = 0;
 
       if (isSinglePhoto) {
+        let leftRemRichH = 0;
         if (hasRemark) {
-          const leftRemRichH = measureRichText(doc.pdf, `**REMARKS:** ${remText}`, leftColW - 6, { size: 7.6, lineGap: 3.5 });
-          leftRemBoxH = statusPillH + 2.0 + leftRemRichH + 3.0;
+          leftRemRichH = measureRichText(doc.pdf, remText, leftColW - 7, { size: 7.8, lineGap: 3.6 });
+          leftRemBoxH = 10.0 + 4.2 + leftRemRichH + 4.0;
         } else {
-          leftRemBoxH = statusPillH + 3.0;
+          leftRemBoxH = 10.0 + 8.5;
         }
 
         if (state === 'bad' && isOrdinaryInspection) {
-          const leftCaH = measureRichText(doc.pdf, caText, leftColW - 7, { size: 7.4, lineGap: 3.5 });
+          const leftCaH = measureRichText(doc.pdf, caText, leftColW - 10, { size: 7.4, lineGap: 3.5 });
           leftDefBoxH = Math.max(leftCaH + 9, 14);
         }
 
-        leftTotalH = leftRemBoxH + (leftDefBoxH > 0 ? leftDefBoxH + 2.5 : 0);
+        leftTotalH = leftRemBoxH + (leftDefBoxH > 0 ? leftDefBoxH + 3.0 : 0);
         singlePhotoH = Math.max(qSinglePH, leftTotalH);
         const singleContentH = Math.max(leftTotalH, singlePhotoH);
         mainCardH = qHeaderH + singleContentH + 3.0;
@@ -2299,41 +2300,73 @@ export async function generateInspectionPdf(data: ReportData & {
           getPhotoDoc(id1),
         ]);
 
-        // 1. Remarks Container (Left Column)
-        doc.roundedBox(colLeftX, innerY, leftColW, leftRemBoxH, [248, 250, 252], [226, 232, 240], 1.2);
+        const leftCardH = singlePhotoH;
+        // 1. Unified Left Evaluation Card matching full photo height
+        doc.roundedBox(colLeftX, innerY, leftColW, leftCardH, [248, 250, 252], [226, 232, 240], 1.5);
 
-        // Status Pill
-        const pillY = innerY + 2.0;
-        doc.roundedBox(colLeftX + 2.5, pillY, statusPillW, statusPillH, cond.badgeBg, cond.badgeBorder, 1.0);
+        // Header Strip: Status Pill
+        const pillY = innerY + 3.0;
+        const pillX = colLeftX + 3.0;
+        doc.roundedBox(pillX, pillY, statusPillW, statusPillH, cond.badgeBg, cond.badgeBorder, 1.0);
         doc.setFill(cond.dotColor);
-        doc.pdf.circle(colLeftX + 2.5 + dotPadLeft + dotRadius, pillY + statusPillH / 2, dotRadius, 'F');
+        doc.pdf.circle(pillX + dotPadLeft + dotRadius, pillY + statusPillH / 2, dotRadius, 'F');
         doc.setTextColor(cond.badgeText);
         doc.pdf.setFont('helvetica', 'bold').setFontSize(7.0);
-        doc.pdf.text(cond.label, colLeftX + 2.5 + dotPadLeft + (dotRadius * 2) + dotToTextGap, pillY + 3.4);
+        doc.pdf.text(cond.label, pillX + dotPadLeft + (dotRadius * 2) + dotToTextGap, pillY + 3.5);
 
+        // Status text label beside pill
+        const statusLabelX = pillX + statusPillW + 3.5;
+        if (state === 'ok') {
+          doc.pdf.setFont('helvetica', 'normal').setFontSize(6.8);
+          doc.setTextColor([100, 116, 139]);
+          doc.pdf.text('Verified Satisfactory', statusLabelX, pillY + 3.5);
+        } else if (state === 'bad') {
+          doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+          doc.setTextColor([185, 28, 28]);
+          doc.pdf.text('Deficiency Noted', statusLabelX, pillY + 3.5);
+        } else if (state === 'pending') {
+          doc.pdf.setFont('helvetica', 'italic').setFontSize(6.8);
+          doc.setTextColor([146, 64, 14]);
+          doc.pdf.text('Survey Pending', statusLabelX, pillY + 3.5);
+        }
+
+        // Hairline divider separating status header from remarks body
+        const div1Y = innerY + 10.0;
+        doc.setDraw([226, 232, 240], 0.25);
+        doc.pdf.line(colLeftX + 3.0, div1Y, colLeftX + leftColW - 3.0, div1Y);
+
+        // Remarks micro-heading
+        const remHeaderY = div1Y + 4.2;
+        doc.pdf.setFont('helvetica', 'bold').setFontSize(6.8);
+        doc.setTextColor(NAVY);
+        doc.pdf.text('REMARKS', colLeftX + 3.5, remHeaderY);
+
+        // Surveyor remarks body
+        const remBodyY = remHeaderY + 4.2;
+        let remUsedH = 0;
         if (hasRemark) {
-          const remStartY = pillY + statusPillH + 3.0;
-          renderRichText(doc.pdf, `**REMARKS:** ${remText}`, colLeftX + 3.0, remStartY, leftColW - 6, {
-            size: 7.6,
-            lineGap: 3.5,
+          renderRichText(doc.pdf, remText, colLeftX + 3.5, remBodyY, leftColW - 7.0, {
+            size: 7.8,
+            lineGap: 3.6,
             color: [30, 41, 59],
             bulletColor: NAVY,
           });
+          remUsedH = measureRichText(doc.pdf, remText, leftColW - 7.0, { size: 7.8, lineGap: 3.6 });
         } else {
-          doc.pdf.setFont('helvetica', 'italic').setFontSize(7.0);
+          doc.pdf.setFont('helvetica', 'italic').setFontSize(7.2);
           doc.setTextColor([100, 116, 139]);
-          const remStartY = pillY + statusPillH + 2.5;
-          doc.pdf.text(cond.defaultSubtext, colLeftX + 3.0, remStartY);
+          doc.pdf.text(cond.defaultSubtext, colLeftX + 3.5, remBodyY);
+          remUsedH = 4.0;
         }
 
-        // 2. Deficiency Callout Box (Left Column, below remarks)
+        // Deficiency Callout Box (if defective)
         if (leftDefBoxH > 0) {
-          const defY = innerY + leftRemBoxH + 2.5;
-          doc.roundedBox(colLeftX, defY, leftColW, leftDefBoxH, [254, 242, 242], [254, 202, 202], 1.5);
+          const defY = remBodyY + remUsedH + 3.5;
+          doc.roundedBox(colLeftX + 3.0, defY, leftColW - 6.0, leftDefBoxH, [254, 242, 242], [254, 202, 202], 1.5);
           doc.pdf.setFont('helvetica', 'bold').setFontSize(7.0);
           doc.setTextColor([185, 28, 28]);
-          doc.pdf.text('!  DEFICIENCY / ACTION REQUIRED', colLeftX + 3.5, defY + 4.5);
-          renderRichText(doc.pdf, caText, colLeftX + 3.5, defY + 8.2, leftColW - 7, {
+          doc.pdf.text('!  DEFICIENCY / ACTION REQUIRED', colLeftX + 5.5, defY + 4.5);
+          renderRichText(doc.pdf, caText, colLeftX + 5.5, defY + 8.2, leftColW - 10.0, {
             size: 7.4,
             lineGap: 3.5,
             color: TEXT_DARK,
