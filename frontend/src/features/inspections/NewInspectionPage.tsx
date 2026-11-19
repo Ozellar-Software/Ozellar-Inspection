@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { InspectionType, ReportCategory, User } from '@ozellar/shared';
 import { api } from '../../api/client';
@@ -86,8 +86,16 @@ export function NewInspectionPage() {
     return vessels.filter((v) => ids.includes(v.id.toLowerCase().trim()));
   }, [vessels, me.data]);
 
+  const [searchParams] = useSearchParams();
+  const urlVesselId = searchParams.get('vesselId') || '';
   const [reportCategory, setReportCategory] = useState<ReportCategory>('inspection');
-  const [vesselId, setVesselId] = useState('');
+  const [vesselId, setVesselId] = useState(urlVesselId);
+
+  useEffect(() => {
+    if (urlVesselId) {
+      setVesselId(urlVesselId);
+    }
+  }, [urlVesselId]);
   const [newVessel, setNewVessel] = useState<VesselCoreForm>({ name: '', imo: '', vesselType: 'Bulk Carrier' });
   const [inspectionType, setInspectionType] = useState<InspectionType>('port');
   const [port, setPort] = useState('');

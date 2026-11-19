@@ -2,8 +2,8 @@ import './HomePage.css';
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { STATUS_LABELS, can, type Inspection, type InspectionStatus, type User } from '@ozellar/shared';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { STATUS_LABELS, can, inspectionDueInfo, type Inspection, type InspectionStatus, type User } from '@ozellar/shared';
 import { api } from '../../api/client';
 import { getCachedUser, setCachedUser } from '../../auth/session';
 import { useCurrentUser } from '../../auth/useCurrentUser';
@@ -11,12 +11,41 @@ import { db } from '../../offline/db';
 import { onSyncStatus, syncNow, type SyncStatus } from '../../offline/sync';
 import { processPhotoQueue } from '../../offline/photoQueue';
 import { useLightMode } from './useLightMode';
-import { PlusIcon, SearchIcon, XIcon, CameraIcon, MenuIcon, CheckIcon, WifiIcon, WarningIcon, TrashIcon } from '../../icons';
+import {
+  PlusIcon, SearchIcon, XIcon, CameraIcon, MenuIcon, CheckIcon,
+  WifiIcon, WarningIcon, TrashIcon, CalendarIcon, ClipboardIcon, UserIcon
+} from '../../icons';
 import { DeleteInspectionModal } from '../inspections/DeleteInspectionModal';
+import { FleetStatusPage } from './FleetStatusPage';
 
 // ---------------------------------------------------------------------------
-export function HomePage() {
+export function HomePage({ defaultTab }: { defaultTab?: 'inspections' | 'schedule' } = {}) {
   const nav = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab') || searchParams.get('view');
+  const initialTab = (urlTab === 'schedule' || urlTab === 'due' || defaultTab === 'schedule') ? 'schedule' : 'inspections';
+  const [activeTab, setActiveTab] = useState<'inspections' | 'schedule'>(initialTab);
+
+  useEffect(() => {
+    if (urlTab === 'reports' || urlTab === 'inspections') {
+      setActiveTab('inspections');
+    } else if (urlTab === 'schedule' || urlTab === 'due') {
+      setActiveTab('schedule');
+    }
+  }, [urlTab]);
+
+  function handleTabChange(nextTab: 'inspections' | 'schedule') {
+    setActiveTab(nextTab);
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextTab === 'inspections') {
+      nextParams.set('tab', 'reports');
+    } else {
+      nextParams.delete('tab');
+      nextParams.delete('view');
+    }
+    setSearchParams(nextParams, { replace: true });
+  }
+
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -115,6 +144,75 @@ export function HomePage() {
     });
   }, [inspections, vessels, me.data]);
 
+  const accessibleVessels = useMemo(() => {
+    const all = (vessels ?? []).filter((v) => !v.deletedAt && (v as any).registrationStatus !== 'unregistered');
+    const role = me.data?.role;
+    if (role === 'admin' || role === 'director' || !me.data) return all;
+    const vesselIds = (me.data.vesselIds ?? []).map((id) => id.toLowerCase().trim());
+    return all.filter((v) => vesselIds.length === 0 || vesselIds.includes(v.id.toLowerCase().trim()));
+  }, [vessels, me.data]);
+
+  const fleetCounts = useMemo(() => {
+    let red = 0;
+    let yellow = 0;
+    let green = 0;
+    let inProgress = 0;
+    let uninspected = 0;
+
+    for (const v of accessibleVessels) {
+      const vName = (v.name || '').trim().toLowerCase();
+      const vId = (v.id || '').trim().toLowerCase();
+
+      // Only standard ordinary inspections (exclude take_over and pre_purchase)
+      const vesselInspections = visibleInspections.filter((i) => {
+        const isOrdinary = !i.reportCategory || i.reportCategory === 'inspection';
+        if (!isOrdinary) return false;
+        if (i.vesselId && i.vesselId.trim().toLowerCase() === vId) return true;
+        if (i.vesselName && i.vesselName.trim().toLowerCase() === vName) return true;
+        return false;
+      });
+
+      const completedOnes = vesselInspections.filter((i) => i.status === 'approved');
+      completedOnes.sort((a, b) => {
+        const ad = a.completionDate || a.startDate || a.updatedAt || '';
+        const bd = b.completionDate || b.startDate || b.updatedAt || '';
+        return bd.localeCompare(ad);
+      });
+      const lastCompleted = completedOnes[0] || null;
+
+      const inProgressOnes = vesselInspections.filter((i) => i.status !== 'approved');
+      inProgressOnes.sort((a, b) => {
+        const ad = a.startDate || a.updatedAt || '';
+        const bd = b.startDate || b.updatedAt || '';
+        return bd.localeCompare(ad);
+      });
+      let pending: Inspection | null = inProgressOnes[0] || null;
+
+      // Only surface "pending" if it isn't older than the last completed one
+      if (pending && lastCompleted) {
+        const pendingDate = pending.startDate || pending.updatedAt || '';
+        const completedDate = lastCompleted.completionDate || lastCompleted.startDate || '';
+        if (pendingDate <= completedDate) {
+          pending = null;
+        }
+      }
+
+      if (pending) {
+        inProgress++;
+      } else if (lastCompleted) {
+        const due = inspectionDueInfo(lastCompleted);
+        if (due.color === 'red') red++;
+        else if (due.color === 'yellow') yellow++;
+        else green++;
+      } else {
+        // No inspection created yet -> NOT overdue!
+        uninspected++;
+      }
+    }
+
+    return { red, yellow, green, inProgress, uninspected, total: accessibleVessels.length };
+  }, [accessibleVessels, visibleInspections]);
+
   const uniqueVessels = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const names = visibleInspections.filter((i: any) => !i.deletedAt).map((i: any) => i.vesselName);
@@ -144,13 +242,56 @@ export function HomePage() {
   return (
     <div className="page-wrap home-dashboard">
       
-      {/* ── PREMIUM PAGE HEADER ── */}
+      {/* ── PREMIUM PAGE HEADER WITH TABS IN SAME ROW ── */}
       <div className="premium-page-header">
         
-        <div className="header-titles">
-          <h1 className="page-title">Fleet Inspections</h1>
-          <p className="page-subtitle">Manage, track, and sync your vessel reports</p>
+        <div className="header-left-group">
+          <div className="header-titles">
+            <h1 className="page-title">Fleet Inspections</h1>
+            <p className="page-subtitle">Manage, track, and sync your vessel reports</p>
+          </div>
+
+          {/* ── EXECUTIVE VIEW TABS (INSPECTIONS vs FLEET DUE STATUS) ── */}
+          <div className="home-view-segmented" role="tablist" aria-label="Home Dashboard Views">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'inspections'}
+              className={`home-view-tab-btn ${activeTab === 'inspections' ? 'active' : ''}`}
+              onClick={() => handleTabChange('inspections')}
+            >
+              <ClipboardIcon width={16} height={16} />
+              <span className="tab-label-full">Inspection Reports</span>
+              <span className="tab-label-compact">Reports</span>
+              <span className="home-tab-badge">{visibleInspections.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'schedule'}
+              className={`home-view-tab-btn ${activeTab === 'schedule' ? 'active' : ''}`}
+              onClick={() => handleTabChange('schedule')}
+            >
+              <CalendarIcon width={16} height={16} />
+              <span className="tab-label-full">Fleet Due & Status</span>
+              <span className="tab-label-compact">Fleet Status</span>
+              {fleetCounts.red > 0 ? (
+                <span className="home-tab-badge alert">
+                  <span className="badge-text-full">{fleetCounts.red} Overdue</span>
+                  <span className="badge-text-compact">{fleetCounts.red}</span>
+                </span>
+              ) : fleetCounts.inProgress > 0 ? (
+                <span className="home-tab-badge in-progress">
+                  <span className="badge-text-full">{fleetCounts.inProgress} In Progress</span>
+                  <span className="badge-text-compact">{fleetCounts.inProgress}</span>
+                </span>
+              ) : (
+                <span className="home-tab-badge ok">On Track</span>
+              )}
+            </button>
+          </div>
         </div>
+
         <div className="header-actions">
           
           {/* ── High-Priority Sync Widget ── */}
@@ -186,8 +327,12 @@ export function HomePage() {
         </div>
       </div>
 
-      {/* ── CONTROLS ROW ── */}
-      <div className="controls-bar">
+      {activeTab === 'schedule' ? (
+        <FleetStatusPage embedded={true} />
+      ) : (
+        <>
+          {/* ── CONTROLS ROW ── */}
+          <div className="controls-bar">
         {/* Mode Toggle */}
         <div className="premium-mode-seg">
           <div className="mode-seg" role="group" aria-label="Inspection mode">
@@ -408,6 +553,7 @@ export function HomePage() {
                   <div className="vessel-row-name-line">
                     <span className="vname">{i.vesselName || 'Unnamed vessel'}</span>
                     {i.imo && <span className="imo-pill">IMO {i.imo}</span>}
+                    <span className="report-ref-badge" title="Report Reference">VIR-{i.id.slice(0, 8).toUpperCase()}</span>
                   </div>
                   <div className="vessel-row-meta">
                     <span className="vmeta-item">
@@ -425,6 +571,15 @@ export function HomePage() {
                         <span className="vmeta-item" title={i.port}>
                           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"></path><circle cx="12" cy="10" r="3"></circle></svg>
                           {i.port}
+                        </span>
+                      </>
+                    )}
+                    {i.inspector && (
+                      <>
+                        <span className="meta-dot">·</span>
+                        <span className="vmeta-item" title={`Auditor / Surveyor: ${i.inspector}`}>
+                          <UserIcon width={13} height={13} />
+                          {i.inspector}
                         </span>
                       </>
                     )}
@@ -460,6 +615,8 @@ export function HomePage() {
             );
           })}
         </div>
+      )}
+      </>
       )}
 
       <DeleteInspectionModal

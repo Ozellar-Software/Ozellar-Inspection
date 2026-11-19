@@ -77,7 +77,7 @@ svg:not([width]):not([class*="-svg"]) { width: 18px; height: 18px; }
   flex-direction: column;
   gap: 16px;
 }
-@media (min-width: 700px) {
+@media (min-width: 640px) {
   #root { max-width: none; }
   .auth-screen {
     min-height: 100vh;
@@ -159,6 +159,48 @@ svg:not([width]):not([class*="-svg"]) { width: 18px; height: 18px; }
   display: block; width: 100%; text-align: left; background: none; border: none; padding: 6px 0;
   color: var(--accent-dark); font-size: 13.5px; font-weight: 600;
 }
+
+/* ---------- Fleet inspection status banner (Home) ---------- */
+.fleet-status-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+  padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); box-shadow: var(--shadow);
+  cursor: pointer; text-align: left;
+  transition: all 0.15s ease;
+}
+.fleet-status-banner:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(11,33,56,0.06);
+}
+.fleet-status-banner:active { background: #f0f2f3; }
+.fleet-status-banner .fsb-title { font-weight: 700; font-size: 14.5px; color: var(--ink); }
+.fleet-status-banner .fsb-counts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fsb-count { font-size: 11.5px; font-weight: 700; padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
+.fsb-count.red { background: var(--bad-tint); color: var(--bad); }
+.fsb-count.yellow { background: var(--warn-tint); color: var(--warn); }
+.fsb-count.green { background: var(--ok-tint); color: var(--ok); }
+.fleet-status-banner svg { flex: none; width: 18px; height: 18px; color: var(--faint); }
+
+/* ---------- Fleet status chips ---------- */
+.fleet-status-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; display: inline-block; }
+.fleet-status-chip.red { background: var(--bad-tint); color: var(--bad); }
+.fleet-status-chip.yellow { background: var(--warn-tint); color: var(--warn); }
+.fleet-status-chip.green { background: var(--ok-tint); color: var(--ok); }
+
+/* ---------- Fleet status table ---------- */
+.fleet-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.fleet-table { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+.fleet-table th {
+  text-align: left; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg); position: sticky; top: 0;
+}
+.fleet-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--ink); vertical-align: top; }
+.fleet-table tbody tr { cursor: pointer; transition: background 0.12s ease; }
+.fleet-table tbody tr:hover { background: #f8fafc; }
+.fleet-table tbody tr:active { background: var(--bg); }
+.fleet-table tr:last-child td { border-bottom: none; }
+.fleet-table .ft-vessel { font-weight: 700; white-space: normal; min-width: 130px; }
+.fleet-table .ft-sub { font-weight: 400; font-size: 11.5px; color: var(--muted); margin-top: 2px; white-space: normal; }
 
 /* ---------- Mode toggle (Normal / Light) ---------- */
 .seg-label { font-size: 11.5px; font-weight: 700; color: var(--faint); letter-spacing: 0.2px; margin: 12px 0 6px; }

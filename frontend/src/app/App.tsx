@@ -6,6 +6,7 @@ import { LoginScreen } from '../auth/LoginScreen';
 import { ResetPasswordScreen } from '../auth/ResetPasswordScreen';
 import { startSyncLoop } from '../offline/sync';
 import { HomePage } from '../features/home/HomePage';
+import { FleetStatusPage } from '../features/home/FleetStatusPage';
 import { VesselsPage } from '../features/vessels/VesselsPage';
 import { RegisterVesselPage } from '../features/vessels/RegisterVesselPage';
 import { NewInspectionPage } from '../features/inspections/NewInspectionPage';
@@ -84,6 +85,9 @@ function SignedIn() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/fleet-status" element={<HomePage defaultTab="schedule" />} />
+          <Route path="/schedule" element={<HomePage defaultTab="schedule" />} />
+          <Route path="/fleet-schedule" element={<HomePage defaultTab="schedule" />} />
           <Route path="/inspections/new" element={<NewInspectionPage />} />
           <Route path="/inspections/:id" element={<SectionListPage />} />
           <Route path="/inspections/:id/sections/:sectionId" element={<SectionDetailPage />} />

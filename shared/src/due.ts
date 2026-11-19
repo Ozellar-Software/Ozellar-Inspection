@@ -19,10 +19,10 @@ export function inspectionDueInfo(
   cycleMonths = 6,
   dueSoonMonths = 5,
 ): DueInfo {
-  if (!last) return { color: 'red', label: 'No inspection on record', nextDue: null };
+  if (!last) return { color: 'green', label: 'No inspection on record', nextDue: null };
   const refStr = last.completionDate || last.startDate;
   const ref = refStr ? new Date(`${refStr}T00:00:00`) : new Date(NaN);
-  if (isNaN(ref.getTime())) return { color: 'red', label: 'Unknown', nextDue: null };
+  if (isNaN(ref.getTime())) return { color: 'green', label: 'Unknown', nextDue: null };
   const monthsElapsed = (now.getTime() - ref.getTime()) / MS_PER_MONTH;
   const nextDue = new Date(ref.getTime());
   nextDue.setMonth(nextDue.getMonth() + cycleMonths);

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ROLE_LABELS, type User } from '@ozellar/shared';
 import { logout } from '../auth/session';
-import { LockIcon, SignOutIcon, ClipboardIcon, UsersIcon, ShipIcon } from '../icons';
+import { LockIcon, SignOutIcon, ClipboardIcon, UsersIcon, ShipIcon, CalendarIcon } from '../icons';
 import { ChangePasswordModal } from '../auth/ChangePasswordModal';
 import './TopNav.css';
 
@@ -82,6 +82,9 @@ export function UserMenu({ me }: { me: User }) {
               {isAdmin && (
                 <>
                   <div className="dropdown-section-title">Management</div>
+                  <button className="premium-dropdown-item" onClick={() => { setOpen(false); nav('/schedule'); }}>
+                    <CalendarIcon /> <span>Fleet Due & Status</span>
+                  </button>
                   <button className="premium-dropdown-item" onClick={() => { setOpen(false); nav('/vessels'); }}>
                     <ShipIcon /> <span>Manage Vessels</span>
                   </button>
@@ -98,6 +101,9 @@ export function UserMenu({ me }: { me: User }) {
               {isDirector && (
                 <>
                   <div className="dropdown-section-title">Overview</div>
+                  <button className="premium-dropdown-item" onClick={() => { setOpen(false); nav('/schedule'); }}>
+                    <CalendarIcon /> <span>Fleet Due & Status</span>
+                  </button>
                   <button className="premium-dropdown-item" onClick={() => { setOpen(false); nav('/vessels'); }}>
                     <ShipIcon /> <span>View Vessels</span>
                   </button>
@@ -108,6 +114,9 @@ export function UserMenu({ me }: { me: User }) {
               {(me.role === 'techManager' || me.role === 'vesselManager' || me.role === 'vesselUser') && (
                 <>
                   <div className="dropdown-section-title">My Fleet</div>
+                  <button className="premium-dropdown-item" onClick={() => { setOpen(false); nav('/schedule'); }}>
+                    <CalendarIcon /> <span>Fleet Due & Status</span>
+                  </button>
                   <button className="premium-dropdown-item" onClick={() => { setOpen(false); nav('/vessels'); }}>
                     <ShipIcon /> <span>My Vessels</span>
                   </button>

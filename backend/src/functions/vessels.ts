@@ -121,6 +121,7 @@ export const fleetStatusHandler = handler(async (req) => {
                                         'inspectionType', i.inspection_type, 'port', i.port)
                  from inspections i
                 where i.vessel_id = v.id and i.status = 'approved' and i.deleted_at is null
+                  and (i.report_category is null or i.report_category = 'inspection')
                 order by coalesce(i.completion_date, i.start_date) desc nulls last limit 1) as last
          from vessels v
         where v.deleted_at is null and v.registration_status = 'registered' ${all ? '' : 'and v.id = any($1::uuid[])'}

@@ -4,6 +4,7 @@ dist/
 !.env.example
 apps/web/ios/
 apps/web/android/
+frontend/android/
 *.log
 local.settings.json
 _backups/

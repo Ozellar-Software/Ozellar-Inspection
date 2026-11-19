@@ -4,7 +4,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 // full URL (e.g. https://ozellar-vir-api.azurewebsites.net/api) before running `npm run build`.
 const config: CapacitorConfig = {
   appId: 'com.ozellar.vir',
-  appName: 'Ozellar Inspection',
+  appName: 'Ozellar-Inspection',
   webDir: 'dist',
   backgroundColor: '#F4F6F7',
   android: { allowMixedContent: false },

@@ -16,14 +16,20 @@
 /* ── PAGE HEADER ── */
 .premium-page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
   flex-wrap: wrap;
 }
+.header-left-group {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
 .header-titles { display: flex; flex-direction: column; gap: 4px; }
 .page-title {
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 800;
   color: #0f172a;
   letter-spacing: -0.6px;
@@ -31,12 +37,84 @@
   line-height: 1.2;
 }
 .page-subtitle {
-  font-size: 14px;
+  font-size: 13.5px;
   color: #64748b;
   margin: 0;
   font-weight: 500;
 }
 .header-actions { display: flex; align-items: center; }
+
+/* ── EXECUTIVE VIEW TABS (INSPECTIONS vs FLEET DUE STATUS) ── */
+.home-view-segmented {
+  display: inline-flex;
+  align-items: center;
+  background: #e2e8f0;
+  padding: 4px;
+  border-radius: 12px;
+  gap: 4px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.home-view-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.home-view-tab-btn:hover {
+  color: #0f172a;
+}
+
+.home-view-tab-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.home-tab-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: #f1f5f9;
+  color: #475569;
+  transition: all 0.15s ease;
+}
+
+.home-view-tab-btn.active .home-tab-badge {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.home-tab-badge.alert {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+
+.home-tab-badge.in-progress {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+}
+
+.home-tab-badge.ok {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+}
+
+.tab-label-full { display: inline; }
+.tab-label-compact { display: none; }
+.badge-text-full { display: inline; }
+.badge-text-compact { display: none; }
 
 /* ── SYNC WIDGET ── */
 .sync-widget {
@@ -465,6 +543,18 @@
   letter-spacing: 0.4px;
   flex-shrink: 0;
 }
+.report-ref-badge {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #047857;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 2.5px 7px;
+  border-radius: 5px;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
 .vessel-row-meta {
   display: flex;
   align-items: center;
@@ -565,8 +655,25 @@
 
 /* ── TABLET LANDSCAPE (768px – 1023px) ── */
 @media (min-width: 768px) and (max-width: 1023px) {
-  .home-dashboard { padding: 28px 28px 48px; gap: 20px; }
-  .page-title { font-size: 26px; }
+  .home-dashboard { padding: 24px 24px 48px; gap: 18px; }
+  .page-title { font-size: 25px; }
+
+  /* Header wraps cleanly */
+  .premium-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .header-left-group {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .header-actions { width: 100%; }
+  .sync-widget { width: 100%; }
 
   /* Tighten vessel row columns */
   .vessel-row { grid-template-columns: 5px 1fr auto 36px; }
@@ -580,12 +687,30 @@
 
 /* ── TABLET PORTRAIT (640px – 767px) ── */
 @media (min-width: 640px) and (max-width: 767px) {
-  .home-dashboard { padding: 20px 20px 40px; gap: 16px; }
-  .page-title { font-size: 23px; }
-  .page-subtitle { font-size: 13px; }
+  .home-dashboard { padding: 18px 16px 40px; gap: 14px; }
+  .page-title { font-size: 22px; }
+  .page-subtitle { font-size: 12.5px; }
 
-  /* Header */
+  /* Header stacks neatly */
   .premium-page-header { flex-direction: column; align-items: stretch; gap: 12px; }
+  .header-left-group {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .home-view-segmented {
+    width: 100%;
+    display: flex;
+    box-sizing: border-box;
+  }
+  .home-view-tab-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 12.5px;
+  }
   .header-actions { width: 100%; }
   .sync-widget { width: 100%; }
 
@@ -613,7 +738,7 @@
 /* ── MOBILE (≤ 639px) ── */
 @media (max-width: 639px) {
   .home-dashboard {
-    padding: 12px 12px 40px;
+    padding: 10px 10px 40px;
     gap: 12px;
     background: #f4f6f9;
   }
@@ -622,8 +747,18 @@
   .premium-page-header {
     flex-direction: column;
     align-items: stretch;
-    gap: 8px;
+    gap: 10px;
     padding: 0 2px;
+  }
+  .header-left-group {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .header-titles {
+    width: 100%;
   }
   .page-title {
     font-size: 20px;
@@ -633,6 +768,33 @@
   .page-subtitle {
     font-size: 12px;
     color: #64748b;
+  }
+  .home-view-segmented {
+    width: 100%;
+    display: flex;
+    box-sizing: border-box;
+    padding: 3px;
+    gap: 4px;
+  }
+  .home-view-tab-btn {
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+    padding: 7px 8px;
+    font-size: 12px;
+    gap: 5px;
+  }
+  .home-view-tab-btn span:not(.home-tab-badge) {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tab-label-full { display: none; }
+  .tab-label-compact { display: inline; }
+  .home-tab-badge {
+    font-size: 10.5px;
+    padding: 2px 6px;
+    flex-shrink: 0;
   }
   .header-actions {
     width: 100%;
@@ -938,6 +1100,17 @@
   .page-subtitle {
     font-size: 11.5px;
   }
+  .home-view-tab-btn {
+    padding: 6px 5px;
+    font-size: 11px;
+    gap: 3px;
+  }
+  .home-tab-badge {
+    font-size: 9.5px;
+    padding: 1.5px 5px;
+  }
+  .badge-text-full { display: none; }
+  .badge-text-compact { display: inline; }
   .controls-bar {
     padding: 6px 8px;
     gap: 6px;
