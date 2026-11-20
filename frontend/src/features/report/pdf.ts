@@ -1396,16 +1396,7 @@ export async function generateInspectionPdf(data: ReportData & {
   const p1VessY = detailsY + detailsH + 5;
   doc.pdf.setFont('helvetica', 'bold').setFontSize(11);
   doc.setTextColor(NAVY);
-  doc.pdf.text('1. Vessel Technical Particulars', MARGIN_LEFT, p1VessY + 5.0);
-
-  // IMO badge (right-aligned)
-  doc.pdf.setFont('helvetica', 'bold').setFontSize(7.0);
-  const p1ImoW = doc.pdf.getTextWidth(imoStr) + 9;
-  const p1ImoX = PAGE_W - MARGIN_RIGHT - p1ImoW;
-  doc.setFill(NAVY);
-  doc.pdf.roundedRect(p1ImoX, p1VessY + 0.5, p1ImoW, 6.0, 1.2, 1.2, 'F');
-  doc.setTextColor(WHITE);
-  doc.pdf.text(imoStr, p1ImoX + p1ImoW / 2, p1VessY + 4.5, { align: 'center' });
+  doc.pdf.text('Vessel Particulars', MARGIN_LEFT, p1VessY + 5.0);
 
   // Hairline divider
   doc.setFill(TEAL);
@@ -1592,7 +1583,7 @@ export async function generateInspectionPdf(data: ReportData & {
   // Executive Summary header
   doc.pdf.setFont('helvetica', 'bold').setFontSize(12.5);
   doc.setTextColor(NAVY);
-  doc.pdf.text('2. Executive Summary', MARGIN_LEFT, execHdrY + 4.5);
+  doc.pdf.text('Executive Summary', MARGIN_LEFT, execHdrY + 4.5);
 
   // Audit Reference Pill
   const refStr = `VIR-${inspection.id.slice(0, 8).toUpperCase()}`;
@@ -1633,7 +1624,7 @@ export async function generateInspectionPdf(data: ReportData & {
     doc.newPage();
     doc.pdf.setFont('helvetica', 'bold').setFontSize(10.5);
     doc.setTextColor(NAVY);
-    doc.pdf.text('2. Executive Summary (Continued)', MARGIN_LEFT, 20);
+    doc.pdf.text('Executive Summary (Continued)', MARGIN_LEFT, 20);
 
     doc.pdf.setFont('helvetica', 'bold').setFontSize(6.5);
     doc.setTextColor(TEXT_MUTED);
