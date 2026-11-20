@@ -1,14 +1,16 @@
-// Combines the template/inspection sections
-//   sr 16  "Bunker, Ballast and Fresh Water Tanks"   (BF-1, BF-3, BF-5)
-//   sr 17  "Ballast/Fuel/Fresh Water Tank"           (BF-2)
-// into ONE section (sr 16), without losing data: sr 17's question moves into sr 16 together with its response,
-// photos, findings and section remarks, and sr 17 is soft-deleted (the rows stay in the database).
+// Combines the two tank sections
+//   "Bunker, Ballast and Fresh Water Tanks"   (BF-1, BF-3, BF-5)   <- survives
+//   "Ballast/Fuel/Fresh Water Tank"           (BF-2)                <- folded into it
+// into ONE section, without losing data: the second section's question moves into the first together with its
+// response, photos, findings and section remarks, and the second section is soft-deleted (the rows stay).
+// Sections are matched BY NAME, so every template set (Universal, Bulk Carrier, ...) and every inspection is handled,
+// whatever template_sr numbers they carry.
 //
 //   node tools/migrate-combine-tank-sections.mjs            # DRY RUN: does everything, prints a report, then ROLLS BACK
 //   node tools/migrate-combine-tank-sections.mjs --apply    # same, but COMMITS
 //
 // Connection: PG_HOST / PG_PORT / PG_DB / PG_USER / PG_PASSWORD (PG_SSL=true for TLS), else backend/.env,
-// else backend/local.settings.json. Safe to re-run: once sr 17 is gone there is nothing left to do.
+// else backend/local.settings.json. Safe to re-run: once the second section is gone there is nothing left to do.
 // Do NOT re-run tools/seed-checklist.mjs afterwards: db/seed/default-checklist.json numbers these sections differently.
 import pg from 'pg';
 import { existsSync, readFileSync } from 'node:fs';
@@ -44,8 +46,8 @@ const pool = new pg.Pool({
   user: cfg.PG_USER, password: cfg.PG_PASSWORD, ssl: cfg.PG_SSL === 'true' ? { rejectUnauthorized: false } : false,
 });
 
-const KEEP_SR = 16;   // section that survives
-const DROP_SR = 17;   // section folded into it
+const KEEP_NAME = 'Bunker, Ballast and Fresh Water Tanks';   // section that survives
+const DROP_NAME = 'Ballast/Fuel/Fresh Water Tank';            // section folded into it
 const count = async (c, sql, args) => Number((await c.query(sql, args)).rows[0].n);
 
 const client = await pool.connect();
@@ -58,26 +60,31 @@ try {
     `select count(*) n from information_schema.columns where table_name = 'inspection_sections' and column_name in ('remarks', 'applicable')`);
   if (haveCols < 2) throw new Error('inspection_sections is missing the remarks/applicable columns: apply db/schema.sql first');
 
-  // ── 1. Template ───────────────────────────────────────────────────────────
+  // ── 1. Template (one pair per template set / vessel-type group) ──────────────────────────────────────
   const tpl = (await client.query(
-    `select id, sr, name, vessel_types::text vt from template_sections where sr = any($1) and deleted_at is null order by sr`, [[KEEP_SR, DROP_SR]])).rows;
-  const tKeep = tpl.find((s) => s.sr === KEEP_SR);
-  const tDrop = tpl.find((s) => s.sr === DROP_SR);
-  if (tKeep && tDrop) {
+    `select id, sr, name, vessel_types::text vt from template_sections where name = any($1) and deleted_at is null order by sr`, [[KEEP_NAME, DROP_NAME]])).rows;
+  const groups = new Map();
+  for (const s of tpl) {
+    const g = groups.get(s.vt) ?? {};
+    if (s.name === KEEP_NAME) g.keep = s; else g.drop = s;
+    groups.set(s.vt, g);
+  }
+  const tplLines = [];
+  for (const [vt, g] of groups) {
+    if (!g.keep || !g.drop) { tplLines.push(`  ${vt}: nothing to do (only one of the two sections exists)`); continue; }
     const moved = (await client.query(
-      `select id from template_questions where section_id = $1 and deleted_at is null order by position`, [tDrop.id])).rows;
+      `select id from template_questions where section_id = $1 and deleted_at is null order by position`, [g.drop.id])).rows;
     let { qid, pos } = (await client.query(
-      `select coalesce(max(qid), -1) qid, coalesce(max(position), -1) pos from template_questions where section_id = $1`, [tKeep.id])).rows[0];
+      `select coalesce(max(qid), -1) qid, coalesce(max(position), -1) pos from template_questions where section_id = $1`, [g.keep.id])).rows[0];
     for (const q of moved) {
       await client.query(
         `update template_questions set section_id = $1, qid = $2, position = $3, updated_at = now(), row_version = nextval('sync_seq') where id = $4`,
-        [tKeep.id, ++qid, ++pos, q.id]);
+        [g.keep.id, ++qid, ++pos, q.id]);
     }
-    await client.query(`update template_sections set deleted_at = now(), updated_at = now(), row_version = nextval('sync_seq') where id = $1`, [tDrop.id]);
-    report.template = `moved ${moved.length} question(s) from "${tDrop.name}" into "${tKeep.name}"; "${tDrop.name}" soft-deleted`;
-  } else {
-    report.template = 'nothing to do (one of the two template sections is already gone)';
+    await client.query(`update template_sections set deleted_at = now(), updated_at = now(), row_version = nextval('sync_seq') where id = $1`, [g.drop.id]);
+    tplLines.push(`  ${vt}: moved ${moved.length} question(s) (sr ${g.drop.sr} -> sr ${g.keep.sr}); sr ${g.drop.sr} soft-deleted`);
   }
+  report.template = tplLines.length ? '\n' + tplLines.join('\n') : 'no template sections found';
 
   // ── 2. Existing inspections ───────────────────────────────────────────────
   const pairs = (await client.query(
@@ -85,11 +92,19 @@ try {
             b.id drop_id, b.remarks drop_remarks, b.applicable drop_applicable
        from inspection_sections a
        join inspection_sections b on b.inspection_id = a.inspection_id
-      where a.template_sr = $1 and b.template_sr = $2 and a.deleted_at is null and b.deleted_at is null`, [KEEP_SR, DROP_SR])).rows;
+      where a.name = $1 and b.name = $2 and a.deleted_at is null and b.deleted_at is null`, [KEEP_NAME, DROP_NAME])).rows;
   const orphans = await count(client,
-    `select count(*) n from inspection_sections b where b.template_sr = $1 and b.deleted_at is null
-        and not exists (select 1 from inspection_sections a where a.inspection_id = b.inspection_id and a.template_sr = $2 and a.deleted_at is null)`, [DROP_SR, KEEP_SR]);
+    `select count(*) n from inspection_sections b where b.name = $1 and b.deleted_at is null
+        and not exists (select 1 from inspection_sections a where a.inspection_id = b.inspection_id and a.name = $2 and a.deleted_at is null)`, [DROP_NAME, KEEP_NAME]);
   report.skipped = orphans;
+  // An inspection with duplicate copies of either section would pair up ambiguously: leave those alone and report them.
+  const perInspection = new Map();
+  for (const p of pairs) perInspection.set(p.inspection_id, (perInspection.get(p.inspection_id) ?? 0) + 1);
+  const ambiguous = [...perInspection.entries()].filter(([, n]) => n > 1).map(([id]) => id);
+  if (ambiguous.length) {
+    console.log(`Skipping ${ambiguous.length} inspection(s) with duplicate copies of these sections: ${ambiguous.join(', ')}`);
+    for (let i = pairs.length - 1; i >= 0; i--) if (ambiguous.includes(pairs[i].inspection_id)) pairs.splice(i, 1);
+  }
 
   for (const p of pairs) {
     const before = {
